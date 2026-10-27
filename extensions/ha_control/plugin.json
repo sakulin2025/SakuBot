@@ -1,0 +1,43 @@
+{
+  "name": "ha_control",
+  "label": "Home Assistant",
+  "version": "1.0.0",
+  "settings": {
+    "fields": [
+      {
+        "key": "base_url",
+        "label": "URL",
+        "type": "string",
+        "placeholder": "例如 http://192.168.1.10:8123",
+        "required": true,
+        "default": "",
+        "format": "http-url"
+      },
+      {
+        "key": "token",
+        "label": "Token",
+        "type": "secret",
+        "placeholder": "粘贴访问令牌，不包含 Bearer 前缀",
+        "default": "",
+        "required": true
+      },
+      {
+        "key": "timeout",
+        "label": "超时 · 秒",
+        "type": "number",
+        "placeholder": "请输入 1～300 的整数",
+        "min": 1,
+        "max": 300,
+        "default": 30,
+        "required": true
+      }
+    ],
+    "connection": {
+      "path": "/api/config",
+      "token_field": "token",
+      "required_paths": [
+        "version"
+      ]
+    }
+  }
+}

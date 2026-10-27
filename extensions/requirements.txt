@@ -1,0 +1,4 @@
+asyncssh>=2.24.0,<3
+aiohttp>=3.9,<4
+mcstatus>=14.2,<15
+requests>=2.31,<3

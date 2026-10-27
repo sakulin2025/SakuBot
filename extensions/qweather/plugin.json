@@ -1,0 +1,39 @@
+{
+  "name": "qweather",
+  "label": "天气",
+  "version": "1.0.0",
+  "settings": {
+    "fields": [
+      {
+        "key": "host",
+        "label": "Host",
+        "type": "string",
+        "placeholder": "例如 abc123.re.qweatherapi.com，不含接口路径",
+        "required": true,
+        "default": "",
+        "format": "https-host"
+      },
+      {
+        "key": "key",
+        "label": "Key",
+        "type": "secret",
+        "placeholder": "粘贴 API Key",
+        "default": "",
+        "required": true
+      },
+      {
+        "key": "default_city",
+        "label": "默认城市",
+        "type": "string",
+        "placeholder": "填写城市名、Location ID 或 经度,纬度",
+        "required": true,
+        "default": ""
+      }
+    ],
+    "connection": {
+      "kind": "qweather",
+      "url_field": "host",
+      "path": "/geo/v2/city/lookup"
+    }
+  }
+}

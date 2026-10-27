@@ -1,0 +1,44 @@
+{
+  "name": "image_gallery",
+  "label": "图库",
+  "version": "1.0.0",
+  "settings": {
+    "fields": [
+      {
+        "key": "base_url",
+        "label": "URL",
+        "type": "string",
+        "placeholder": "例如 https://gallery.example.com",
+        "required": true,
+        "default": "",
+        "format": "http-url"
+      },
+      {
+        "key": "timeout",
+        "label": "超时 · 秒",
+        "type": "number",
+        "placeholder": "请输入 1～120 的整数",
+        "min": 1,
+        "max": 120,
+        "default": 20,
+        "required": true
+      },
+      {
+        "key": "max_bytes",
+        "label": "图片上限 · MiB",
+        "type": "number",
+        "placeholder": "请输入 1～20 的整数",
+        "min": 1,
+        "max": 20,
+        "default": 8,
+        "required": true
+      }
+    ],
+    "connection": {
+      "path": "/api/stats",
+      "required_paths": [
+        "counts.pending"
+      ]
+    }
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "name": "minecraft_status",
+  "label": "Minecraft",
+  "version": "1.0.0",
+  "settings": {
+    "fields": [
+      {
+        "key": "poll_enabled",
+        "label": "轮询",
+        "type": "boolean",
+        "placeholder": "请输入轮询",
+        "default": true
+      },
+      {
+        "key": "poll_interval_minutes",
+        "label": "间隔 · 分钟",
+        "type": "number",
+        "placeholder": "请输入 1～1440 的整数",
+        "min": 1,
+        "max": 1440,
+        "default": 5,
+        "required": true
+      },
+      {
+        "key": "offline_confirmations",
+        "label": "不可达确认次数",
+        "type": "number",
+        "placeholder": "请输入 1～10 的整数",
+        "min": 1,
+        "max": 10,
+        "default": 2,
+        "required": true
+      }
+    ]
+  }
+}

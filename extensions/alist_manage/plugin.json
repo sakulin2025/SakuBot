@@ -1,0 +1,89 @@
+{
+  "name": "alist_manage",
+  "label": "AList",
+  "version": "1.0.0",
+  "settings": {
+    "fields": [
+      {
+        "key": "base_url",
+        "label": "URL",
+        "type": "string",
+        "placeholder": "例如 http://192.168.1.10:5244",
+        "required": true,
+        "default": "",
+        "format": "http-url"
+      },
+      {
+        "key": "token",
+        "label": "Token",
+        "type": "secret",
+        "placeholder": "粘贴访问令牌，不包含 Bearer 前缀",
+        "default": ""
+      },
+      {
+        "key": "username",
+        "label": "用户名",
+        "type": "string",
+        "placeholder": "填写登录用户名",
+        "default": ""
+      },
+      {
+        "key": "password",
+        "label": "密码",
+        "type": "secret",
+        "placeholder": "填写登录密码",
+        "default": ""
+      },
+      {
+        "key": "path_password",
+        "label": "目录密码",
+        "type": "secret",
+        "placeholder": "填写目录访问密码，可留空",
+        "default": ""
+      },
+      {
+        "key": "public_url",
+        "label": "公开 URL",
+        "type": "string",
+        "placeholder": "填写用于外部访问的完整地址，可留空",
+        "default": "",
+        "format": "http-url"
+      },
+      {
+        "key": "timeout",
+        "label": "超时 · 秒",
+        "type": "number",
+        "placeholder": "请输入 1～300 的整数",
+        "min": 1,
+        "max": 300,
+        "default": 30,
+        "required": true
+      },
+      {
+        "key": "max_upload_mb",
+        "label": "上传上限 · MiB",
+        "type": "number",
+        "placeholder": "请输入 1～100 的整数",
+        "min": 1,
+        "max": 100,
+        "default": 20,
+        "required": true
+      }
+    ],
+    "connection": {
+      "kind": "alist",
+      "path": "/api/me"
+    },
+    "required_any": [
+      [
+        [
+          "token"
+        ],
+        [
+          "username",
+          "password"
+        ]
+      ]
+    ]
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "name": "scanelf",
+  "label": "ScanElf",
+  "version": "1.0.0",
+  "settings": {
+    "fields": [
+      {
+        "key": "base_url",
+        "label": "URL",
+        "type": "string",
+        "placeholder": "例如 http://192.168.1.10:8080",
+        "required": true,
+        "default": "",
+        "format": "http-url"
+      },
+      {
+        "key": "token",
+        "label": "Token",
+        "type": "secret",
+        "placeholder": "粘贴访问令牌，不包含 Bearer 前缀",
+        "default": "",
+        "required": true
+      }
+    ],
+    "connection": {
+      "path": "/api/v1/status",
+      "token_field": "token",
+      "strip_suffix": "/api/v1"
+    }
+  }
+}

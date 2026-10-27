@@ -1,0 +1,13 @@
+data
+.env
+__pycache__
+*.pyc
+.git
+frontend/node_modules
+frontend/dist
+sakubot/plugins/*/web/dist
+
+backups
+extensions
+
+sakubot/system/*/web/dist

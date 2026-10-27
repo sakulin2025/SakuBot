@@ -1,0 +1,29 @@
+{
+  "name": "context_reminders",
+  "label": "上下文提醒",
+  "version": "1.0.0",
+  "settings": {
+    "fields": [
+      {
+        "key": "default_ttl_hours",
+        "label": "默认有效期 · 小时",
+        "type": "number",
+        "placeholder": "请输入 0～87600 的整数",
+        "min": 0,
+        "max": 87600,
+        "default": 24,
+        "required": true
+      },
+      {
+        "key": "max_per_turn",
+        "label": "上下文条数",
+        "type": "number",
+        "placeholder": "请输入 1～100 的整数",
+        "min": 1,
+        "max": 100,
+        "default": 5,
+        "required": true
+      }
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+:root {
+  --canvas: #f7f7fb;
+  --ink: #3d3b51;
+  --muted: #9996ab;
+  --accent: #7162db;
+  --positive: #73a387;
+  --negative: #c67b87;
+  --border: #eae8f2;
+  --shadow: 0 2px 4px #1a264203;
+  --font: Inter, -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --mono: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  color-scheme: light;
+}
+
+:root {
+  --s-radius: 12px;
+  --s-motion: 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  --s-spring: 320ms cubic-bezier(0.2, 0.9, 0.2, 1.12);
+  --s-ring: 0 0 0 3px #7162eb18;
+}
