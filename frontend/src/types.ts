@@ -86,8 +86,9 @@ export interface Setup {
   plugins: { name: string; label: string; required: boolean; selected: boolean; loaded: boolean }[]
 }
 export interface EventRecord {
-  id: number
+  id: number | string
   uid: string
+  run_id?: string
   at: number
   kind: string
   source: string

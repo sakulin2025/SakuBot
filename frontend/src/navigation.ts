@@ -23,28 +23,22 @@ export function buildNavigation(pages: PluginPage[]): NavGroup[] {
       ],
     },
     {
-      label: 'Agent',
+      label: '智能体',
       order: 20,
       items: [
-        ['agents', 'Agent 管理', 'persona'],
         ['model', '模型', 'model'],
-        ['personas', '人格', 'persona'],
-      ].map(([path, label, icon], order) => ({ path: '/' + path, label: label!, icon: icon!, order })),
-    },
-    {
-      label: '系统',
-      order: 90,
-      items: [
-        ['functions', '能力', 'plugins'],
+        ['agents', 'Agent 管理', 'persona'],
+        ['plugins', '插件与技能', 'plugins'],
         ['settings', '运行设置', 'settings'],
-        ['plugins', '插件管理', 'plugins'],
       ].map(([path, label, icon], order) => ({ path: '/' + path, label: label!, icon: icon!, order })),
     },
+    { label: '内置功能', order: 90, items: [] },
   ]
   for (const page of pages) {
-    let group = groups.find((item) => item.label === page.group)
+    const label = page.group === '系统' ? '内置功能' : page.group
+    let group = groups.find((item) => item.label === label)
     if (!group) {
-      group = { label: page.group, order: page.group_order, items: [] }
+      group = { label, order: page.group_order, items: [] }
       groups.push(group)
     }
     group.items.push({ path: page.route, label: page.title, icon: page.icon, order: page.order + 10,

@@ -210,11 +210,6 @@ onUnmounted(() => {
 </script>
 <template>
   <div class="page-heading">
-    <div class="heading-title">
-      <span class="page-kicker">工作台</span>
-      <h1>专业团队</h1>
-      <span class="heading-count">{{ members.length }}</span>
-    </div>
     <div class="heading-actions">
       <SButton class="button" @click="host.navigate('/agents')">
         Agent 管理</SButton

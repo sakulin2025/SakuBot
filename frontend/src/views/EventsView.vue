@@ -14,12 +14,18 @@ const busy = ref(false)
 const query = ref('')
 const filter = ref('')
 const kind = ref('all')
-const cursor = ref(0)
-const nextCursor = ref<number | null>(null)
-const history = ref<number[]>([])
+const cursor = ref('')
+const nextCursor = ref<string | null>(null)
+const history = ref<string[]>([])
 const creating = ref(false)
 const submitting = ref(false)
 const selected = ref<EventRecord | null>(null)
+const selectedRun = ref<{ trace: string } | null>(null)
+const detailBusy = ref(false)
+const requests = computed(() => {
+  const trace = parseJson(selectedRun.value?.trace) as { api_requests?: { step: number; body: unknown }[] } | undefined
+  return Array.isArray(trace?.api_requests) ? trace.api_requests : []
+})
 const draft = reactive({ kind: 'wake', text: '', target: '', include_context: false })
 const visible = computed(() =>
   events.value.filter((event) => kind.value === 'all' || event.kind === kind.value),
@@ -28,15 +34,15 @@ async function load() {
   busy.value = true
   try {
     const params = new URLSearchParams({
-      before: String(cursor.value),
       limit: '30',
       query: query.value,
       status: filter.value,
-      kind: kind.value === 'all' ? '' : kind.value,
     })
-    const result = await api<{ items: EventRecord[]; next_before: number | null }>('events?' + params)
+    if (cursor.value) params.set('before', cursor.value)
+    if (kind.value !== 'wake') params.set('kind', kind.value === 'all' ? '' : kind.value)
+    const result = await api<{ items: EventRecord[]; next_before: string | number | null }>((kind.value === 'wake' ? 'wake-log?' : 'events?') + params)
     events.value = result.items
-    nextCursor.value = result.next_before
+    nextCursor.value = result.next_before == null ? null : String(result.next_before)
   } catch {
     store.toast('加载失败', true)
   } finally {
@@ -44,7 +50,7 @@ async function load() {
   }
 }
 function search() {
-  cursor.value = 0
+  cursor.value = ''
   history.value = []
   load()
 }
@@ -75,6 +81,7 @@ async function submit() {
   }
 }
 async function cancel(event: EventRecord) {
+  if (typeof event.id !== 'number') return
   try {
     const result = await api<{ cancelled: boolean }>('events/' + event.id + '/cancel', { body: {} })
     await load()
@@ -91,17 +98,27 @@ function older() {
   }
 }
 function newer() {
-  cursor.value = history.value.pop() || 0
+  cursor.value = history.value.pop() || ''
   load()
+}
+async function inspect(event: EventRecord) {
+  selected.value = event
+  selectedRun.value = null
+  detailBusy.value = !!event.run_id
+  if (!event.run_id) return
+  try {
+    const result = await api<{ trace: string }>('runs/' + encodeURIComponent(event.run_id))
+    if (selected.value === event) selectedRun.value = result
+  } catch {
+    if (selected.value === event) store.toast('加载详情失败', true)
+  } finally {
+    if (selected.value === event) detailBusy.value = false
+  }
 }
 onMounted(load)
 </script>
 <template>
   <div class="page-heading">
-    <div v-if="!embedded" class="heading-title">
-      <span class="page-kicker">工作台</span>
-      <h1>事件中心</h1>
-    </div>
     <SButton class="button primary" @click="create">
       <UiIcon name="plus" :size="17" />
       创建事件
@@ -167,13 +184,13 @@ onMounted(load)
             <div class="event-actions">
               <UiBadge :status="event.status" />
               <SButton
-                v-if="event.status === 'pending'"
+                v-if="event.status === 'pending' && typeof event.id === 'number'"
                 class="text-button danger-text"
                 @click="cancel(event)"
               >
                 取消
               </SButton>
-              <SButton class="text-button" @click="selected = event">
+              <SButton class="text-button" @click="inspect(event)">
                 详情
                 <UiIcon name="right" :size="13" />
               </SButton>
@@ -240,6 +257,14 @@ onMounted(load)
         <summary>元数据</summary>
         <pre class="json-block">{{ JSON.stringify(parseJson(selected.meta), null, 2) }}</pre>
       </details>
+      <template v-if="selected.kind === 'wake'">
+        <div v-if="detailBusy">加载中</div>
+        <div v-else-if="!requests.length">暂无请求体</div>
+        <details v-for="(request, index) in requests" :key="index">
+          <summary>API 请求体 · 第 {{ request.step }} 轮</summary>
+          <pre class="json-block">{{ JSON.stringify(request.body, null, 2) }}</pre>
+        </details>
+      </template>
       <div v-if="selected.error" class="record-error">{{ selected.error }}</div>
     </div>
   </UiModal>

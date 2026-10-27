@@ -112,11 +112,6 @@ onMounted(load);
 </script>
 <template>
   <div class="page-heading">
-    <div class="heading-title">
-      <span class="page-kicker">自动化</span>
-      <h1>定时任务</h1>
-      <span class="heading-count">{{ rows.length }}</span>
-    </div>
     <SButton class="button primary" @click="edit()">
       <UiIcon name="plus" :size="16" />新增任务
     </SButton>

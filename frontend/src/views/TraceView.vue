@@ -101,10 +101,6 @@ const payload = computed(() => {
 </script>
 <template>
   <div class="page-heading">
-    <div v-if="!embedded" class="heading-title">
-      <span class="page-kicker">系统</span>
-      <h1>{{ kind === 'logs' ? '追踪日志' : '工具调用' }}</h1>
-    </div>
     <div class="topbar-actions">
       <label class="check-label">
         <SCheckbox v-model="live" />

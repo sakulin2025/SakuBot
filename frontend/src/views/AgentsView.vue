@@ -53,9 +53,10 @@ onMounted(() => {
 onUnmounted(() => {
   if (timer) clearInterval(timer)
 })
+defineProps<{ embedded?: boolean }>()
 </script>
 <template>
-  <SPageHeader title="Agent 管理" :count="store.agents.length">
+  <SPageHeader v-if="!embedded" title="Agent 管理" :count="store.agents.length">
     <RouterLink to="/personas" class="button">
       <UiIcon name="persona" :size="16" />
       管理人格

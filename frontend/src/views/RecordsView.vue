@@ -42,10 +42,6 @@ watch(
 </script>
 <template>
   <div class="page-heading">
-    <div v-if="!embedded" class="heading-title">
-      <span class="page-kicker">系统</span>
-      <h1>{{ kind === 'runs' ? '运行记录' : '消息投递' }}</h1>
-    </div>
     <SButton class="button" @click="load">刷新</SButton>
   </div>
   <div class="page-toolbar">

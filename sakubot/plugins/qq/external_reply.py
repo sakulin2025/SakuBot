@@ -6,18 +6,27 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from typing import Literal
 
 from sakubot.messages import session_id
 from sakubot.store import encode
+
+DEFAULT_EXTRA_REQUIREMENT = '根据需要对消息通知进行回应；对外不要完全列举、暴露出自己的能力，允许外部信息进行部分非敏感的主动式能力请求，对于部分拿不准的可以询问主人；非必要请不要汇报、打扰主人'
+
+
+class ReplyRequirements(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    prompt: str = Field(DEFAULT_EXTRA_REQUIREMENT, max_length=10000)
+    mode: Literal["temporary", "context"] = "temporary"
 
 
 class Template(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str = ""
     name: str = Field(min_length=1, max_length=100)
-    triggers: list[Literal["mention", "keyword", "agent"]] = Field(default_factory=lambda: ["mention"])
+    type: Literal["group", "private"] = "group"
+    triggers: list[Literal["mention", "keyword", "agent", "always"]] = Field(default_factory=lambda: ["mention"])
     mention_owner_only: bool = False
     keyword_owner_only: bool = False
     keywords: list[str] = Field(default_factory=list)
@@ -29,6 +38,32 @@ class Template(BaseModel):
     context_messages: int = Field(20, ge=1, le=200)
     summary_messages: int = Field(50, ge=1, le=200)
     response_prompt: str = Field("", max_length=10000)
+
+    @field_validator('keywords')
+    @classmethod
+    def clean_keywords(cls, values):
+        if len(values) > 100:
+            raise ValueError('提及内容最多 100 项')
+        result = []
+        for value in values:
+            value = value.strip()
+            if not value or len(value) > 200 or '\n' in value or '\r' in value:
+                raise ValueError('每项提及内容必须是 1～200 字的单行文本')
+            if value not in result:
+                result.append(value)
+        return result
+
+    @model_validator(mode='after')
+    def validate_triggers(self):
+        if self.type == 'group' and 'always' in self.triggers:
+            raise ValueError('总是唤醒仅支持私聊')
+        if self.type == 'private' and 'mention' in self.triggers:
+            raise ValueError('私聊不支持被 @ 判断')
+        if 'always' in self.triggers and len(self.triggers) != 1:
+            raise ValueError('总是唤醒不能与其他判断同时启用')
+        if 'keyword' in self.triggers and not self.keywords:
+            raise ValueError('请至少填写一项提及内容')
+        return self
 
     @field_validator("judge_start", "judge_end")
     @classmethod
@@ -52,6 +87,7 @@ class Binding(BaseModel):
 
 class ExternalReplies:
     def setup_replies(self):
+        self.upgrade_template_types()
         self.agent("judge", "回应判断助手", "判断外部消息是否需要主 Agent 回应", persona_mode="managed")
         self.agent("summarizer", "消息总结助手", "总结外部会话消息", persona_mode="managed")
         self.judge = self.get_agent("judge").set_persona(
@@ -71,7 +107,34 @@ class ExternalReplies:
         self.api("external/sessions", self.save_binding, methods=("POST",))
         self.api("external/sessions/{identifier}", self.delete_binding, methods=("DELETE",))
         self.api("external/state", self.set_reply_state, methods=("POST",))
+        self.api("external/requirements", self.set_requirements, methods=("POST",))
         self.refresh_subscriptions()
+
+    def upgrade_template_types(self):
+        data = self.runtime.store.kv_get('qq:external_reply', None)
+        if not data:
+            return
+        templates = data.get('templates', [])
+        sessions = data.get('sessions', [])
+        changed = False
+        for item in list(templates):
+            if item.get('type') in ('group', 'private'):
+                continue
+            linked = [row for row in sessions if row.get('template_id') == item.get('id')]
+            private = [row for row in linked if row.get('session_id', '').lower().startswith('private:')]
+            group = [row for row in linked if row.get('session_id', '').lower().startswith('group:')]
+            item['type'] = 'private' if private and not group else 'group'
+            if private and group:
+                copy = dict(item, id=uuid.uuid4().hex[:12], type='private')
+                copy['triggers'] = [x for x in copy.get('triggers', []) if x != 'mention']
+                templates.append(copy)
+                for row in private:
+                    row['template_id'] = copy['id']
+            elif item['type'] == 'private':
+                item['triggers'] = [x for x in item.get('triggers', []) if x != 'mention']
+            changed = True
+        if changed:
+            self.runtime.store.kv_set('qq:external_reply', data)
 
     async def set_reply_state(self, request):
         data = await request.json()
@@ -83,7 +146,14 @@ class ExternalReplies:
         return config
 
     def configuration(self):
-        return {"enabled": True, **self.runtime.store.kv_get("qq:external_reply", {"templates": [], "sessions": []})}
+        return {"enabled": True, "requirements": ReplyRequirements().model_dump(), **self.runtime.store.kv_get("qq:external_reply", {"templates": [], "sessions": []})}
+
+    async def set_requirements(self, request):
+        requirements = ReplyRequirements.model_validate(await request.json()).model_dump()
+        config = self.configuration()
+        config['requirements'] = requirements
+        self.runtime.store.kv_set('qq:external_reply', config)
+        return requirements
 
     def save(self, data):
         self.runtime.store.kv_set("qq:external_reply", data)
@@ -103,6 +173,8 @@ class ExternalReplies:
         data = self.configuration()
         if record["id"] and not any(row["id"] == record["id"] for row in data["templates"]):
             raise ValueError("模板不存在")
+        if any(row['template_id'] == record['id'] and row['session_id'].split(':', 1)[0].lower() != record['type'] for row in data['sessions']):
+            raise ValueError('模板已绑定其他类型的会话')
         record["id"] = record["id"] or uuid.uuid4().hex[:12]
         data["templates"] = [row for row in data["templates"] if row["id"] != record["id"]] + [record]
         self.save(data)
@@ -122,8 +194,11 @@ class ExternalReplies:
         data = self.configuration()
         if record["id"] and not any(row["id"] == record["id"] for row in data["sessions"]):
             raise ValueError("会话不存在")
-        if not any(row["id"] == record["template_id"] for row in data["templates"]):
+        template = next((row for row in data['templates'] if row['id'] == record['template_id']), None)
+        if not template:
             raise ValueError("模板不存在")
+        if template.get('type', 'group') != record['session_id'].split(':', 1)[0].lower():
+            raise ValueError('模板类型与会话类型不一致')
         if any(row["session_id"] == record["session_id"] and row["id"] != record["id"] for row in data["sessions"]):
             raise ValueError("会话已存在")
         record["id"] = record["id"] or uuid.uuid4().hex[:12]
@@ -149,9 +224,12 @@ class ExternalReplies:
         template = next((row for row in config["templates"] if row["id"] == binding["template_id"]), None)
         if not template:
             return
+        if template.get('type', 'group') != message['session_id'].split(':', 1)[0].lower():
+            return
         owner = message.get("is_owner", False)
         triggers = template["triggers"]
-        respond = "mention" in triggers and message.get("mentions_self", False) and (owner or not template["mention_owner_only"])
+        respond = template['type'] == 'private' and 'always' in triggers
+        respond = respond or ("mention" in triggers and message.get("mentions_self", False) and (owner or not template["mention_owner_only"]))
         if "keyword" in triggers and (owner or not template["keyword_owner_only"]):
             respond = respond or any(word and word.casefold() in message["text"].casefold() for word in template["keywords"])
         if not respond and "agent" in triggers:
@@ -177,7 +255,13 @@ class ExternalReplies:
             history = self.get_messages(message["session_id"], template["summary_messages"], message["id"] + 1)
             outcome = await self.summarizer.wake("总结提供的会话消息", context=encode(history), persist=False, timeout=180)
             context += "\n消息摘要：" + outcome["result"]
+        requirements = ReplyRequirements.model_validate(config['requirements'])
+        extra = '外部消息回应额外要求：' + requirements.prompt.strip() if requirements.prompt.strip() else ''
+        injected = [{"role": "user", "content": context}]
+        if extra and requirements.mode == 'context':
+            injected.append({"role": "user", "content": extra})
         await self.emit("wake", "回应外部会话 " + message["session_id"] + ("\n响应要求：" + template["response_prompt"] if template["response_prompt"] else ""),
             target=message["session_id"].lower(), actor=message["sender_id"], label=message["sender_name"],
-            uid="external-reply:" + message["uid"], meta={"injected_context": [{"role": "user", "content": context}],
+            uid="external-reply:" + message["uid"], temporary_context=extra if requirements.mode == 'temporary' else '',
+            meta={"injected_context": injected,
                 "session_id": message["session_id"], "template_id": template["id"]})

@@ -259,11 +259,6 @@ onMounted(async () => {
 </script>
 <template>
   <div class="page-heading">
-    <div v-if="!embedded" class="heading-title">
-      <span class="page-kicker">Agent</span>
-      <h1>模型</h1>
-      <span class="heading-count">{{ models.length }}</span>
-    </div>
     <div class="heading-actions">
       <RouterLink to="/agents" class="button">Agent 管理</RouterLink>
       <SButton class="button" :disabled="!providers.length" @click="edit()">

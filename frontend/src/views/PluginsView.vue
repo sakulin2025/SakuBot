@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api'
 import { useConsole } from '../stores/console'
 import UiIcon from '../components/UiIcon.vue'
@@ -9,27 +8,15 @@ import UiModal from '../components/UiModal.vue'
 import UiEmpty from '../components/UiEmpty.vue'
 import PluginSettingsDialog from '../components/PluginSettingsDialog.vue'
 import type { PluginInfo } from '../types'
-const store = useConsole(),
-  route = useRoute(),
-  router = useRouter()
+const store = useConsole()
 const search = ref('')
-const tab = computed({
-  get: () => (route.query.tab === 'external' ? 'external' : 'system'),
-  set: (value) => {
-    void router.replace({ path: '/plugins', query: { tab: value } })
-  },
-})
-const tabs = [
-  { value: 'system', label: '系统内置' },
-  { value: 'external', label: '第三方扩展' },
-]
-const plugins = computed(() =>
-  store.plugins.filter(
-    (p) =>
-      p.builtin === (tab.value === 'system') &&
-      (p.name + p.label).toLowerCase().includes(search.value.toLowerCase()),
-  ),
-)
+const builtinsOpen = ref(false)
+const matched = computed(() => store.plugins.filter(p =>
+  (p.name + p.label).toLowerCase().includes(search.value.toLowerCase())))
+const groups = computed(() => [
+  { id: 'builtin', label: '内置插件', items: matched.value.filter(p => p.builtin) },
+  { id: 'external', label: '第三方扩展', items: matched.value.filter(p => !p.builtin) },
+])
 const page = (id: string) => store.pages.find((p) => p.plugin_id === id)
 const busy = ref(false)
 const settingsPlugin = ref<PluginInfo | null>(null)
@@ -144,19 +131,21 @@ async function removePlugin() {
 }
 </script>
 <template>
-  <SPageHeader title="插件" :count="store.plugins.length">
-    <SButton v-if="tab === 'external'" icon="upload" :disabled="busy" @click="openImport">导入</SButton>
-    <RouterLink class="button" to="/functions">能力</RouterLink>
-  </SPageHeader>
-  <STabs v-model="tab" :items="tabs" />
   <div class="page-toolbar">
     <div class="search-field">
       <UiIcon name="search" :size="17" />
       <SInput v-model="search" placeholder="搜索插件" aria-label="搜索插件" />
     </div>
+    <SButton icon="upload" :disabled="busy" @click="openImport">导入</SButton>
   </div>
-  <div class="plugin-grid">
-    <section v-for="plugin in plugins" :key="plugin.name" class="plugin-card">
+  <div v-for="group in groups" :key="group.id" class="plugin-section">
+    <button v-if="group.id === 'builtin'" class="plugin-section-toggle" type="button" :aria-expanded="builtinsOpen" @click="builtinsOpen = !builtinsOpen">
+      <UiIcon name="right" :size="16" :class="{ expanded: builtinsOpen }" />
+      <strong>{{ group.label }}</strong><span class="plugin-section-count">{{ group.items.length }}</span>
+    </button>
+    <div v-else class="plugin-section-heading"><strong>{{ group.label }}</strong><span class="plugin-section-count">{{ group.items.length }}</span></div>
+    <div v-if="group.id !== 'builtin' || builtinsOpen" class="plugin-grid">
+    <section v-for="plugin in group.items" :key="plugin.name" class="plugin-card">
       <div class="plugin-card-top">
         <span class="plugin-icon"><UiIcon :name="plugin.icon || 'plugins'" :size="26" /></span>
         <SSwitch
@@ -223,9 +212,10 @@ async function removePlugin() {
         </div>
       </div>
     </section>
+    </div>
+    <UiEmpty v-if="(group.id !== 'builtin' || builtinsOpen) && !group.items.length" label="暂无插件" />
   </div>
   <PluginSettingsDialog :plugin="settingsPlugin" @close="settingsPlugin = null" />
-  <UiEmpty v-if="!plugins.length" label="暂无插件" />
   <UiModal :open="importing" title="导入插件" @close="!busy && (importing = false)">
     <SFormItem label="插件包">
       <SInput
@@ -271,6 +261,15 @@ async function removePlugin() {
 </template>
 
 <style scoped>
+.plugin-section { margin-top: 22px; }
+.plugin-section-toggle, .plugin-section-heading { display:flex;align-items:center;gap:10px;width:100%;padding:14px 16px;margin:0 0 14px;border:1px solid var(--border);border-radius:12px;background:#fff;color:var(--ink);text-align:left;font:inherit; }
+.plugin-section-toggle { cursor:pointer; transition:border-color .18s, background .18s; }
+.plugin-section-toggle:hover { border-color:#c9c1e8;background:#fcfbff; }
+.plugin-section-toggle svg { color:var(--accent);transition:transform .2s ease; }
+.plugin-section-toggle svg.expanded { transform:rotate(90deg); }
+.plugin-section-heading { border:0;background:transparent;padding:8px 0; }
+.plugin-section-count { margin-left:auto;color:var(--muted);font-size:12px; }
+
 .plugin-name-row {
   display: flex;
   align-items: center;

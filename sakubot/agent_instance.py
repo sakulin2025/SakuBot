@@ -10,6 +10,7 @@ import jsonschema
 
 from .plugin import Invocation, Tool, temporary_messages
 from .personas import managed_persona
+from .store import encode
 
 
 _CURRENT_AGENT = ContextVar("sakubot_current_agent", default=None)
@@ -294,6 +295,7 @@ class AgentInstance:
             inv = Invocation(run_id, target, actor=invocation.actor if invocation else "",
                 task_id=invocation.task_id if invocation else "", agent_id=self.id, instance=self)
             inv.metadata["data"] = copy.deepcopy(metadata or {})
+            inv.metadata['wake_goal'] = goal
             profile = self.runtime.prepare_agent(inv)
             system = profile["prompt"] + "\nAgent：" + profile["name"] + "\n职责：" + profile["description"]
             if instructions:
@@ -306,7 +308,7 @@ class AgentInstance:
             if context:
                 messages.append({"role": "user", "content": str(context)})
             messages.append({"role": "user", "content": goal})
-            self.runtime.store.execute("INSERT INTO runs VALUES (?,NULL,?,NULL,'running','{}','')", (run_id, time.time()))
+            self.runtime.store.execute("INSERT INTO runs VALUES (?,NULL,?,NULL,'running',?,'')", (run_id, time.time(), encode({'agent_id': self.id, 'wake_goal': goal, 'agent_profile': {'name': profile['name']}})))
             job = asyncio.current_task()
             self.runtime.agent_jobs.setdefault(self.id, set()).add(job)
             try:

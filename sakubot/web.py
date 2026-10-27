@@ -200,10 +200,42 @@ async def setup():
 
 @app.get("/api/events", dependencies=[Depends(authorize)])
 async def events(before: int = 0, limit: int = Query(50, ge=1, le=100), status: str = "", query: str = "", kind: str = ""):
-    rows = store.rows("""SELECT * FROM events WHERE id<? AND (?='' OR status=?)
+    rows = store.rows("""SELECT events.*, coalesce((SELECT r.id FROM runs r WHERE r.event_id=events.id ORDER BY r.started DESC LIMIT 1),'') AS run_id FROM events WHERE id<? AND (?='' OR status=?)
       AND instr(text,?)>0 AND (?='' OR kind=?) ORDER BY id DESC LIMIT ?""",
       (before or 9223372036854775807, status, status, query, kind, kind, limit))
     return {"items": rows, "next_before": rows[-1]["id"] if rows else None}
+
+
+@app.get('/api/wake-log', dependencies=[Depends(authorize)])
+async def wake_log(before: str = '', limit: int = Query(30, ge=1, le=100), status: str = '', query: str = ''):
+    try:
+        cursor = json.loads(before) if before else None
+        if cursor is not None and (not isinstance(cursor, list) or len(cursor) != 2 or not isinstance(cursor[0], (int, float)) or not isinstance(cursor[1], str)):
+            raise ValueError()
+    except (ValueError, TypeError):
+        raise ValueError('分页游标无效') from None
+    rows = store.rows("""SELECT * FROM (
+        SELECT e.id, e.uid, e.at, e.kind, e.source, e.actor, e.label, e.target, e.text, e.meta, e.status,
+          e.priority, e.expires, e.error, 'e:' || e.id AS sort_key,
+          coalesce((SELECT r.id FROM runs r WHERE r.event_id=e.id ORDER BY r.started DESC LIMIT 1),'') AS run_id
+        FROM events e WHERE e.kind='wake'
+        UNION ALL
+        SELECT 'agent:' || r.id AS id, 'agent:' || r.id AS uid, r.started AS at, 'wake' AS kind,
+          'agent-instance' AS source, '' AS actor,
+          coalesce(json_extract(r.trace,'$.agent_profile.name'), json_extract(r.trace,'$.agent_id'), 'Agent') AS label,
+          coalesce(json_extract(r.trace,'$.agent_id'),'') AS target,
+          coalesce(json_extract(r.trace,'$.wake_goal'),'') AS text, '{}' AS meta, r.status,
+          0 AS priority, 0 AS expires, r.error, 'r:' || r.id AS sort_key, r.id AS run_id
+        FROM runs r WHERE r.event_id IS NULL AND json_valid(r.trace)
+      ) WHERE (?='' OR status=?) AND (instr(text,?)>0 OR instr(label,?)>0 OR instr(target,?)>0)
+        AND (? IS NULL OR at<? OR (at=? AND sort_key<?))
+      ORDER BY at DESC, sort_key DESC LIMIT ?""",
+        (status, status, query, query, query, cursor[0] if cursor else None, cursor[0] if cursor else None,
+         cursor[0] if cursor else None, cursor[1] if cursor else '', limit))
+    next_before = json.dumps([rows[-1]['at'], rows[-1]['sort_key']], separators=(',', ':')) if rows else None
+    for row in rows:
+        row.pop('sort_key', None)
+    return {'items': rows, 'next_before': next_before}
 
 
 @app.post("/api/events", dependencies=[Depends(authorize)])

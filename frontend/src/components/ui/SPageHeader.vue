@@ -2,12 +2,8 @@
 defineProps<{ title: string; count?: number }>()
 </script>
 <template>
-  <div class="page-heading s-page-header">
-    <div class="heading-title">
-      <h1>{{ title }}</h1>
-      <span v-if="count !== undefined" class="heading-count">{{ count }}</span>
-    </div>
-    <div v-if="$slots.default" class="heading-actions"><slot /></div>
+  <div v-if="$slots.default" class="page-heading s-page-header">
+    <div class="heading-actions"><slot /></div>
   </div>
 </template>
 
@@ -63,8 +59,13 @@ defineProps<{ title: string; count?: number }>()
     min-height: 33px;
   }
 }
+.page-heading:not(:has(.heading-title)) {
+  justify-content: flex-end;
+  min-height: 0;
+  margin-bottom: 16px;
+}
 .s-page-header {
-  margin-bottom: 24px;
+  margin-bottom: 16px;
 }
 .heading-count {
   border-radius: 8px;

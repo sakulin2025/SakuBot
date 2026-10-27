@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import copy
 import inspect
 import json
 import time
@@ -321,9 +322,12 @@ class Runtime:
                 self.conversation.process('model.started', request_id=request_id, run_id=inv.run_id, agent_id=inv.agent_id, step=step + 1)
             async def delta(text):
                 self.conversation.process('model.delta', request_id=request_id, run_id=inv.run_id, agent_id=inv.agent_id, text=text)
+            def capture_request(payload):
+                inv.metadata.setdefault('api_requests', []).append({'step': step + 1, 'at': time.time(), 'body': copy.deepcopy(payload)})
+                self.save_trace(inv, messages, usage)
             try:
                 message, used = await self.model.complete(request_messages, tools, model_id=inv.model_id,
-                    on_delta=delta if inv.agent_id == 'main' else None)
+                    on_delta=delta if inv.agent_id == 'main' else None, on_request=capture_request)
                 if inv.agent_id == 'main':
                     self.conversation.process('model.completed', request_id=request_id, run_id=inv.run_id, agent_id=inv.agent_id)
             except BaseException as exc:
@@ -361,6 +365,7 @@ class Runtime:
         self.store.execute("UPDATE runs SET trace=? WHERE id=?", (encode({"messages": messages, "usage": usage,
             "temporary_contexts": inv.metadata.get("temporary_contexts", []),
             "function_snapshots": inv.metadata.get("function_snapshots", []), "compressions": inv.metadata.get("compressions", []),
+            "api_requests": inv.metadata.get("api_requests", []), "wake_goal": inv.metadata.get("wake_goal", ""),
             "persona_id": inv.persona_id, "agent_id": inv.agent_id, "model_id": inv.model_id,
             "instance_id": inv.instance.generation if inv.instance else "",
             "agent_profile": {key: value for key, value in inv.metadata.get("agent_profile", {}).items() if key != "prompt" and not key.startswith("_")}}), inv.run_id))

@@ -11,7 +11,7 @@ class Model:
     async def close(self):
         await self.client.aclose()
 
-    async def complete(self, messages, tools=None, lightweight=False, model_id=None, output_tokens=None, on_delta=None):
+    async def complete(self, messages, tools=None, lightweight=False, model_id=None, output_tokens=None, on_delta=None, on_request=None):
         provider, model = self.settings.selected_model(lightweight, model_id=model_id)
         if provider is None:
             raise RuntimeError("未选择已启用的文本模型")
@@ -31,6 +31,8 @@ class Model:
         else:
             payload.pop("tool_choice", None)
             payload.pop("parallel_tool_calls", None)
+        if on_request is not None:
+            on_request(payload)
         if on_delta is not None:
             return await self.stream(provider, model, payload, on_delta)
         try:

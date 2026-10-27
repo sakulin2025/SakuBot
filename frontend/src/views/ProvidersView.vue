@@ -84,11 +84,6 @@ async function remove() {
 </script>
 <template>
   <div class="page-heading">
-    <div v-if="!embedded" class="heading-title">
-      <span class="page-kicker">Agent</span>
-      <h1>供应商</h1>
-      <span class="heading-count">{{ store.config?.providers.length || 0 }}</span>
-    </div>
     <SButton class="button primary" @click="edit()">
       <UiIcon name="plus" :size="17" />
       新增供应商

@@ -118,40 +118,16 @@ watch(() => store.status?.registry_revision, load)
     </div>
     <SButton :loading="loading" @click="load">刷新</SButton>
   </div>
-  <SCard class="table-surface">
-    <div class="table-scroll">
-      <STable class="skills-table">
-        <colgroup>
-          <col class="skill-name-column" />
-          <col />
-          <col class="skill-actions-column" />
-        </colgroup>
-        <thead>
-          <tr>
-            <th>技能</th>
-            <th>描述</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="row in filtered" :key="row.id">
-            <td>
-              <div class="skill-id mono">
-                <span class="skill-source">{{ row.source }}.</span>
-                <strong>{{ row.id.slice(row.source.length + 1) }}</strong>
-              </div>
-              <span class="cell-sub">{{ row.name }}</span>
-            </td>
-            <td>
-              <div class="skill-description">{{ row.description }}</div>
-            </td>
-            <td><SButton variant="text" :disabled="busy" @click="inspect(row)">详情</SButton></td>
-          </tr>
-        </tbody>
-      </STable>
-    </div>
-    <UiEmpty v-if="!filtered.length" label="暂无技能" icon="memory" />
-  </SCard>
+  <div v-if="filtered.length" class="skill-grid">
+    <button v-for="row in filtered" :key="row.id" type="button" class="skill-card" :disabled="busy" @click="inspect(row)">
+      <div class="skill-card-top"><span class="skill-icon"><UiIcon name="memory" :size="21" /></span><span class="skill-source-chip">{{ row.source }}</span></div>
+      <strong class="skill-card-name">{{ row.name }}</strong>
+      <span class="skill-card-id mono">{{ row.id }}</span>
+      <span class="skill-description">{{ row.description || '—' }}</span>
+      <span class="skill-card-action"><UiIcon name="right" :size="15" /></span>
+    </button>
+  </div>
+  <UiEmpty v-else label="暂无技能" icon="memory" />
   <div v-for="item in invalid" :key="item.id" class="form-error">{{ item.id }} · {{ item.error }}</div>
   <UiModal :open="!!detail" :title="detail?.id || '技能'" wide @close="detail = null">
     <STabs
@@ -193,6 +169,18 @@ watch(() => store.status?.registry_revision, load)
   </UiModal>
 </template>
 <style scoped>
+.skill-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(245px,1fr));gap:16px; }
+.skill-card { position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:9px;min-width:0;min-height:180px;padding:20px;text-align:left;border:1px solid var(--border);border-radius:15px;background:#fff;color:var(--ink);font:inherit;cursor:pointer;transition:transform .2s,border-color .2s,box-shadow .2s; }
+.skill-card:hover:not(:disabled) { transform:translateY(-3px);border-color:#d5cdf1;box-shadow:0 10px 26px #493b8610; }
+.skill-card:focus-visible { outline:0;box-shadow:var(--s-ring); }
+.skill-card-top { display:flex;align-items:center;justify-content:space-between;width:100%;margin-bottom:3px; }
+.skill-icon { display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:#f0edfc;color:var(--accent); }
+.skill-source-chip { max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:4px 8px;border-radius:7px;background:var(--canvas);color:var(--muted);font-size:11px; }
+.skill-card-name { font-size:14px;overflow-wrap:anywhere; }
+.skill-card-id { font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;max-width:100%;white-space:nowrap; }
+.skill-card-action { position:absolute;right:18px;bottom:16px;color:var(--accent); }
+.skill-card .skill-description { padding-right:18px;color:var(--muted);font-size:12px; }
+
 .skills-table {
   table-layout: fixed;
   min-width: 640px;

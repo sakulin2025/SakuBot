@@ -8,6 +8,7 @@ import UiBadge from '../components/UiBadge.vue'
 import UiModal from '../components/UiModal.vue'
 import UiEmpty from '../components/UiEmpty.vue'
 import type { Persona } from '../types'
+defineProps<{ embedded?: boolean }>()
 const store = useConsole()
 const query = ref('')
 const editing = ref(false)
@@ -79,7 +80,7 @@ async function remove() {
       <UiIcon name="search" :size="17" />
       <SInput v-model="query" placeholder="搜索人格" aria-label="搜索人格" />
     </div>
-    <RouterLink to="/agents" class="button">Agent 管理</RouterLink>
+    <RouterLink v-if="!embedded" to="/agents" class="button">Agent 管理</RouterLink>
   </div>
   <div class="plugin-grid">
     <section v-for="persona in items" :key="persona.id" class="plugin-card">

@@ -1,0 +1,11 @@
+services:
+  sakubot:
+    image: sakulin/sakubot:latest
+    restart: unless-stopped
+    ports:
+      - "6190:6190"
+    volumes:
+      - sakubot_data:/data
+
+volumes:
+  sakubot_data:

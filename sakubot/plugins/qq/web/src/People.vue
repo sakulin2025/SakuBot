@@ -32,13 +32,6 @@ async function load() {
 onMounted(load);
 </script>
 <template>
-  <div class="page-heading">
-    <div class="heading-title">
-      <span class="page-kicker">QQ</span>
-      <h1>人物</h1>
-      <span class="heading-count">{{ rows.length }}</span>
-    </div>
-  </div>
   <SCard class="surface">
     <div class="table-toolbar">
       <div class="search-field">

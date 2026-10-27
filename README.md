@@ -5,30 +5,24 @@
 ## 启动
 
 ```sh
-cd ~/KeepCoding/sakubot
-./start.sh
+docker compose up -d
 ```
 
 | 项目 | 地址 / 文件 |
 | --- | --- |
-| 管理入口 | https://sakubot.sakulin.top |
+| 管理入口 | http://localhost:6190 |
 | 监听 | 0.0.0.0:6190 |
 | 令牌 | data/admin_token |
 | 配置 | data/config.json |
 | QQ 配置 | data/plugin_data/qq/config.json |
 | 数据库 | data/sakubot.sqlite3 |
 | 外部插件 | data/plugins/名字.py 或 data/plugins/名字/__init__.py |
-| 部署 | Docker Compose / local_services_network |
+| 部署 | Docker Compose |
 | 基础镜像 | python:3.13-slim / node:alpine3.23 |
 
-源码与运行数据分开管理：
+Compose 使用 Docker 卷 `sakubot_data` 持久化容器内的 `/data`。首次启动后可用 `docker compose exec sakubot cat /data/admin_token` 查看管理令牌。当前发布的镜像支持 Linux ARM64。
 
-- 源码：`~/KeepCoding/sakubot`
-- Compose：`~/ContainerService/napcat/docker-compose.yml` 中的 `sakubot` 服务
-- 运行数据：`~/ContainerService/napcat/data/sakubot`，容器内路径仍为 `/data`
-- 项目内不再提供 Compose 文件；`./start.sh` 仅构建、启动 SakuBot，不操作其他服务。可通过 `SAKUBOT_COMPOSE_FILE` 指定部署文件。
-- 在 napcat 目录可执行 `docker compose up -d --no-deps sakubot`、`docker compose stop sakubot`。同一 Compose 中还有 NapCat 与 AstrBot，`docker compose down` 会一起停止它们。
-- 下文 `data/` 均表示部署目录的 `data/sakubot/`，不是源码目录。备份位于源码 `backups/` 或部署目录 `backups/`，不应加入版本库。
+下文 `data/` 指容器内的 `/data/`。
 
 ## 配置
 

@@ -4,10 +4,12 @@ import UiIcon from '../components/UiIcon.vue'
 import WorkbenchField from './WorkbenchField.vue'
 import WorkbenchData from './WorkbenchData.vue'
 import { usePluginHost } from './index'
+const props = defineProps<{ filters?: Record<string, { label: string; field: string; value: string }> }>()
 const host = usePluginHost()
 const state = ref<any>({ sections: [], data: {} })
 const tab = ref('')
 const query = ref('')
+const showExcluded = ref(false)
 const busy = ref(false)
 const loading = ref(true)
 const page = ref(1)
@@ -20,9 +22,11 @@ const currentKey = ref('')
 const draft = reactive<Record<string, any>>({})
 const section = computed<any>(() => state.value.sections.find((x: any) => x.id === tab.value) || {})
 const rows = computed(() =>
-  (state.value.data[tab.value] || []).filter((x: any) =>
-    JSON.stringify(x).toLowerCase().includes(query.value.toLowerCase()),
-  ),
+  (state.value.data[tab.value] || []).filter((x: any) => {
+    const filter = props.filters?.[tab.value]
+    return (!filter || showExcluded.value || x[filter.field] !== filter.value) &&
+      JSON.stringify(x).toLowerCase().includes(query.value.toLowerCase())
+  }),
 )
 function options(field: any) {
   return field.options_from
@@ -129,7 +133,7 @@ const tabs = computed(() =>
     count: Array.isArray(state.value.data[x.id]) ? state.value.data[x.id].length : undefined,
   })),
 )
-watch([tab, query], () => {
+watch([tab, query, showExcluded], () => {
   page.value = 1
 })
 watch(pages, (n) => {
@@ -187,6 +191,9 @@ onMounted(load)
               <span v-if="section.kind === 'table'" class="wb-count">{{ rows.length }}</span>
             </div>
             <div class="wb-toolbar-actions">
+              <label v-if="props.filters?.[tab]" class="wb-filter">
+                <SCheckbox v-model="showExcluded" />{{ props.filters[tab].label }}
+              </label>
               <div v-if="section.kind === 'table'" class="wb-search">
                 <UiIcon name="search" :size="16" />
                 <SInput
@@ -399,6 +406,15 @@ onMounted(load)
   </main>
 </template>
 <style scoped>
+.wb-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  color: var(--ink);
+  font-size: 12px;
+  cursor: pointer;
+}
 .wb-page {
   --wb-soft: color-mix(in srgb, var(--accent) 7%, white);
   padding-bottom: 20px;
