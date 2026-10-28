@@ -264,34 +264,9 @@ state = self.cancel_wake(queued["id"])
 
 通用插件需要自己维护请求 ID、Future 与答复接口，并在取消时清理。不能在主 Agent 某个工具里等待“主 Agent 下轮答复”，那会阻塞自己的事件队列。重启后原协作执行不能从 Python 栈恢复，应结束旧等待并展示中断状态。
 
-## 8. 消息订阅与历史
+## 8. QQ 消息
 
-```python
-async def start(self):
-    self.subscribe_messages(["Group:12345", "Private:67890"], self.on_message)
-
-async def on_message(self, message):
-    history = self.get_messages(message["session_id"], limit=20)
-    # 由插件自己的条件判断是否需要唤醒。
-    if "备份失败" in message["text"]:
-        await self.emit(
-            "wake",
-            "请处理备份失败消息：" + message["text"],
-            uid="notebook:backup:" + message["uid"],
-        )
-```
-
-- `subscribe_messages(sessions, callback)` 增加订阅，返回解绑函数。
-- `set_message_subscriptions(sessions, callback)` 先清除当前插件全部订阅再注册，适用于动态配置。
-- 会话格式为 `Group:群号`、`Private:QQ号`，大小写会规范化。
-- `get_messages(session, limit=20, before=None)` 返回时间正序，条数范围 1～500。
-- `before` 为框架消息 ID，不含该条。并发消息可能已到达，若需精确截至触发消息，可用 `before=message["id"]` 取此前记录，再按条数补入触发消息。
-- 框架不会回放订阅前的历史事件；订阅处理串行执行，回调过慢会积压。
-- 停用、删除或重载会自动解绑订阅。
-
-消息包含 `id`、`uid`、`at`、`session_id`、`message_id`、`sender_id`、`sender_name`、`text`、`mentions`、`reply_to`、`parts`、`is_self`。`id` 是框架序号，`message_id` 是 QQ 消息 ID，不能混用。
-
-消息订阅接收框架预处理的入站消息；机器人自己的发送记录可通过历史接口读取，不会作为入站订阅再次分发。图片使用“消息处理”中指定的模型转为文字，语音当前只有占位，识别接口尚未实现。通过这个接口不会拿到原始 NapCat 包。
+QQ 插件负责接收、处理和归档 QQ 消息，`qq_recent` 函数按会话读取归档；所有 Agent 均通过插件函数查询。图片解读模型和语音识别设置位于 QQ 插件，语音识别尚未实现。普通消息不会自动加入主上下文。外部消息回应使用 QQ 插件内部订阅，不再使用框架消息接口。
 
 ## 9. 插件状态和配置持久化
 
@@ -313,7 +288,7 @@ def save_records(self, records):
 
 可选的同步 `context(self, invocation)` 能返回主 Agent 提示词中的插件上下文。它按人格可见插件筛选，整体有长度截断，应保持短小；不要返回协程或大列表。协作 Agent 的 `wake()` 不会自动调用此钩子，需要显式 `context=` 或 `inject()`。
 
-普通外部消息使用 `publish_message()` 归档和分发订阅，不要额外 emit context。平台通知和过程状态保留在插件状态或日志，通过查询工具按需读取。`context()`、`prompt_context()` 不应自动请求远端、注入设备目录、天气观测或后台历史；只放简短能力提示及用户明确要求常驻的内容。`emit('context', ...)` 本身就是显式写入主上下文，不能用作普通日志；`wake` 只用于用户配置的触发条件或当前任务确需处理的结果、求助。通知默认 `include_context=False`。已标记 `exclude_main` 或 `exclude_context` 的历史记录不进入主模型提示词或压缩摘要，仍可通过查询工具主动检索。
+平台插件自行归档普通外部消息，不要额外 emit context。平台通知和过程状态保留在插件状态或日志，通过查询工具按需读取。`context()`、`prompt_context()` 不应自动请求远端、注入设备目录、天气观测或后台历史；只放简短能力提示及用户明确要求常驻的内容。`emit('context', ...)` 本身就是显式写入主上下文，不能用作普通日志；`wake` 只用于用户配置的触发条件或当前任务确需处理的结果、求助。通知默认 `include_context=False`。已标记 `exclude_main` 或 `exclude_context` 的历史记录不进入主模型提示词或压缩摘要，仍可通过查询工具主动检索。
 
 ## 10. 管理 API 与可视化页面
 
@@ -450,7 +425,7 @@ export default defineConfig({
 
 ## 12. 当前边界
 
-已实现的是外部 Python 插件发现与加载、公共插件 API、动态工具与 Agent、消息订阅、预构建页面、即时启停、入口重载和外部插件删除。
+已实现的是外部 Python 插件发现与加载、公共插件 API、动态工具与 Agent、预构建页面、即时启停、入口重载和外部插件删除。
 
 以下能力尚未实现：
 
@@ -536,7 +511,7 @@ class Extension(Plugin):
         return {'response_id': response_id, 'sent': True}
 ```
 
-声明 ID 为 `<plugin_id>.<identifier>`。`receive_main()` 会以 `wake` 进入主对话，UID 在该源内去重。只应将用户希望交给主 Agent 的输入送入此接口；普通群消息继续用消息订阅。来源下线不会阻止网页发言或主 Agent 运行。可在运行时调用 `remove_conversation_source(identifier)` 撤销本插件的单个源，重新声明即可恢复。
+声明 ID 为 `<plugin_id>.<identifier>`。`receive_main()` 会以 `wake` 进入主对话，UID 在该源内去重。只应将用户希望交给主 Agent 的输入送入此接口；普通群消息由平台插件自行处理。来源下线不会阻止网页发言或主 Agent 运行。可在运行时调用 `remove_conversation_source(identifier)` 撤销本插件的单个源，重新声明即可恢复。
 
 运行设置 → 主对话：
 
@@ -623,20 +598,9 @@ self.delivery_adapter('message', self.send_notification,
 
 插件提供原始平台消息的解析器，框架只接收规范化记录：
 
-```python
-await self.publish_message({
-    'uid': 'device:message:42', 'at': time.time(), 'session_id': 'Device:123',
-    'message_id': '42', 'sender_id': '123', 'sender_name': '设备',
-    'text': '状态已更新', 'parts': [{'type': 'text', 'text': '状态已更新'}],
-    'mentions': [], 'reply_to': '', 'is_self': False,
-    'is_owner': False, 'is_main_source': False, 'mentions_self': False,
-    'identity': {'self_id': 'bot', 'owner_id': 'owner'},
-})
-```
+QQ 插件自行处理、归档消息及订阅，并提供 `qq_recent` 查询工具。
 
-`publish_message` 为记录补充插件 source，框架保存并分发经过字段筛选的规范化消息。原始包不传给订阅插件。`is_owner`、`is_main_source`、`mentions_self` 由消息源判断，外部消息回应插件据此工作，无需读取另一个插件的配置或连接对象。图片解读和语音识别接口仍是框架消息处理服务。订阅和查询沿用 `subscribe_messages` / `get_messages`。
-
-一般消息订阅不自动进入主上下文。源应通过 `receive_main` 明确提交主对话输入；平台旁路记录可设置 `meta.exclude_main=true`、`meta.exclude_context=true`，核心不再按平台名筛选。`meta.source_label` 可指定主对话中的来源名称。现有 QQ 历史已通过一次性迁移补充元数据。
+普通平台消息不自动进入主上下文。源应通过 `receive_main` 明确提交主对话输入；平台旁路记录可设置 `meta.exclude_main=true`、`meta.exclude_context=true`，核心不再按平台名筛选。`meta.source_label` 可指定主对话中的来源名称。现有 QQ 历史已通过一次性迁移补充元数据。
 
 数据层只初始化核心表。memory、timers、team、qq 分别初始化自己的业务表，沿用旧表名以保留数据；插件停用后不删除持久化数据。`people_lookup` 归 QQ 插件，长期记忆不依赖 QQ 人物表。工作空间文件服务和技能解析仍是框架通用服务，其工具、页面和模型使用指引由插件提供。
 
@@ -720,3 +684,11 @@ class Extension(Plugin):
 运行时可用 `self.settings_form(fields, validate=callback, on_saved=callback)` 声明或扩展设置。先通过 `self.configure(defaults, secrets=(...))` 创建配置；自定义 validate 接收合并后的候选配置，可以异步执行，失败抛 ValueError；on_saved 用于刷新缓存。停用时只执行清单中可声明的验证，代码回调在启用后生效。清单字段与运行时字段按 key 合并。已有 `management()` 的 config 表单自动接入该入口，管理页面不重复显示配置标签。
 
 前后端校验字段类型、必填项、整数范围、select 选项与动态引用、长度和 pattern；HTTP 地址拒绝内嵌凭据、查询参数与片段。secret 不回传原值，留空保留已有值。保存成功更新内存配置与插件状态，不重载插件。表单字段支持 placeholder，解释文字不单独占用页面空间。
+# 主 Agent 单轮结果投递
+
+插件唤醒主 Agent 时可传入 `send_result_to_source=False`，该轮的过程和最终响应仍在网页主对话中可见，但不会自动投递到主对话源。此时本轮会提供 `report_to_owner` 临时函数，调用后该轮后续过程和最终结果恢复投递。默认值为 `True`，每轮独立；QQ 外部消息回应和网页主对话发起的唤醒默认关闭投递。
+
+
+## 长期记忆与语义召回
+
+系统记忆插件需配置支持 OpenAI 兼容 `/embeddings` 接口的供应商和向量模型 ID。未配置时语义记忆不可用，已有记忆保留；配置或更换模型后插件后台为已有记录建立对应索引。模型可使用 `memory_write` 保存事实、`memory_search` 语义检索；唤醒时插件将相关结果作为当前轮临时上下文注入，其他轮不会继承。主人网页或 QQ 主对话完成后，后台使用文本模型提取明确、稳定的事实，不采集密码等凭据。可关闭自动记忆。上传的 UTF-8 TXT、Markdown、可提取文字的 PDF 和 DOCX 会分块索引；扫描版 PDF 不含 OCR。

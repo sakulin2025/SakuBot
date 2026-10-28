@@ -8,12 +8,11 @@ import uuid
 from urllib.parse import urlsplit
 
 from .model import Model
-from .plugin import Invocation, Registry, temporary_messages
+from .plugin import Invocation, Registry, Tool, object_schema, temporary_messages
 from .store import encode
 from .components import required
 from .personas import Personas
 from .agents import Agents
-from .messages import Messages
 from .compression import Compression
 from .workspace import Workspace
 from .skills import Skills
@@ -49,7 +48,6 @@ class Runtime:
         self.workspace = Workspace(config.root / 'workspace', store)
         self.skills = Skills(self)
         self.agents = Agents(self)
-        self.messages = Messages(self)
         self.compression = Compression(self)
         self.personas.in_use = self.agents.persona_in_use
         self.personas.changed = self.agents.changed
@@ -141,7 +139,6 @@ class Runtime:
         await self.conversation.stop()
         await self.registry.stop()
         await self.workspace.shell_runner.stop()
-        await self.messages.stop()
         self.agents.reset()
         agent_jobs = {task for tasks in self.agent_jobs.values() for task in tasks if task is not asyncio.current_task()}
         for task in agent_jobs:
@@ -161,13 +158,15 @@ class Runtime:
         return target
 
     async def emit(self, kind, source, content, *, actor="", label="", target="", meta=None,
-                   uid=None, priority=20, expires=0, include_context=False, temporary_context=""):
+                   uid=None, priority=20, expires=0, include_context=False, temporary_context="", send_result_to_source=True):
         if kind not in ("context", "wake", "notify"):
             raise ValueError("事件类型仅支持 context / wake / notify")
         if not isinstance(content, str) or len(content) > 200000:
             raise ValueError("事件正文必须为文本，最多200000字符")
         target = self.main_target() if not target or target == 'owner' else target
         self.validate_target(target)
+        if not isinstance(send_result_to_source, bool) or (kind != 'wake' and not send_result_to_source):
+            raise ValueError('结果投递设置仅支持 wake 布尔值')
         uid = uid or uuid.uuid4().hex
         if kind == 'notify':
             if not content.strip():
@@ -185,6 +184,8 @@ class Runtime:
             if kind != 'wake':
                 raise ValueError('临时上下文仅用于 wake')
             meta = {**(meta or {}), 'temporary_context': temporary_context}
+        if kind == 'wake':
+            meta = {**(meta or {}), 'send_result_to_source': send_result_to_source}
         row = self.store.event(kind, source, content, actor=actor, label=label, target=target,
             meta=meta, uid=uid, priority=priority, expires=expires)
         self.changed.set()
@@ -206,6 +207,7 @@ class Runtime:
 
     async def deliver_reply(self, invocation, result):
         await self.conversation.respond(result, run_id=invocation.run_id,
+            send_to_source=invocation.send_result_to_source,
             delivery_target=invocation.metadata.get('reply_target', ''),
             response_id=invocation.metadata.get('response_id', invocation.run_id + ':final'), exclude=[source for source, texts in invocation.metadata.get('sent_source_texts', {}).items() if result in texts])
 
@@ -220,6 +222,19 @@ class Runtime:
     async def run_agent(self, identifier, goal, *, invocation, context="", run_id=None):
         owner = self.agents.raw(identifier)["plugin_id"]
         return await self.agents.get(identifier, owner).wake(goal, invocation=invocation, context=context, run_id=run_id)
+
+    async def recall_for_wake(self, inv, query):
+        visible = self.registry.visible_plugin_ids(inv)
+        for plugin in self.registry.plugins:
+            callback = getattr(plugin, 'recall_for_wake', None)
+            if plugin.id not in visible or not callback:
+                continue
+            try:
+                context = await asyncio.wait_for(callback(inv, query), timeout=15)
+                if context:
+                    inv.temporary_context.extend(temporary_messages(context))
+            except Exception as exc:
+                self.store.log('warning', plugin.id, 'memory.recall.failed', run_id=inv.run_id, data={'error': type(exc).__name__})
 
     def prompt(self, event, inv):
         profile = self.prepare_agent(inv)
@@ -243,7 +258,7 @@ class Runtime:
                 continue
             item = {key: row[key] for key in ("id", "at", "source", "actor", "label", "target")}
             item["text"] = row["text"]
-            item["metadata"] = {key: value for key, value in metadata.items() if key not in ("segments", "raw", "packet", "temporary_context")}
+            item["metadata"] = {key: value for key, value in metadata.items() if key not in ("segments", "raw", "packet", "temporary_context", "send_result_to_source")}
             if 'injected_context' in item['metadata']:
                 item['metadata']['injected_context'] = [x for x in item['metadata']['injected_context'] if not x.get('_temporary')]
             content = encode(item)
@@ -340,8 +355,10 @@ class Runtime:
                 data={"step": step + 1, "duration_ms": round((time.monotonic() - started) * 1000), "usage": used})
             usage.append(used)
             messages.append(message)
-            self.save_trace(inv, messages, usage)
             calls = message.get("tool_calls") or []
+            if not calls:
+                inv.metadata['result'] = message.get('content') or ''
+            self.save_trace(inv, messages, usage)
             if not calls:
                 return message.get("content") or "", usage
             for call in calls:
@@ -366,6 +383,7 @@ class Runtime:
             "temporary_contexts": inv.metadata.get("temporary_contexts", []),
             "function_snapshots": inv.metadata.get("function_snapshots", []), "compressions": inv.metadata.get("compressions", []),
             "api_requests": inv.metadata.get("api_requests", []), "wake_goal": inv.metadata.get("wake_goal", ""),
+            **({"result": inv.metadata["result"]} if "result" in inv.metadata else {}),
             "persona_id": inv.persona_id, "agent_id": inv.agent_id, "model_id": inv.model_id,
             "instance_id": inv.instance.generation if inv.instance else "",
             "agent_profile": {key: value for key, value in inv.metadata.get("agent_profile", {}).items() if key != "prompt" and not key.startswith("_")}}), inv.run_id))
@@ -379,22 +397,45 @@ class Runtime:
                     await asyncio.wait_for(self.changed.wait(), 1)
                 continue
             run_id = uuid.uuid4().hex
-            reply_target = json.loads(event['meta']).get('reply_target', '')
-            self.current_run = {"id": run_id, "event_id": event["id"], "started": time.time(), 'reply_target': reply_target}
+            event_meta = json.loads(event['meta'])
+            reply_target = event_meta.get('reply_target', '')
+            send_result_to_source = event_meta.get('send_result_to_source', True) is not False
+            self.current_run = {"id": run_id, "event_id": event["id"], "started": time.time(), 'reply_target': reply_target, 'send_result_to_source': send_result_to_source}
             self.store.execute("INSERT INTO runs VALUES (?,?,?,NULL,'running','{}','')", (run_id, event["id"], time.time()))
             inv = Invocation(run_id, event["target"], event["actor"], instance=self.agents.get("main"))
+            inv.send_result_to_source = send_result_to_source
+            if not send_result_to_source:
+                async def report_owner(invocation, arguments):
+                    invocation.send_result_to_source = True
+                    if self.current_run and self.current_run['id'] == invocation.run_id:
+                        self.current_run['send_result_to_source'] = True
+                    return {'ok': True, 'message': '本轮最终结果将发送给主人'}
+                inv.temporary_tools['report_to_owner'] = Tool('report_to_owner', '需要向主人报告：当本轮结果需要通过主对话源发送给主人时调用；调用后本轮最终回答将发送给主人。无需发送时不调用。', object_schema(), report_owner)
             inv.metadata['reply_target'] = reply_target
             self.conversation.process("run.started", run_id=run_id, event_id=event["id"], agent_id="main")
             self.store.log("info", "agent", "agent.started", run_id=run_id, data={"event_id": event["id"], "agent_id": "main"})
             try:
                 self.prepare_agent(inv)
                 await inv.instance.dispatch("started", {"run_id": run_id, "invocation": inv})
-                result, usage = await asyncio.wait_for(self.agent_loop(self.prompt(event, inv), inv), 600)
+                messages = self.prompt(event, inv)
+                recall_parts = [event['text']]
+                for item in event_meta.get('injected_context', []):
+                    if isinstance(item, dict) and isinstance(item.get('content'), str):
+                        recall_parts.append(item['content'][:12000])
+                await self.recall_for_wake(inv, '\n'.join(recall_parts)[:20000])
+                result, usage = await asyncio.wait_for(self.agent_loop(messages, inv), 600)
                 if result.strip():
                     await self.deliver_reply(inv, result)
                 self.store.execute("UPDATE events SET status='done' WHERE id=?", (event["id"],))
                 self.store.execute("UPDATE runs SET status='done', finished=? WHERE id=?", (time.time(), run_id))
                 await inv.instance.dispatch("completed", {"run_id": run_id, "result": result, "usage": usage, "invocation": inv})
+                for plugin in self.registry.plugins:
+                    callback = getattr(plugin, 'observe_main_wake', None)
+                    if callback and plugin.id in self.registry.visible_plugin_ids(inv):
+                        try:
+                            callback(event, inv, result)
+                        except Exception as exc:
+                            self.store.log('warning', plugin.id, 'memory.observe.failed', run_id=run_id, data={'error': type(exc).__name__})
                 self.error = ""
                 self.store.log("info", "agent", "agent.completed", run_id=run_id)
                 self.conversation.process("run.completed", run_id=run_id, event_id=event["id"], agent_id="main")
@@ -415,10 +456,44 @@ class Runtime:
             finally:
                 self.current_run = None
 
+    def main_context_usage(self):
+        _, model = self.config.settings.selected_model()
+        if not model or not model.effective_window():
+            return None
+        cutoff = self.chat.boundary()['cutoff']
+        row = self.store.one("SELECT trace FROM runs WHERE event_id>? ORDER BY started DESC LIMIT 1", (cutoff,))
+        if not row:
+            return None
+        try:
+            trace = json.loads(row['trace'])
+            if trace.get('model_id') != model.id:
+                return None
+            requests = trace.get('api_requests') or []
+            usages = trace.get('usage') or []
+            used = usages[-1].get('prompt_tokens') if usages and (not requests or len(usages) >= len(requests)) else None
+            estimated = not isinstance(used, (int, float)) or isinstance(used, bool) or used < 0
+            if estimated:
+                if not requests:
+                    return None
+                body = requests[-1]['body']
+                messages = copy.deepcopy(body.get('messages', []))
+                images = 0
+                for message in messages:
+                    if isinstance(message.get('content'), list):
+                        for index, part in enumerate(message['content']):
+                            if isinstance(part, dict) and part.get('type') == 'image_url':
+                                images += 1
+                                message['content'][index] = {'type': 'image_url', 'image_url': {'url': '<image>'}}
+                used = self.compression.estimate(messages, body.get('tools')) + images * 16384
+            return {'percent': round(used * 100 / model.effective_window(), 1), 'estimated': estimated}
+        except (ValueError, TypeError, KeyError, IndexError, AttributeError):
+            return None
+
     def status(self):
         return {"enabled": self.config.settings.enabled, "configured": self.config.settings.ready(),
                 "registry_revision": self.registry.revision, "agents_revision": self.agents.revision,
                 "main_session": "main",
+                "main_context_usage": self.main_context_usage(),
                 "running": self.current_run, "error": self.error,
                 "queue": self.store.rows("SELECT status,count(*) AS count FROM events WHERE kind='wake' GROUP BY status"),
                 "plugins": [{"name": plugin.id} for plugin in self.registry.plugins],

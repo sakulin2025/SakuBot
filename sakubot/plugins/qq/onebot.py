@@ -26,9 +26,9 @@ class OneBot:
         params = params or {}
         if action in ("get_group_msg_history", "get_friend_msg_history"):
             target = "Group:" + str(params.get("group_id", "")) if action == "get_group_msg_history" else "Private:" + str(params.get("user_id", ""))
-            return {"messages": self.runtime.messages.list(target, min(500, int(params.get("count", 20))))}
+            return {"messages": self.plugin.messages.list(target, min(500, int(params.get("count", 20))))}
         if action == "get_msg":
-            return self.runtime.messages.by_message_id(params.get("message_id", ""))
+            return self.plugin.messages.by_message_id(params.get("message_id", ""))
         if action == "get_forward_msg":
             return {"messages": []}
         return await self._call(action, params)

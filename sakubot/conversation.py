@@ -176,7 +176,7 @@ class Conversation:
             finally:
                 source['queue'].task_done()
 
-    async def respond(self, parts, *, run_id='', response_id=None, exclude=(), delivery_target=''):
+    async def respond(self, parts, *, run_id='', response_id=None, exclude=(), delivery_target='', send_to_source=True):
         if isinstance(parts, str):
             parts = [{'type': 'text', 'text': parts}]
         if not isinstance(parts, list) or not parts or len(parts) > 30:
@@ -198,6 +198,8 @@ class Conversation:
         self.runtime.store.event('context', 'agent', text, target='main', uid=uid,
             meta={'role': 'assistant', 'run_id': run_id, 'response_id': response_id, 'parts': parts,
                 'delivery_target': delivery_target})
+        if not send_to_source:
+            return response_id
         if delivery_target:
             # Explicit destinations use plugin-owned adapters; the web receives the persisted response.
             for index, part in enumerate(parts):
@@ -213,6 +215,8 @@ class Conversation:
         if data.get('agent_id') != 'main':
             return
         current = self.runtime.current_run
+        if current and current['id'] == data.get('run_id') and not current.get('send_result_to_source', True):
+            return
         if current and current['id'] == data.get('run_id') and current.get('reply_target'):
             return
         category = 'stream' if kind.startswith('model.') else 'tool' if kind.startswith('tool.') else 'lifecycle'

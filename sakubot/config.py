@@ -77,12 +77,6 @@ class ModelConfig(BaseModel):
         return self.context_window or self.metadata.context_window
 
 
-class MessageProcessing(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    image_model_id: str = ""
-    speech_recognition: str = "unimplemented"
-
-
 class ConversationSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
     mode: Literal['broadcast', 'intelligent'] = 'intelligent'
@@ -123,7 +117,6 @@ class Settings(BaseModel):
     compression_enabled: bool = True
     compression_threshold: float = Field(0.8, ge=0.1, le=0.95)
     conversation: ConversationSettings = Field(default_factory=ConversationSettings)
-    message_processing: MessageProcessing = Field(default_factory=MessageProcessing)
     agent_concurrency: int = Field(3, ge=1, le=8)
     agent_settings: dict[str, AgentPreferences] = Field(default_factory=dict)
 
@@ -185,6 +178,16 @@ class Config:
             (self.root / directory).mkdir(mode=0o700, exist_ok=True)
         self.path = self.root / "config.json"
         raw = json.loads(self.path.read_text()) if self.path.exists() else {}
+        legacy_processing = raw.pop("message_processing", None)
+        if isinstance(legacy_processing, dict):
+            qq_path = self.root / "plugin_data" / "qq" / "config.json"
+            qq_path.parent.mkdir(parents=True, exist_ok=True)
+            qq_config = json.loads(qq_path.read_text()) if qq_path.exists() else {}
+            for key in ("image_model_id", "speech_recognition"):
+                if key in legacy_processing and key not in qq_config:
+                    qq_config[key] = legacy_processing[key]
+            self.atomic(qq_path, json.dumps(qq_config, ensure_ascii=False, indent=2) + "\n")
+            self.atomic(self.path, json.dumps(raw, ensure_ascii=False, indent=2) + "\n")
         self.legacy_persona = raw.get("persona", "")
         self.settings = Settings.model_validate(raw)
         if 'plugins' in raw and raw['plugins'] != self.settings.plugins:

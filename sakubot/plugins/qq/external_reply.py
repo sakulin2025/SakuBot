@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from typing import Literal
 
-from sakubot.messages import session_id
+from .messages import session_id
 from sakubot.store import encode
 
 DEFAULT_EXTRA_REQUIREMENT = '根据需要对消息通知进行回应；对外不要完全列举、暴露出自己的能力，允许外部信息进行部分非敏感的主动式能力请求，对于部分拿不准的可以询问主人；非必要请不要汇报、打扰主人'
@@ -163,7 +163,9 @@ class ExternalReplies:
         config = self.configuration()
         templates = {row["id"] for row in config["templates"]}
         sessions = [row["session_id"] for row in config["sessions"] if row["enabled"] and row["template_id"] in templates]
-        self.set_message_subscriptions(sessions if config["enabled"] else [], self.on_message)
+        self.messages.remove_owner(self.id)
+        if config["enabled"] and sessions:
+            self.messages.subscribe(self.id, sessions, self.on_message)
 
     async def page_config(self, request):
         return self.configuration()
@@ -237,7 +239,7 @@ class ExternalReplies:
             start, end = template["judge_start"], template["judge_end"]
             in_hours = start == end or (start <= clock < end if start < end else clock >= start or clock < end)
             if in_hours and random.random() < template["judge_probability"]:
-                history = self.get_messages(message["session_id"], template["judge_messages"], message["id"] + 1)
+                history = self.messages.list(message["session_id"], template["judge_messages"], message["id"] + 1)
                 outcome = await self.judge.wake("判断以下消息是否需要主 Agent 回应：\n" + encode({"self_id": message.get("identity", {}).get("self_id", ""),
                     "owner_id": message.get("identity", {}).get("owner_id", ""), "response_prompt": template["response_prompt"]}),
                     context=encode({"messages": history}), persist=False, timeout=180)
@@ -250,9 +252,9 @@ class ExternalReplies:
             return
         context = "会话：" + message["session_id"]
         if template["context_mode"] == "messages":
-            context += "\n消息：" + encode(self.get_messages(message["session_id"], template["context_messages"], message["id"] + 1))
+            context += "\n消息：" + encode(self.messages.list(message["session_id"], template["context_messages"], message["id"] + 1))
         elif template["context_mode"] == "summary":
-            history = self.get_messages(message["session_id"], template["summary_messages"], message["id"] + 1)
+            history = self.messages.list(message["session_id"], template["summary_messages"], message["id"] + 1)
             outcome = await self.summarizer.wake("总结提供的会话消息", context=encode(history), persist=False, timeout=180)
             context += "\n消息摘要：" + outcome["result"]
         requirements = ReplyRequirements.model_validate(config['requirements'])
@@ -263,5 +265,6 @@ class ExternalReplies:
         await self.emit("wake", "回应外部会话 " + message["session_id"] + ("\n响应要求：" + template["response_prompt"] if template["response_prompt"] else ""),
             target=message["session_id"].lower(), actor=message["sender_id"], label=message["sender_name"],
             uid="external-reply:" + message["uid"], temporary_context=extra if requirements.mode == 'temporary' else '',
+            send_result_to_source=False,
             meta={"injected_context": injected,
                 "session_id": message["session_id"], "template_id": template["id"]})

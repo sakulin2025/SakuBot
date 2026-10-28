@@ -9,7 +9,6 @@ export interface Configuration {
   compression_enabled: boolean
   compression_threshold: number
   conversation: { mode: 'broadcast' | 'intelligent'; targets: string[]; tool_events: boolean }
-  message_processing: { image_model_id: string; speech_recognition: string }
   context_chars: number
   plugins: string[]
   agent_concurrency: number
@@ -65,6 +64,7 @@ export interface Status {
   enabled: boolean
   configured: boolean
   main_session: string
+  main_context_usage: null | { percent: number; estimated: boolean }
   error: string
   running: null | { id: string; event_id: number; started: number }
   queue: { status: string; count: number }[]

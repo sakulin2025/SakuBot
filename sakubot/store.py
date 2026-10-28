@@ -33,9 +33,6 @@ class Store:
           id TEXT PRIMARY KEY, target TEXT NOT NULL, text TEXT NOT NULL,
           action TEXT NOT NULL, params TEXT NOT NULL, status TEXT NOT NULL,
           result TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '', at REAL NOT NULL);
-        CREATE TABLE IF NOT EXISTS processed_messages (
-          id INTEGER PRIMARY KEY, uid TEXT UNIQUE NOT NULL, at REAL NOT NULL, session_id TEXT NOT NULL, data TEXT NOT NULL);
-        CREATE INDEX IF NOT EXISTS processed_messages_session ON processed_messages(session_id,id);
         CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS logs (
           id INTEGER PRIMARY KEY, at REAL NOT NULL, level TEXT NOT NULL,

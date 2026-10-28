@@ -121,8 +121,8 @@ onMounted(async () => {
     <div class="metric">
       <span class="metric-icon blue"><UiIcon name="connection" /></span>
       <div class="metric-main">
-        <span>主会话</span>
-        <strong class="mono">main</strong>
+        <span>上下文占用</span>
+        <strong class="mono">{{ store.status?.main_context_usage ? `${store.status.main_context_usage.estimated ? '约 ' : ''}${store.status.main_context_usage.percent}%` : '—' }}</strong>
       </div>
       <UiIcon name="shield" class="faded" :size="16" />
     </div>

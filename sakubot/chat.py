@@ -65,7 +65,7 @@ class Chat:
             raise ValueError('主 Agent 已暂停')
         self.runtime.agents.snapshot('main')
         result = await self.runtime.emit('wake', 'web-chat', text, target='main', actor='owner', label='主人',
-            uid='web-chat:' + client_id, priority=100, meta={'channel': 'web'})
+            uid='web-chat:' + client_id, priority=100, meta={'channel': 'web'}, send_result_to_source=False)
         row = self.runtime.store.one('SELECT * FROM events WHERE id=?', (result['id'],))
         return {'message': self.row(row), 'duplicate': False}
 

@@ -2,7 +2,7 @@ import asyncio
 import hashlib
 import json
 import time
-from sakubot.messages import session_id
+from .messages import session_id
 from sakubot.store import encode
 
 
@@ -62,7 +62,7 @@ class Receiver:
                     mentions.append(identifier)
                     parts.append({"type": "mention", "text": "@" + identifier, "id": identifier})
             elif kind == "image":
-                text, status = await self.runtime.messages.describe_image(data)
+                text, status = await self.plugin.messages.describe_image(data)
                 parts.append({"type": "image", "text": text, "status": status})
             elif kind in ("record", "input_audio"):
                 parts.append({"type": "audio", "text": "[语音未识别]", "status": "unimplemented"})
@@ -81,11 +81,11 @@ class Receiver:
         if direct:
             await self.plugin.receive_main('owner', record['text'] or '[消息附件]',
                 actor=actor, label=label, uid=uid, meta={'message': record, 'source_label': 'QQ'})
-        await self.plugin.publish_message(record)
+        await self.plugin.messages.publish(record)
 
     def record_sent(self, target, text, delivery_id):
         if self.runtime.store.one("SELECT id FROM processed_messages WHERE uid=?", (delivery_id,)):
             return
-        self.runtime.messages.persist({"uid": delivery_id, "at": time.time(), "session_id": session_id(target), "message_id": "",
+        self.plugin.messages.persist({"uid": delivery_id, "at": time.time(), "session_id": session_id(target), "message_id": "",
             "source": self.plugin.id, "sender_id": self.plugin.client.self_id, "sender_name": self.plugin.client.nickname, "text": text,
             "mentions": [], "reply_to": "", "parts": [{"type": "text", "text": text}], "is_self": True})

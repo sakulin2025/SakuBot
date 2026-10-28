@@ -32,6 +32,8 @@ class Invocation:
     metadata: dict = field(default_factory=dict)
     temporary_context: list = field(default_factory=list)
     temporary_next: list = field(default_factory=list)
+    send_result_to_source: bool = True
+    temporary_tools: dict = field(default_factory=dict)
 
     def inject_temporary(self, content):
         """Supply a reminder to the next model request of this invocation only."""
@@ -161,6 +163,7 @@ class Plugin:
             raise ValueError('仅主 Agent 可输出主对话响应')
         return await self.runtime.conversation.respond(parts,
             delivery_target=invocation.metadata.get('reply_target', '') if invocation else '',
+            send_to_source=invocation.send_result_to_source if invocation else True,
             run_id=invocation.run_id if invocation else '', response_id=response_id)
 
     def tool(self, name, description, parameters, handler):
@@ -175,19 +178,6 @@ class Plugin:
 
     def clear_agent_context(self, identifier):
         self.get_agent(identifier).clear_context()
-
-    async def publish_message(self, record):
-        return await self.runtime.messages.publish({**record, 'source': self.id})
-
-    def subscribe_messages(self, sessions, callback):
-        return self.runtime.messages.subscribe(self.id, sessions, callback)
-
-    def set_message_subscriptions(self, sessions, callback):
-        self.runtime.messages.remove_owner(self.id)
-        return self.subscribe_messages(sessions, callback) if sessions else None
-
-    def get_messages(self, session, limit=20, before=None):
-        return self.runtime.messages.list(session, limit, before)
 
     def agent(self, identifier, name, description="", *, persona_id="", model_id="", persona_mode=""):
         return self.runtime.agents.declare(self.id, identifier, name, description, persona_id=persona_id, model_id=model_id, persona_mode=persona_mode)
@@ -324,11 +314,16 @@ class Registry:
                 if name in tools:
                     raise ValueError("Agent 临时函数与插件函数重名：" + name)
                 tools[name] = tool
-        return [tool for tool in tools.values() if tool.plugin_id in visible]
+        available = [tool for tool in tools.values() if tool.plugin_id in visible]
+        for name, tool in inv.temporary_tools.items():
+            if name in tools:
+                raise ValueError('本轮临时函数与其他函数重名：' + name)
+            available.append(tool)
+        return available
 
     async def call(self, name, arguments, inv):
         store = self.runtime.store
-        known = (inv.instance.tools.get(name) if inv.instance else None) or self.tools.get(name)
+        known = inv.temporary_tools.get(name) or (inv.instance.tools.get(name) if inv.instance else None) or self.tools.get(name)
         last = (inv.metadata.get("function_snapshots") or [{}])[-1]
         plugin = known.plugin_id if known else next((row["plugin_id"] for row in last.get("functions", []) if row["function"]["name"] == name), "")
         raw = arguments if isinstance(arguments, str) else encode(arguments)
@@ -391,7 +386,6 @@ class Registry:
         self.runtime.deliveries.remove_owner(identifier)
         self.runtime.conversation.remove_owner(identifier)
         self.runtime.skills.remove_owner(identifier)
-        self.runtime.messages.remove_owner(identifier)
         self.runtime.agents.remove(identifier)
         self.tools = {name: tool for name, tool in self.tools.items() if tool.plugin_id != identifier}
         self.pages = {key: page for key, page in self.pages.items() if page["plugin_id"] != identifier}
@@ -452,7 +446,6 @@ class Registry:
             return
         owned = {task for instance in self.runtime.agents.instances.values()
             for task, owner in instance.tasks.items() if owner == identifier or instance.id.startswith(identifier + ":")}
-        owned.update(entry["job"] for entry in self.runtime.messages.subscriptions.values() if entry["owner"] == identifier)
         self.plugins.remove(plugin)
         self.remove_entries(identifier)
         tasks = list(set(self.inflight.get(identifier, set())) | owned)

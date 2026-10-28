@@ -319,6 +319,7 @@ class AgentInstance:
                         inv.control = AgentRunControl(self, inv, deadline)
                         token = _CURRENT_AGENT.set(self)
                         try:
+                            await self.runtime.recall_for_wake(inv, goal + ('\n' + str(context) if context else ''))
                             result, usage = await self.runtime.agent_loop(messages, inv)
                         finally:
                             _CURRENT_AGENT.reset(token)

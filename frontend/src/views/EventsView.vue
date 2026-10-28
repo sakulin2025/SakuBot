@@ -20,11 +20,18 @@ const history = ref<string[]>([])
 const creating = ref(false)
 const submitting = ref(false)
 const selected = ref<EventRecord | null>(null)
-const selectedRun = ref<{ trace: string } | null>(null)
+const selectedRun = ref<{ trace: string; status: string } | null>(null)
 const detailBusy = ref(false)
+type RunTrace = { api_requests?: { step: number; body: unknown }[]; result?: string; messages?: { role?: string; content?: unknown; tool_calls?: unknown[] }[] }
+const trace = computed(() => parseJson(selectedRun.value?.trace) as RunTrace | undefined)
 const requests = computed(() => {
-  const trace = parseJson(selectedRun.value?.trace) as { api_requests?: { step: number; body: unknown }[] } | undefined
-  return Array.isArray(trace?.api_requests) ? trace.api_requests : []
+  return Array.isArray(trace.value?.api_requests) ? trace.value.api_requests : []
+})
+const runResult = computed(() => {
+  if (typeof trace.value?.result === 'string') return trace.value.result
+  if (selectedRun.value?.status !== 'done' || !Array.isArray(trace.value?.messages)) return null
+  const last = trace.value.messages.at(-1)
+  return last?.role === 'assistant' && !last.tool_calls?.length && typeof last.content === 'string' ? last.content : null
 })
 const draft = reactive({ kind: 'wake', text: '', target: '', include_context: false })
 const visible = computed(() =>
@@ -107,7 +114,7 @@ async function inspect(event: EventRecord) {
   detailBusy.value = !!event.run_id
   if (!event.run_id) return
   try {
-    const result = await api<{ trace: string }>('runs/' + encodeURIComponent(event.run_id))
+    const result = await api<{ trace: string; status: string }>('runs/' + encodeURIComponent(event.run_id))
     if (selected.value === event) selectedRun.value = result
   } catch {
     if (selected.value === event) store.toast('加载详情失败', true)
@@ -259,7 +266,13 @@ onMounted(load)
       </details>
       <template v-if="selected.kind === 'wake'">
         <div v-if="detailBusy">加载中</div>
-        <div v-else-if="!requests.length">暂无请求体</div>
+        <template v-else>
+          <div v-if="runResult !== null">
+            <strong>结果</strong>
+            <pre class="detail-text">{{ runResult || '无文本结果' }}</pre>
+          </div>
+          <div v-if="!requests.length">暂无请求体</div>
+        </template>
         <details v-for="(request, index) in requests" :key="index">
           <summary>API 请求体 · 第 {{ request.step }} 轮</summary>
           <pre class="json-block">{{ JSON.stringify(request.body, null, 2) }}</pre>

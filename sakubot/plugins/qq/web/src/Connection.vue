@@ -13,7 +13,9 @@ const values = reactive({
   reply_split_enabled: true, reply_split_regex: "。|", reply_remove_regex: "。",
   reply_trim: true, reply_merge_newlines: true,
   reply_interval_min: 3, reply_interval_max: 5,
+  image_model_id: "", speech_recognition: "unimplemented",
 });
+const imageModels = ref<{ id: string; name: string }[]>([]);
 const tokenConfigured = ref(false);
 const status = ref({
   online: false,
@@ -62,6 +64,8 @@ onMounted(async () => {
       reply_merge_newlines: boolean;
       reply_interval_min: number;
       reply_interval_max: number;
+      image_model_id: string;
+      speech_recognition: string;
     }>("config");
     values.owner_id = data.owner_id;
     values.napcat_ws = data.napcat_ws;
@@ -72,6 +76,9 @@ onMounted(async () => {
     values.reply_merge_newlines = data.reply_merge_newlines;
     values.reply_interval_min = data.reply_interval_min;
     values.reply_interval_max = data.reply_interval_max;
+    values.image_model_id = data.image_model_id;
+    values.speech_recognition = data.speech_recognition;
+    imageModels.value = await host.api<{ id: string; name: string }[]>("image-models");
     tokenConfigured.value = data.napcat_token_configured;
     await loadStatus();
   } catch {
@@ -144,6 +151,20 @@ onUnmounted(() => clearInterval(timer));
           </SFormItem>
           <SFormItem label="最大间隔 · 秒" for="reply-interval-max">
             <SInput id="reply-interval-max" v-model.number="values.reply_interval_max" type="number" :min="values.reply_interval_min" step="0.1" :disabled="!values.reply_split_enabled" required />
+          </SFormItem>
+        </div>
+      </SCard>
+      <SCard title="消息处理">
+        <div class="form-body">
+          <SFormItem label="图片解读模型" for="image-model">
+            <SSelect id="image-model" v-model="values.image_model_id">
+              <option value="">关闭</option>
+              <option v-if="values.image_model_id && !imageModels.some(model => model.id === values.image_model_id)" :value="values.image_model_id">当前模型不可用</option>
+              <option v-for="model in imageModels" :key="model.id" :value="model.id">{{ model.name }}</option>
+            </SSelect>
+          </SFormItem>
+          <SFormItem label="语音识别" for="speech">
+            <SSelect id="speech" disabled><option>未实现</option></SSelect>
           </SFormItem>
         </div>
       </SCard>

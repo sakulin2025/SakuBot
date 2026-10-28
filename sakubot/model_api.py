@@ -42,11 +42,6 @@ def register_model_api(app, authorize, config, store, runtime, config_lock, appl
         light_provider = next((item for item in draft["providers"] if light and item["id"] == light["provider_id"]), None)
         if not light or not light["enabled"] or not light["capabilities"]["text"] or not light_provider or not light_provider["enabled"]:
             draft["lightweight_model_id"] = ""
-        image_id = draft.get("message_processing", {}).get("image_model_id", "")
-        image = next((item for item in draft["models"] if item["id"] == image_id), None)
-        image_provider = next((item for item in draft["providers"] if image and item["id"] == image["provider_id"]), None)
-        if image_id and (not image or not image["enabled"] or not image["capabilities"]["image"] or not image_provider or not image_provider["enabled"]):
-            draft["message_processing"]["image_model_id"] = ""
         return await apply_config(draft)
 
     @app.get("/api/model-catalog", dependencies=dependencies)

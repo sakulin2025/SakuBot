@@ -9,6 +9,8 @@ class Settings(BaseModel):
     owner_id: str = ''
     napcat_ws: str = 'ws://napcat:13001'
     napcat_token: str = ''
+    image_model_id: str = ''
+    speech_recognition: str = 'unimplemented'
     reply_split_enabled: bool = True
     reply_split_regex: str = '。|'
     reply_remove_regex: str = '。'

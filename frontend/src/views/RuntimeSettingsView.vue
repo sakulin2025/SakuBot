@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { api, ApiError } from '../api'
 import { useConsole } from '../stores/console'
 import SecretInput from '../components/SecretInput.vue'
@@ -10,7 +10,6 @@ const values = reactive({
   agent_concurrency: 3,
   compression_enabled: true,
   threshold: 80,
-  image_model_id: '',
 })
 const capabilityNames: Record<string, string> = {
   text: '文字',
@@ -114,16 +113,6 @@ const dirty = ref(false)
 function scrollTo(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
-const imageModels = computed(
-  () =>
-    store.config?.models.filter(
-      (m) =>
-        m.enabled &&
-        m.capabilities.text &&
-        m.capabilities.image &&
-        store.config?.providers.some((p) => p.id === m.provider_id && p.enabled),
-    ) || [],
-)
 watch(
   () => store.config,
   (config) => {
@@ -134,7 +123,6 @@ watch(
       agent_concurrency: config.agent_concurrency,
       compression_enabled: config.compression_enabled,
       threshold: config.compression_threshold * 100,
-      image_model_id: config.message_processing.image_model_id,
     })
   },
   { immediate: true },
@@ -148,7 +136,6 @@ async function save() {
       agent_concurrency: values.agent_concurrency,
       compression_enabled: values.compression_enabled,
       compression_threshold: values.threshold / 100,
-      message_processing: { image_model_id: values.image_model_id, speech_recognition: 'unimplemented' },
     })
     dirty.value = false
   } catch {
@@ -181,7 +168,6 @@ async function changeToken() {
       <div class="settings-shortcuts">
         <SButton type="button" variant="text" @click="scrollTo('execution')">执行参数</SButton>
         <SButton type="button" variant="text" @click="scrollTo('compression')">上下文压缩</SButton>
-        <SButton type="button" variant="text" @click="scrollTo('processing')">消息处理</SButton>
         <SButton type="button" variant="text" @click="scrollTo('conversation')">主对话</SButton>
         <SButton type="button" variant="text" @click="scrollTo('security')">管理令牌</SButton>
         <SButton type="button" variant="text" @click="scrollTo('danger')">危险操作</SButton>
@@ -246,21 +232,6 @@ async function changeToken() {
                 required
                 :disabled="!values.compression_enabled"
               />
-            </SFormItem>
-          </div>
-        </SCard>
-        <SCard id="processing" title="消息处理" class="settings-section">
-          <div class="form-body">
-            <SFormItem label="图片解读模型" for="image-model">
-              <SSelect id="image-model" v-model="values.image_model_id">
-                <option value="">关闭</option>
-                <option v-for="model in imageModels" :key="model.id" :value="model.id">
-                  {{ model.name || model.model_id }}
-                </option>
-              </SSelect>
-            </SFormItem>
-            <SFormItem label="语音识别" for="speech">
-              <SSelect id="speech" disabled><option>未实现</option></SSelect>
             </SFormItem>
           </div>
         </SCard>

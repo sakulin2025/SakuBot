@@ -8,6 +8,7 @@ from sakubot.store import encode
 from pydantic import ValidationError
 from .config import Settings
 from .onebot import OneBot
+from .messages import Messages
 from .receiver import Receiver
 from .external_reply import ExternalReplies
 
@@ -30,11 +31,15 @@ class Extension(ExternalReplies, Plugin):
         self.runtime.store.db.executescript("""
         CREATE TABLE IF NOT EXISTS people (
           id TEXT PRIMARY KEY, data TEXT NOT NULL, updated REAL NOT NULL);
+        CREATE TABLE IF NOT EXISTS processed_messages (
+          id INTEGER PRIMARY KEY, uid TEXT UNIQUE NOT NULL, at REAL NOT NULL, session_id TEXT NOT NULL, data TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS processed_messages_session ON processed_messages(session_id,id);
         """)
         self.runtime.store.execute("UPDATE people SET data=json_remove(data,'$.is_owner') WHERE json_type(data,'$.is_owner') IS NOT NULL")
         self.config_path = self.data_dir / 'config.json'
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
         self.settings = Settings.model_validate(json.loads(self.config_path.read_text()) if self.config_path.exists() else {})
+        self.messages = Messages(self)
         self.receiver = Receiver(self)
         self.client = OneBot(self)
         self.page('manage', 'QQ', Path(__file__).parent / 'web' / 'dist', icon='connection', order=15,
@@ -42,6 +47,7 @@ class Extension(ExternalReplies, Plugin):
         self.api('config', self.get_config)
         self.api('config', self.save_config, methods=('POST',))
         self.api('status', self.status)
+        self.api('image-models', self.image_models)
         self.delivery_adapter('message', self.deliver, accepts=self.accepts_target, timeout=None)
         self.setup_replies()
 
@@ -79,6 +85,10 @@ class Extension(ExternalReplies, Plugin):
         self.connection_job = None
         if self.settings.owner_id and self.settings.napcat_ws:
             self.connection_job = self.background(self.client.run())
+
+    async def stop(self):
+        await self.messages.stop()
+        await super().stop()
 
     def isolate_archives(self):
         # Retain historical audit rows while removing accidental main-context entries.
@@ -119,6 +129,12 @@ class Extension(ExternalReplies, Plugin):
         return {'online': self.client.online.is_set(), 'self_id': self.client.self_id, 'nickname': self.client.nickname,
             'error': self.client.error, 'retry_at': self.client.retry_at}
 
+    async def image_models(self, request):
+        settings = self.runtime.config.settings
+        return [{'id': model.id, 'name': model.name or model.model_id} for model in settings.models
+            if model.enabled and model.capabilities.text and model.capabilities.image
+            and any(provider.id == model.provider_id and provider.enabled for provider in settings.providers)]
+
     async def get_config(self, request):
         values = self.settings.model_dump()
         values['napcat_token_configured'] = bool(values.pop('napcat_token'))
@@ -136,6 +152,10 @@ class Extension(ExternalReplies, Plugin):
         except ValidationError as exc:
             reason = exc.errors(include_input=False)[0]['msg'].removeprefix('Value error, ')
             raise ValueError('配置无效：' + reason) from None
+        if settings.image_model_id and settings.image_model_id != self.settings.image_model_id:
+            _, model = self.runtime.config.settings.selected_model(model_id=settings.image_model_id)
+            if not model or not model.capabilities.image:
+                raise ValueError('请选择支持图片的已启用模型')
         # Reconfigure only this connection; do not reload the plugin or framework.
         async with self.config_lock:
             self.runtime.config.atomic(self.config_path, settings.model_dump_json(indent=2) + '\n')
@@ -211,7 +231,7 @@ class Extension(ExternalReplies, Plugin):
         target = args.get("target") or inv.target
         if target in ('main', 'owner'):
             target = self.client.owner_target()
-        return self.get_messages(target, args.get("limit", 30))
+        return self.messages.list(target, args.get("limit", 30))
 
     async def notices(self, inv, args):
         rows = self.runtime.store.rows("""SELECT id,at,data FROM logs WHERE source='qq'

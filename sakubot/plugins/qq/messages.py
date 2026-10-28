@@ -5,7 +5,7 @@ import re
 import time
 import uuid
 
-from .store import encode
+from sakubot.store import encode
 
 
 def session_id(value):
@@ -20,8 +20,9 @@ def session_id(value):
 
 
 class Messages:
-    def __init__(self, runtime):
-        self.runtime = runtime
+    def __init__(self, plugin):
+        self.plugin = plugin
+        self.runtime = plugin.runtime
         self.subscriptions = {}
         self.subscription_jobs = set()
 
@@ -81,7 +82,7 @@ class Messages:
         return json.loads(row["data"]) if row else None
 
     async def describe_image(self, data):
-        model_id = self.runtime.config.settings.message_processing.image_model_id
+        model_id = self.plugin.settings.image_model_id
         _, model = self.runtime.config.settings.selected_model(model_id=model_id)
         if not model_id:
             return "[图片]", "disabled"
@@ -98,10 +99,10 @@ class Messages:
                 {"role": "user", "content": [{"type": "image_url", "image_url": {"url": url}}]}],
                 model_id=model_id, output_tokens=1024)
             text = (result.get("content") or "").strip()
-            self.runtime.store.log("info", "messages", "image.described", data={"model_id": model_id, "usage": usage})
+            self.runtime.store.log("info", "qq", "image.described", data={"model_id": model_id, "usage": usage})
             return "[图片：" + text[:12000] + "]", "done"
         except Exception as exc:
-            self.runtime.store.log("warning", "messages", "image.failed", data={"error": type(exc).__name__})
+            self.runtime.store.log("warning", "qq", "image.failed", data={"error": type(exc).__name__})
             return "[图片解读失败]", "failed"
 
     async def transcribe_audio(self, audio):

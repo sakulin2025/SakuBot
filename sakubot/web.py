@@ -133,10 +133,6 @@ async def apply_config(draft):
         # Pydantic errors can contain secret input values; do not echo them.
         raise ValueError("配置格式不正确，请检查地址、模式、数值范围及插件名称") from None
     runtime.personas.get(settings.main_persona_id)
-    if settings.message_processing.image_model_id:
-        _, image_model = settings.selected_model(model_id=settings.message_processing.image_model_id)
-        if image_model is None or not image_model.capabilities.image:
-            raise ValueError("请选择支持图片的已启用模型")
     async with config_lock:
         previous = config.settings
         await runtime.stop()
@@ -158,8 +154,7 @@ async def patch_config(request: Request):
         "model": {"main_model_id", "lightweight_model_id"},
         "runtime": {"enabled"},
         "conversation": {"conversation"},
-        "message_processing": {"message_processing"},
-        "settings": {"main_persona_id", "max_steps", "context_chars", "agent_concurrency", "compression_enabled", "compression_threshold", "message_processing", "conversation"},
+        "settings": {"main_persona_id", "max_steps", "context_chars", "agent_concurrency", "compression_enabled", "compression_threshold", "conversation"},
     }
     section = data.get("section")
     values = data.get("values")
