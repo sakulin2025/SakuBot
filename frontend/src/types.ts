@@ -27,6 +27,7 @@ export interface Capabilities {
   image: boolean
   audio: boolean
   tools: boolean
+  embedding: boolean
 }
 export interface ModelMetadata {
   context_window: number
@@ -44,6 +45,7 @@ export interface ModelEntry {
   extra_body: Record<string, unknown>
   context_window: number
   effective_context_window: number
+  embedding_dimensions: number
   metadata: ModelMetadata
 }
 export interface AvailableModel {

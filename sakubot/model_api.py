@@ -64,6 +64,11 @@ def register_model_api(app, authorize, config, store, runtime, config_lock, appl
             raise ValueError("供应商配置不正确") from None
         draft = config.settings.model_dump()
         draft["providers"] = [row for row in draft["providers"] if row["id"] != record.id] + [record.model_dump()]
+        if record.enabled and old and (old.api_base != record.api_base or old.api_key != record.api_key or not old.enabled):
+            for model in config.settings.models:
+                if model.provider_id == record.id and model.enabled and model.capabilities.embedding:
+                    dimensions = len((await runtime.model.embed(record, model, ['SakuBot embedding health check']))[0])
+                    next(row for row in draft['models'] if row['id'] == model.id)['embedding_dimensions'] = dimensions
         await save_catalog(draft)
         return {"id": record.id}
 
@@ -115,6 +120,15 @@ def register_model_api(app, authorize, config, store, runtime, config_lock, appl
             record = ModelConfig.model_validate(data)
         except ValidationError:
             raise ValueError("模型配置不正确") from None
+        if record.capabilities.embedding and record.enabled:
+            if not provider.enabled:
+                raise ValueError('供应商未启用')
+            vectors = await runtime.model.embed(provider, record, ['SakuBot embedding health check'])
+            record.embedding_dimensions = len(vectors[0])
+        elif not record.capabilities.embedding:
+            record.embedding_dimensions = 0
+        elif old and old.provider_id == record.provider_id and old.model_id == record.model_id:
+            record.embedding_dimensions = old.embedding_dimensions
         draft = config.settings.model_dump()
         draft["models"] = [row for row in draft["models"] if row["id"] != record.id] + [record.model_dump()]
         await save_catalog(draft)
@@ -139,6 +153,8 @@ def register_model_api(app, authorize, config, store, runtime, config_lock, appl
                 raise ValueError("请重新拉取供应商模型列表")
             record = ModelConfig(provider_id=provider.id, model_id=identifier, name=row["name"],
                                  capabilities=row["capabilities"], metadata=row["metadata"])
+            if record.capabilities.embedding and record.enabled:
+                record.embedding_dimensions = len((await runtime.model.embed(provider, record, ['SakuBot embedding health check']))[0])
             draft["models"].append(record.model_dump())
             added.append(record.id)
         await save_catalog(draft)

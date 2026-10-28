@@ -33,7 +33,7 @@ class Extension(Plugin):
         self.page('manage', '长期记忆', Path(__file__).parent / 'web' / 'dist', icon='memory', order=10, aliases=('/memories',))
         for name, handler, methods in [('memories', self.page_list, ('GET',)), ('memories', self.page_write, ('POST',)),
                 ('settings', self.get_settings, ('GET',)), ('settings', self.set_settings, ('POST',)),
-                ('providers', self.providers, ('GET',)), ('search', self.page_search, ('POST',)), ('document', self.upload, ('PUT',))]:
+                ('models', self.embedding_models, ('GET',)), ('search', self.page_search, ('POST',)), ('document', self.upload, ('PUT',))]:
             self.api(name, handler, methods=methods)
         self.tool('memory_search', '按语义检索长期记忆和上传文档。可用自然语言描述需要查找的事实。',
             object_schema({'query': text('要检索的内容'), 'limit': {'type': 'integer', 'minimum': 1, 'maximum': 20}}, ('query',)), self.search)
@@ -47,19 +47,25 @@ class Extension(Plugin):
         self.schedule_index()
 
     def settings(self):
-        return {'provider_id': '', 'embedding_model': '', 'auto_memory': True, 'recall_limit': 5, 'min_score': 0.3,
-                **self.runtime.store.kv_get('memory:settings', {})}
+        saved = self.runtime.store.kv_get('memory:settings', {})
+        if 'model_id' not in saved and saved.get('provider_id') and saved.get('embedding_model'):
+            match = next((m for m in self.runtime.config.settings.models if m.provider_id == saved['provider_id'] and m.model_id == saved['embedding_model'] and m.capabilities.embedding), None)
+            if match:
+                saved = {**saved, 'model_id': match.id}
+                self.runtime.store.kv_set('memory:settings', saved)
+        return {'model_id': '', 'auto_memory': True, 'recall_limit': 5, 'min_score': 0.3, **saved}
 
     def route(self):
-        config = self.settings()
-        provider = next((p for p in self.runtime.config.settings.providers if p.id == config['provider_id'] and p.enabled), None)
-        if not provider or not config['embedding_model']:
-            raise ValueError('请先配置向量模型')
-        signature = hashlib.sha256((provider.id + '\0' + provider.api_base + '\0' + config['embedding_model']).encode()).hexdigest()
-        return provider, config['embedding_model'], signature
+        provider, model = self.runtime.config.settings.selected_embedding_model(self.settings()['model_id'])
+        if not provider or not model or not model.embedding_dimensions:
+            raise ValueError('请先配置可用的向量模型')
+        signature = hashlib.sha256(encode([provider.id, provider.api_base, model.model_id, model.embedding_dimensions, model.extra_body.get('dimensions')]).encode()).hexdigest()
+        return provider, model, signature
 
-    async def providers(self, request):
-        return [{'id': p.id, 'name': p.name} for p in self.runtime.config.settings.providers if p.enabled]
+    async def embedding_models(self, request):
+        settings = self.runtime.config.settings
+        return [{'id': m.id, 'name': m.name or m.model_id, 'model_id': m.model_id, 'provider': next(p.name for p in settings.providers if p.id == m.provider_id), 'dimensions': m.embedding_dimensions}
+                for m in settings.models if m.enabled and m.capabilities.embedding and m.embedding_dimensions and any(p.id == m.provider_id and p.enabled for p in settings.providers)]
 
     async def get_settings(self, request):
         config = self.settings()
@@ -76,45 +82,29 @@ class Extension(Plugin):
         data = await request.json()
         if not isinstance(data, dict):
             raise ValueError('配置无效')
-        provider, model = str(data.get('provider_id', '')).strip(), str(data.get('embedding_model', '')).strip()
-        if bool(provider) != bool(model) or len(model) > 300:
-            raise ValueError('请选择供应商并填写向量模型')
-        if provider and not any(p.id == provider and p.enabled for p in self.runtime.config.settings.providers):
-            raise ValueError('供应商不可用')
+        model_id = data.get('model_id', '')
+        if not isinstance(model_id, str):
+            raise ValueError('模型无效')
+        if model_id:
+            provider, model = self.runtime.config.settings.selected_embedding_model(model_id)
+            if not provider or not model or not model.embedding_dimensions:
+                raise ValueError('请选择可用的向量模型')
         limit, score = data.get('recall_limit', 5), data.get('min_score', 0.3)
         if type(limit) is not int or not 1 <= limit <= 20 or type(score) not in (int, float) or not math.isfinite(score) or not -1 <= score <= 1 or type(data.get('auto_memory', True)) is not bool:
             raise ValueError('配置无效')
-        config = {'provider_id': provider, 'embedding_model': model, 'auto_memory': data.get('auto_memory', True), 'recall_limit': limit, 'min_score': score}
+        config = {'model_id': model_id, 'auto_memory': data.get('auto_memory', True), 'recall_limit': limit, 'min_score': score}
         self.runtime.store.kv_set('memory:settings', config)
         self.schedule_index()
         return await self.get_settings(request)
 
     async def embed(self, texts):
         provider, model, signature = self.route()
-        try:
-            response = await self.runtime.model.client.post(provider.api_base + '/embeddings', headers={'Authorization': 'Bearer ' + provider.api_key} if provider.api_key else {}, json={'model': model, 'input': texts}, timeout=45)
-            if response.status_code != 200:
-                raise RuntimeError('向量接口 HTTP ' + str(response.status_code))
-            data = response.json()['data']
-            if len(data) != len(texts):
-                raise ValueError()
-            ordered = sorted(data, key=lambda item: item['index'])
-            if [item['index'] for item in ordered] != list(range(len(texts))):
-                raise ValueError()
-            result = []
-            for item in ordered:
-                vector = item['embedding']
-                if not isinstance(vector, list) or not 1 <= len(vector) <= 65536 or any(type(v) not in (int, float) or not math.isfinite(v) for v in vector):
-                    raise ValueError()
-                norm = math.sqrt(sum(v * v for v in vector))
-                if not norm or not math.isfinite(norm):
-                    raise ValueError()
-                result.append([v / norm for v in vector])
-            if self.route()[2] != signature:
-                raise RuntimeError('向量模型已更改，请重试')
-            return signature, result
-        except (KeyError, TypeError, ValueError, OverflowError):
-            raise RuntimeError('向量接口返回格式无效') from None
+        vectors = await self.runtime.model.embed(provider, model, texts)
+        if self.route()[2] != signature:
+            raise RuntimeError('向量模型已更改，请重试')
+        if any(len(vector) != model.embedding_dimensions for vector in vectors):
+            raise RuntimeError('向量维度已变化，请重新保存模型配置')
+        return signature, vectors
 
     @staticmethod
     def digest(content):

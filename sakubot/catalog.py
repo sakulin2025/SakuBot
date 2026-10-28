@@ -46,7 +46,7 @@ def metadata_from(record, source):
         if isinstance(record.get(key), bool):
             capabilities[field] = record[key]
     if isinstance(record.get("capabilities"), dict):
-        for field in ("text", "image", "audio", "tools"):
+        for field in ("text", "image", "audio", "tools", "embedding"):
             if isinstance(record["capabilities"].get(field), bool):
                 capabilities[field] = record["capabilities"][field]
     return ModelMetadata(context_window=window, capabilities=capabilities,

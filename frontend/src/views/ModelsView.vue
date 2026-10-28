@@ -27,7 +27,7 @@ const draft = reactive({
   name: '',
   enabled: true,
   context_window: 0,
-  capabilities: { text: true, image: false, audio: false, tools: true } as Capabilities,
+  capabilities: { text: true, image: false, audio: false, tools: true, embedding: false } as Capabilities,
 })
 type Parameter = { key: string; type: 'string' | 'number' | 'boolean' | 'json'; value: string }
 const parameters = ref<Parameter[]>([])
@@ -36,6 +36,7 @@ const capabilities: { key: keyof Capabilities; label: string }[] = [
   { key: 'image', label: '图像' },
   { key: 'audio', label: '音频' },
   { key: 'tools', label: '工具使用' },
+  { key: 'embedding', label: 'Embedding' },
 ]
 const providers = computed(() => store.config?.providers || [])
 const models = computed(() => store.config?.models || [])
@@ -66,7 +67,7 @@ function edit(model?: ModelEntry) {
     name: model?.name || '',
     enabled: model?.enabled ?? true,
     context_window: model?.context_window || 0,
-    capabilities: { ...(model?.capabilities || { text: true, image: false, audio: false, tools: true }) },
+    capabilities: { ...(model?.capabilities || { text: true, image: false, audio: false, tools: true, embedding: false }) },
   })
   parameters.value = Object.entries(model?.extra_body || {}).map(([key, value]) => ({
     key,
@@ -124,7 +125,7 @@ async function save() {
     store.toast('已保存')
   } catch (error) {
     formError.value =
-      error instanceof ApiError ? '保存失败' : error instanceof Error ? error.message : '保存失败'
+      error instanceof Error ? error.message : '保存失败'
   } finally {
     saving.value = false
   }
@@ -309,13 +310,12 @@ onMounted(async () => {
             <td>
               <div class="capability-tags">
                 <span
-                  v-for="cap in capabilities"
+                  v-for="cap in capabilities.filter(item => model.capabilities[item.key])"
                   :key="cap.key"
-                  class="capability-tag"
-                  :class="{ enabled: model.capabilities[cap.key] }"
+                  class="capability-tag enabled"
                 >
-                  <UiIcon :name="model.capabilities[cap.key] ? 'check' : 'close'" :size="11" />
-                  {{ cap.label }}
+                  <UiIcon name="check" :size="11" />
+                  {{ cap.label }}<template v-if="cap.key === 'embedding' && model.embedding_dimensions"> · {{ model.embedding_dimensions }} 维</template>
                 </span>
               </div>
             </td>
@@ -395,6 +395,7 @@ onMounted(async () => {
           </label>
         </div>
       </div>
+      <div v-if="original?.capabilities.embedding && original.embedding_dimensions" class="field-state">向量维度：{{ original.embedding_dimensions }}</div>
       <div class="field">
         <label for="context-window">
           模型上下文窗口 · Token

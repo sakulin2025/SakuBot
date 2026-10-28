@@ -36,6 +36,7 @@ class Capabilities(BaseModel):
     image: bool = False
     audio: bool = False
     tools: bool = True
+    embedding: bool = False
 
 
 class ModelMetadata(BaseModel):
@@ -56,6 +57,7 @@ class ModelConfig(BaseModel):
     capabilities: Capabilities = Field(default_factory=Capabilities)
     extra_body: dict = Field(default_factory=dict)
     context_window: int = Field(0, ge=0, le=100000000)
+    embedding_dimensions: int = Field(0, ge=0, le=65536)
     metadata: ModelMetadata = Field(default_factory=ModelMetadata)
 
     @field_validator("extra_body")
@@ -163,6 +165,11 @@ class Settings(BaseModel):
             self.lightweight_model_id if lightweight and self.lightweight_model_id else
             (main.model_id if main and main.model_id else self.main_model_id))
         model = next((item for item in self.models if item.id == identifier and item.enabled and item.capabilities.text), None)
+        provider = next((item for item in self.providers if model and item.id == model.provider_id and item.enabled), None)
+        return (provider, model) if provider and model else (None, None)
+
+    def selected_embedding_model(self, model_id):
+        model = next((item for item in self.models if item.id == model_id and item.enabled and item.capabilities.embedding), None)
         provider = next((item for item in self.providers if model and item.id == model.provider_id and item.enabled), None)
         return (provider, model) if provider and model else (None, None)
 

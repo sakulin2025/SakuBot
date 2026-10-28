@@ -1,4 +1,5 @@
 import json
+import math
 
 import httpx
 
@@ -10,6 +11,37 @@ class Model:
 
     async def close(self):
         await self.client.aclose()
+
+    async def embed(self, provider, model, texts):
+        payload = {'model': model.model_id, 'input': texts}
+        if 'dimensions' in model.extra_body:
+            payload['dimensions'] = model.extra_body['dimensions']
+        try:
+            response = await self.client.post(provider.api_base + '/embeddings', headers={'Authorization': 'Bearer ' + provider.api_key} if provider.api_key else {}, json=payload, timeout=45)
+            if response.status_code != 200:
+                raise RuntimeError('向量模型检查失败（HTTP ' + str(response.status_code) + '）')
+            data = response.json()['data']
+            if not isinstance(data, list) or len(data) != len(texts):
+                raise ValueError()
+            ordered = sorted(data, key=lambda item: item['index'])
+            if [item['index'] for item in ordered] != list(range(len(texts))):
+                raise ValueError()
+            vectors = []
+            for item in ordered:
+                vector = item['embedding']
+                if not isinstance(vector, list) or not 1 <= len(vector) <= 65536 or any(type(v) not in (int, float) or not math.isfinite(v) for v in vector):
+                    raise ValueError()
+                norm = math.sqrt(sum(v * v for v in vector))
+                if not norm or not math.isfinite(norm):
+                    raise ValueError()
+                vectors.append([v / norm for v in vector])
+            if len({len(vector) for vector in vectors}) != 1:
+                raise ValueError()
+            return vectors
+        except httpx.HTTPError:
+            raise RuntimeError('向量模型连接失败') from None
+        except (KeyError, TypeError, ValueError, OverflowError):
+            raise RuntimeError('向量模型返回格式无效') from None
 
     async def complete(self, messages, tools=None, lightweight=False, model_id=None, output_tokens=None, on_delta=None, on_request=None):
         provider, model = self.settings.selected_model(lightweight, model_id=model_id)

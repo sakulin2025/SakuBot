@@ -19,8 +19,10 @@ const saving = ref(false);
 const editing = ref(false);
 const configuring = ref(false);
 const uploading = ref(false);
-const providers = ref<{ id: string; name: string }[]>([]);
-const settings = reactive({ provider_id: '', embedding_model: '', auto_memory: true, recall_limit: 5, min_score: 0.3, ready: false, indexed: 0, total: 0 });
+const models = ref<{ id: string; name: string; provider: string; dimensions: number }[]>([]);
+const settings = reactive({ model_id: '', auto_memory: true, recall_limit: 5, min_score: 0.3, ready: false, indexed: 0, total: 0 });
+const savedModel = ref('');
+const confirming = ref(false);
 const fileInput = ref<HTMLInputElement | null>(null);
 const deleting = ref<Memory | null>(null);
 const draft = reactive({
@@ -33,7 +35,8 @@ async function load() {
   try {
     rows.value = await host.api<Memory[]>("memories");
     Object.assign(settings, await host.api("settings"));
-    providers.value = await host.api("providers");
+    savedModel.value = settings.model_id;
+    models.value = await host.api("models");
   } catch {
     host.toast("加载失败", true);
   } finally {
@@ -50,12 +53,18 @@ async function search() {
 async function saveSettings() {
   saving.value = true;
   try {
-    const { provider_id, embedding_model, auto_memory, recall_limit, min_score } = settings;
-    Object.assign(settings, await host.api('settings', { provider_id, embedding_model, auto_memory, recall_limit, min_score }));
+    const { model_id, auto_memory, recall_limit, min_score } = settings;
+    Object.assign(settings, await host.api('settings', { model_id, auto_memory, recall_limit, min_score }));
+    savedModel.value = settings.model_id;
+    confirming.value = false;
     configuring.value = false;
     host.toast('已保存');
   } catch (error) { host.toast(error instanceof Error ? error.message : '保存失败', true); }
   finally { saving.value = false; }
+}
+function requestSaveSettings() {
+  if (settings.model_id !== savedModel.value && settings.total > 0) confirming.value = true;
+  else void saveSettings();
 }
 async function upload(event: Event) {
   const input = event.target as HTMLInputElement;
@@ -177,14 +186,17 @@ onMounted(load);
     <UiEmpty v-else />
   </SCard>
   <UiModal :open="configuring" title="记忆设置" @close="configuring = false">
-    <form id="memory-settings" class="form-stack" @submit.prevent="saveSettings">
-      <div class="field"><label>供应商</label><SSelect v-model="settings.provider_id"><option value="">请选择</option><option v-for="provider in providers" :key="provider.id" :value="provider.id">{{ provider.name }}</option></SSelect></div>
-      <div class="field"><label>向量模型</label><SInput v-model="settings.embedding_model" placeholder="向量模型 ID" /></div>
+    <form id="memory-settings" class="form-stack" @submit.prevent="requestSaveSettings">
+      <div class="field"><label>向量模型</label><SSelect v-model="settings.model_id"><option value="">请选择</option><option v-if="settings.model_id && !models.some(model => model.id === settings.model_id)" :value="settings.model_id">当前模型不可用</option><option v-for="model in models" :key="model.id" :value="model.id">{{ model.name }} · {{ model.provider }} · {{ model.dimensions }} 维</option></SSelect></div>
       <div class="field"><label>自动记忆</label><SSwitch v-model="settings.auto_memory" /></div>
       <div class="field"><label>召回条数</label><SInput v-model.number="settings.recall_limit" type="number" min="1" max="20" required /></div>
       <div class="field"><label>最低相似度</label><SInput v-model.number="settings.min_score" type="number" min="-1" max="1" step="0.01" required /></div>
     </form>
     <template #footer><SButton class="button" @click="configuring = false">取消</SButton><SButton form="memory-settings" class="button primary" :disabled="saving">保存</SButton></template>
+  </UiModal>
+  <UiModal :open="confirming" title="确认切换向量模型" @close="confirming = false">
+    <p>切换后需要重新建立全部记忆和文档的向量索引，可能产生模型调用费用；重建期间检索结果可能不完整。原有内容会保留。</p>
+    <template #footer><SButton class="button" @click="confirming = false">取消</SButton><SButton class="button primary" :disabled="saving" @click="saveSettings">确认切换</SButton></template>
   </UiModal>
   <UiModal :open="editing" title="记忆" @close="editing = false"
     ><form id="memory-form" class="form-stack" @submit.prevent="save">
