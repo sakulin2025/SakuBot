@@ -23,7 +23,7 @@ class Extension(ExternalReplies, Plugin):
 
     def availability(self):
         settings = self.settings
-        return {"available": self.client.online.is_set(), "reason": self.client.error if settings.owner_id and settings.napcat_ws else "未配置连接"}
+        return {"available": self.client.online.is_set(), "reason": self.client.error if settings.owner_id and settings.connection_ws else "未配置连接"}
 
     def setup(self):
         import asyncio
@@ -61,11 +61,11 @@ class Extension(ExternalReplies, Plugin):
                   object_schema({"target": text("owner、private:QQ号、group:群号，留空使用本轮来源"),
                                  "text": text("要发送的文字"), "segments": {"type": "array", "items": {"type": "object"}, "maxItems": 30}}, ()),
                   self.send)
-        self.tool("qq_read", "查询 NapCat 中的 QQ 资料和消息。按真实 ID 识别人，不用昵称作为身份。查询接口包括好友、群、成员、消息及历史；params 使用对应 OneBot 接口参数。",
+        self.tool("qq_read", "查询当前 OneBot 协议端的 QQ 资料。按真实 ID 识别人，不用昵称作为身份；params 使用对应 OneBot 接口参数。",
                   object_schema({"action": {"type": "string", "enum": READ_ACTIONS}, "params": {"type": "object"}}, ("action",)),
                   self.read)
-        self.tool("qq_action", "操作 Agent 自己的 QQ 账号，调用 NapCat 原生接口。用于好友/群请求、群管理、撤回、账号资料和文件等写操作。action/params 必须来自已知接口或 qq_api 文档；不能凭空编造。结果未知不自动重试，普通发送优先 qq_send。",
-                  object_schema({"action": text("NapCat OneBot action 名称"), "params": {"type": "object"}}, ("action",)), self.action)
+        self.tool("qq_action", "操作 Agent 自己的 QQ 账号，调用当前协议端的 OneBot 接口。action/params 必须来自 qq_api 或已知接口；结果未知不自动重试，普通发送优先 qq_send。",
+                  object_schema({"action": text("当前协议端的 OneBot action 名称"), "params": {"type": "object"}}, ("action",)), self.action)
         self.tool("qq_recent", "按需查询归档的 QQ 消息，可指定群聊或私聊。归档消息不会自动加入主上下文。返回人员 ID、昵称和引用等元数据。",
                   object_schema({"target": text("可选 private:QQ号 或 group:群号"),
                                  "limit": {"type": "integer", "minimum": 1, "maximum": 100}}, ()),
@@ -83,7 +83,7 @@ class Extension(ExternalReplies, Plugin):
         self.runtime.store.execute("UPDATE events SET status='cancelled',error='内置群聊唤醒已移除' WHERE source='qq' AND kind='wake' AND status='pending' AND target LIKE 'group:%'")
         self.background(self.receiver.run())
         self.connection_job = None
-        if self.settings.owner_id and self.settings.napcat_ws:
+        if self.settings.owner_id and self.settings.connection_ws:
             self.connection_job = self.background(self.client.run())
 
     async def stop(self):
@@ -108,7 +108,7 @@ class Extension(ExternalReplies, Plugin):
             self.runtime.store.log('info', self.id, 'context.archives.isolated', data={'records': changed})
 
     def onboarding(self):
-        return [{'key': self.id + '.connection', 'title': '连接 NapCat', 'icon': 'connection',
+        return [{'key': self.id + '.connection', 'title': '连接 QQ', 'icon': 'connection',
             'path': '/extensions/' + self.id + '/manage', 'completed': self.client.online.is_set()}]
 
     def prompt_context(self, invocation):
@@ -137,7 +137,8 @@ class Extension(ExternalReplies, Plugin):
 
     async def get_config(self, request):
         values = self.settings.model_dump()
-        values['napcat_token_configured'] = bool(values.pop('napcat_token'))
+        for name in ('napcat_token', 'snowluma_token'):
+            values[name + '_configured'] = bool(values.pop(name))
         return values
 
     async def save_config(self, request):
@@ -145,8 +146,9 @@ class Extension(ExternalReplies, Plugin):
         data = await request.json()
         if not isinstance(data, dict):
             raise ValueError('配置格式不正确')
-        if not data.get('napcat_token'):
-            data['napcat_token'] = self.settings.napcat_token
+        for name in ('napcat_token', 'snowluma_token'):
+            if not data.get(name):
+                data[name] = getattr(self.settings, name)
         try:
             settings = Settings.model_validate(data)
         except ValidationError as exc:
@@ -159,7 +161,7 @@ class Extension(ExternalReplies, Plugin):
         # Reconfigure only this connection; do not reload the plugin or framework.
         async with self.config_lock:
             self.runtime.config.atomic(self.config_path, settings.model_dump_json(indent=2) + '\n')
-            reconnect = any(getattr(settings, key) != getattr(self.settings, key) for key in ('owner_id', 'napcat_ws', 'napcat_token'))
+            reconnect = any(getattr(settings, key) != getattr(self.settings, key) for key in ('owner_id', 'backend', 'connection_ws', 'connection_token'))
             if reconnect and self.connection_job:
                 self.connection_job.cancel()
                 await asyncio.gather(self.connection_job, return_exceptions=True)
@@ -168,7 +170,7 @@ class Extension(ExternalReplies, Plugin):
             self.settings = settings
             if reconnect:
                 self.connection_job = None
-                if settings.owner_id and settings.napcat_ws:
+                if settings.owner_id and settings.connection_ws:
                     self.connection_job = self.background(self.client.run())
             self.client.changed()
         return await self.get_config(request)
@@ -241,7 +243,7 @@ class Extension(ExternalReplies, Plugin):
                 'next_before': rows[-1]['id'] if rows else None}
 
     async def api_documentation(self, inv, args):
-        return {"docs": "https://napneko.github.io/api/", "read_actions": READ_ACTIONS,
+        return {"backend": self.settings.backend, "docs": "https://snowluma.github.io/zh/docs/api" if self.settings.backend == 'snowluma' else "https://napneko.github.io/api/", "read_actions": READ_ACTIONS,
                 "examples": {"get_group_member_info": {"group_id": 123, "user_id": 456},
                              "get_msg": {"message_id": 123}, "set_group_ban": {"group_id": 123, "user_id": 456, "duration": 600},
                              "set_friend_add_request": {"flag": "来自request事件", "approve": True}}}

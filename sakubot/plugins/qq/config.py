@@ -1,4 +1,5 @@
 import re
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from urllib.parse import urlsplit
@@ -7,8 +8,11 @@ from urllib.parse import urlsplit
 class Settings(BaseModel):
     model_config = ConfigDict(extra='forbid')
     owner_id: str = ''
+    backend: Literal['napcat', 'snowluma'] = 'napcat'
     napcat_ws: str = 'ws://napcat:13001'
     napcat_token: str = ''
+    snowluma_ws: str = 'ws://snowluma:3001'
+    snowluma_token: str = ''
     image_model_id: str = ''
     speech_recognition: str = 'unimplemented'
     reply_split_enabled: bool = True
@@ -43,7 +47,15 @@ class Settings(BaseModel):
             raise ValueError('主人 QQ 必须是有效数字 ID')
         return value
 
-    @field_validator('napcat_ws')
+    @property
+    def connection_ws(self):
+        return self.snowluma_ws if self.backend == 'snowluma' else self.napcat_ws
+
+    @property
+    def connection_token(self):
+        return self.snowluma_token if self.backend == 'snowluma' else self.napcat_token
+
+    @field_validator('napcat_ws', 'snowluma_ws')
     @classmethod
     def url(cls, value):
         if not value:

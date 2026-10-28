@@ -4,7 +4,7 @@ import People from "./People.vue";
 import Connection from "./Connection.vue";
 import ExternalReplies from "./ExternalReplies.vue";
 const items = [
-  { value: "connection", label: "NapCat" },
+  { value: "connection", label: "连接" },
   { value: "people", label: "人物" },
   { value: "external", label: "外部消息回应" },
 ];

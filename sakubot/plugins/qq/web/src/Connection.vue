@@ -9,14 +9,14 @@ import {
 } from "@sakubot/ui";
 const host = usePluginHost();
 const values = reactive({
-  owner_id: "", napcat_ws: "", napcat_token: "",
+  owner_id: "", backend: "napcat", napcat_ws: "", napcat_token: "", snowluma_ws: "", snowluma_token: "",
   reply_split_enabled: true, reply_split_regex: "。|", reply_remove_regex: "。",
   reply_trim: true, reply_merge_newlines: true,
   reply_interval_min: 3, reply_interval_max: 5,
   image_model_id: "", speech_recognition: "unimplemented",
 });
 const imageModels = ref<{ id: string; name: string }[]>([]);
-const tokenConfigured = ref(false);
+const tokenConfigured = reactive({ napcat: false, snowluma: false });
 const status = ref({
   online: false,
   self_id: "",
@@ -36,12 +36,14 @@ async function loadStatus() {
 async function save() {
   busy.value = true;
   try {
-    const data = await host.api<{ napcat_token_configured: boolean }>(
+    const data = await host.api<{ napcat_token_configured: boolean; snowluma_token_configured: boolean }>(
       "config",
       values,
     );
     values.napcat_token = "";
-    tokenConfigured.value = data.napcat_token_configured;
+    values.snowluma_token = "";
+    tokenConfigured.napcat = data.napcat_token_configured;
+    tokenConfigured.snowluma = data.snowluma_token_configured;
     await loadStatus();
     host.refresh();
     host.toast("已保存");
@@ -55,8 +57,11 @@ onMounted(async () => {
   try {
     const data = await host.api<{
       owner_id: string;
+      backend: string;
       napcat_ws: string;
       napcat_token_configured: boolean;
+      snowluma_ws: string;
+      snowluma_token_configured: boolean;
       reply_split_enabled: boolean;
       reply_split_regex: string;
       reply_remove_regex: string;
@@ -68,7 +73,9 @@ onMounted(async () => {
       speech_recognition: string;
     }>("config");
     values.owner_id = data.owner_id;
+    values.backend = data.backend;
     values.napcat_ws = data.napcat_ws;
+    values.snowluma_ws = data.snowluma_ws;
     values.reply_split_enabled = data.reply_split_enabled;
     values.reply_split_regex = data.reply_split_regex;
     values.reply_remove_regex = data.reply_remove_regex;
@@ -79,7 +86,8 @@ onMounted(async () => {
     values.image_model_id = data.image_model_id;
     values.speech_recognition = data.speech_recognition;
     imageModels.value = await host.api<{ id: string; name: string }[]>("image-models");
-    tokenConfigured.value = data.napcat_token_configured;
+    tokenConfigured.napcat = data.napcat_token_configured;
+    tokenConfigured.snowluma = data.snowluma_token_configured;
     await loadStatus();
   } catch {
     host.toast("加载失败", true);
@@ -89,20 +97,25 @@ onMounted(async () => {
 onUnmounted(() => clearInterval(timer));
 </script>
 <template>
-  <SPageHeader title="NapCat"
+  <SPageHeader title="QQ"
     ><UiBadge :status="status.online ? 'online' : 'offline'"
   /></SPageHeader>
   <SForm @submit="save">
     <div class="settings-grid">
       <SCard title="连接"
         ><div class="form-body">
+          <SFormItem label="协议端" for="qq-backend">
+            <SSelect id="qq-backend" v-model="values.backend"><option value="napcat">NapCat</option><option value="snowluma">SnowLuma</option></SSelect>
+          </SFormItem>
+          <span class="field-state">适配目标：{{ values.backend === 'napcat' ? 'NapCat v4.18.41' : 'SnowLuma v2.2.1' }}</span>
+          <template v-if="values.backend === 'napcat'">
           <SFormItem label="WebSocket 地址" for="napcat-ws"
             ><SInput id="napcat-ws" v-model="values.napcat_ws" required
           /></SFormItem>
           <SFormItem label="Access Token" for="napcat-token"
             ><template #label
               >Access Token
-              <span v-if="tokenConfigured" class="field-state"
+              <span v-if="tokenConfigured.napcat" class="field-state"
                 >已设置</span
               ></template
             ><SInput
@@ -111,6 +124,11 @@ onUnmounted(() => clearInterval(timer));
               type="password"
               autocomplete="new-password"
           /></SFormItem>
+          </template>
+          <template v-else>
+            <SFormItem label="WebSocket 地址" for="snowluma-ws"><SInput id="snowluma-ws" v-model="values.snowluma_ws" required /></SFormItem>
+            <SFormItem label="Access Token" for="snowluma-token"><template #label>Access Token <span v-if="tokenConfigured.snowluma" class="field-state">已设置</span></template><SInput id="snowluma-token" v-model="values.snowluma_token" type="password" autocomplete="new-password" /></SFormItem>
+          </template>
           <div v-if="status.self_id" class="connection-identity">
             <strong>{{ status.nickname }}</strong
             ><span class="mono">{{ status.self_id }}</span>

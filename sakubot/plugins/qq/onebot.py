@@ -22,7 +22,7 @@ class OneBot:
 
     async def call(self, action, params=None):
         if not self.online.is_set():
-            raise RuntimeError("QQ 插件不可用：NapCat 未连接")
+            raise RuntimeError("QQ 插件不可用：协议端未连接")
         params = params or {}
         if action in ("get_group_msg_history", "get_friend_msg_history"):
             target = "Group:" + str(params.get("group_id", "")) if action == "get_group_msg_history" else "Private:" + str(params.get("user_id", ""))
@@ -30,12 +30,12 @@ class OneBot:
         if action == "get_msg":
             return self.plugin.messages.by_message_id(params.get("message_id", ""))
         if action == "get_forward_msg":
-            return {"messages": []}
+            raise ValueError('暂不支持读取合并转发消息')
         return await self._call(action, params)
 
     async def _call(self, action, params=None):
         if not self.ws:
-            raise RuntimeError("NapCat 尚未连接")
+            raise RuntimeError("QQ 协议端尚未连接")
         echo = uuid.uuid4().hex
         future = asyncio.get_running_loop().create_future()
         self.pending[echo] = future
@@ -44,7 +44,7 @@ class OneBot:
                 await self.ws.send(json.dumps({"action": action, "params": params or {}, "echo": echo}))
             packet = await asyncio.wait_for(future, 30)
             if packet.get("status") != "ok" or packet.get("retcode", 0) != 0:
-                raise RuntimeError(f"NapCat 操作失败（retcode={packet.get('retcode')}）")
+                raise RuntimeError(f"QQ 协议端操作失败（retcode={packet.get('retcode')}）")
             return packet.get("data")
         finally:
             self.pending.pop(echo, None)
@@ -60,6 +60,11 @@ class OneBot:
                 if future and not future.done():
                     future.set_result(packet)
             elif packet.get("post_type"):
+                if (self.plugin.settings.backend == 'snowluma' and packet.get('post_type') == 'notice'
+                        and packet.get('notice_type') in ('bot_status', 'bot_offline')
+                        and (packet.get('sub_type') == 'offline' or packet.get('notice_type') == 'bot_offline')
+                        and (not packet.get('self_id') or str(packet['self_id']) == self.self_id)):
+                    await self.ws.close()
                 # Raw packets remain inside this plugin; interpretation runs on its receiver queue.
                 await self.plugin.receiver.ingest(packet)
 
@@ -74,8 +79,8 @@ class OneBot:
             was_online = False
             try:
                 settings = self.plugin.settings
-                headers = {"Authorization": "Bearer " + settings.napcat_token} if settings.napcat_token else {}
-                async with connect(settings.napcat_ws, additional_headers=headers, proxy=None,
+                headers = {"Authorization": "Bearer " + settings.connection_token} if settings.connection_token else {}
+                async with connect(settings.connection_ws, additional_headers=headers, proxy=None,
                                    open_timeout=15, max_size=8 * 1024 * 1024) as ws:
                     self.ws = ws
                     reader = asyncio.create_task(self.reader())
@@ -92,7 +97,7 @@ class OneBot:
                         self.changed()
                         self.runtime.store.log("info", "qq", "qq.connected", data={"self_id": self.self_id})
                         await reader
-                        raise RuntimeError('NapCat 连接已关闭')
+                        raise RuntimeError('QQ 协议端连接已关闭')
                     finally:
                         reader.cancel()
                         await asyncio.gather(reader, return_exceptions=True)
@@ -102,8 +107,8 @@ class OneBot:
                 if connected_at is not None and time.monotonic() - connected_at >= 60:
                     failures = 0
                 failures += 1
-                delay = min(300, 5 * 2 ** min(failures - 1, 6))
-                self.error = 'NapCat 未连接（' + type(exc).__name__ + '）'
+                delay = min(120, 5 * 2 ** min(failures - 1, 5))
+                self.error = 'QQ 协议端未连接（' + type(exc).__name__ + '）'
                 self.retry_at = time.time() + delay
                 now = time.monotonic()
                 if was_online or failures == 1 or now - last_log >= 60:
@@ -115,7 +120,7 @@ class OneBot:
                 self.ws = None
                 for future in list(self.pending.values()):
                     if not future.done():
-                        future.set_exception(RuntimeError("NapCat 连接中断；远端操作结果可能未知"))
+                        future.set_exception(RuntimeError("QQ 协议端连接中断；远端操作结果可能未知"))
                 self.changed()
             await asyncio.sleep(delay)
 
