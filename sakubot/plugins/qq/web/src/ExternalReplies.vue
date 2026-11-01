@@ -11,6 +11,7 @@ import {
   UiEmpty,
   usePluginHost,
 } from "@sakubot/ui";
+import { promptVariables, variableName } from './promptVariables';
 interface Template {
   id: string;
   name: string;
@@ -43,33 +44,14 @@ const triggerLabels: Record<string, string> = {
 const contextLabels: Record<string, string> = {
   session: "会话 ID",
   messages: "消息记录",
-  summary: "Agent 总结",
+  summary: "智能体总结",
 };
 const host = usePluginHost();
 const tab = ref("sessions");
 const enabled = ref(true);
 const stateBusy = ref(false);
-const requirementsOpen = ref(false);
-const requirements = reactive({ prompt: "", mode: "temporary" });
-const savedRequirements = ref({ prompt: "", mode: "temporary" });
-function editRequirements() {
-  Object.assign(requirements, savedRequirements.value);
-  error.value = "";
-  requirementsOpen.value = true;
-}
-async function saveRequirements() {
-  busy.value = true;
-  error.value = "";
-  try {
-    savedRequirements.value = await host.api<{ prompt: string; mode: string }>("external/requirements", { ...requirements });
-    requirementsOpen.value = false;
-    host.toast("已保存");
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : "保存失败";
-  } finally {
-    busy.value = false;
-  }
-}
+const summaryDefault = ref('');
+const resetSummary = ref(false);
 async function toggleEnabled(value: boolean) {
   stateBusy.value = true;
   try {
@@ -119,7 +101,7 @@ const blank = (): Template => ({
   context_mode: "messages",
   context_messages: 20,
   summary_messages: 50,
-  response_prompt: "",
+  response_prompt: summaryDefault.value,
 });
 const template = reactive<Template>(blank());
 const session = reactive({
@@ -143,7 +125,7 @@ async function load() {
     enabled.value = data.enabled;
     templates.value = data.templates;
     sessions.value = data.sessions;
-    savedRequirements.value = data.requirements;
+    summaryDefault.value = (await host.api<{ summary: string }>('prompt-defaults')).summary;
   } catch {
     error.value = "加载失败";
   }
@@ -227,15 +209,15 @@ async function remove() {
 onMounted(load);
 </script>
 <template>
-  <div class="page-heading">
-    <div class="heading-actions">
+  <div class="page-toolbar">
       <SSwitch
         :model-value="enabled"
         :loading="stateBusy"
         label="启用外部消息回应"
         @change="toggleEnabled"
       />
-      <SButton icon="settings" @click="editRequirements">额外要求</SButton>
+  </div>
+  <Teleport to="body"><div class="floating-actions">
       <SButton class="button" @click="host.navigate('/agents')">
         Agent 管理</SButton
       ><SButton
@@ -246,41 +228,10 @@ onMounted(load);
           tab === "sessions" ? "新增会话" : "新增模板"
         }}
       </SButton>
-    </div>
-  </div>
-  <UiModal :open="requirementsOpen" title="额外要求" @close="!busy && (requirementsOpen = false)">
-    <form id="qq-requirements-form" class="form-stack" @submit.prevent="saveRequirements">
-      <SFormItem label="提示词" for="qq-extra-prompt">
-        <STextarea id="qq-extra-prompt" v-model="requirements.prompt" :maxlength="10000" rows="6" />
-      </SFormItem>
-      <SFormItem label="注入模式" for="qq-extra-mode">
-        <SSelect id="qq-extra-mode" v-model="requirements.mode">
-          <option value="temporary">临时</option>
-          <option value="context">上下文</option>
-        </SSelect>
-      </SFormItem>
-      <span v-if="error" class="form-error">{{ error }}</span>
-    </form>
-    <template #footer>
-      <SButton :disabled="busy" @click="requirementsOpen = false">取消</SButton>
-      <SButton form="qq-requirements-form" type="submit" variant="primary" :loading="busy">保存</SButton>
-    </template>
-  </UiModal>
-  <div class="page-toolbar">
-    <SButton
-      class="button"
-      :class="{ primary: tab === 'sessions' }"
-      @click="tab = 'sessions'"
-    >
-      会话列表</SButton
-    ><SButton
-      class="button"
-      :class="{ primary: tab === 'templates' }"
-      @click="tab = 'templates'"
-    >
-      响应模板</SButton
-    ><span
-      v-if="error && !templateOpen && !sessionOpen && !deleting"
+  </div></Teleport>
+  <STabs v-model="tab" :items="[{ value: 'sessions', label: '会话列表' }, { value: 'templates', label: '响应模板' }]" />
+  <div v-if="error && !templateOpen && !sessionOpen && !deleting" class="page-toolbar">
+    <span
       class="form-error"
       >{{ error }}</span
     >
@@ -500,7 +451,7 @@ onMounted(load);
         ><SSelect id="context-mode" v-model="template.context_mode">
           <option value="session">仅会话 ID</option>
           <option value="messages">消息记录</option>
-          <option value="summary">Agent 总结</option>
+          <option value="summary">智能体总结</option>
         </SSelect>
       </div>
       <div v-if="template.context_mode === 'messages'" class="field">
@@ -525,14 +476,16 @@ onMounted(load);
           required
         />
       </div>
-      <div class="field">
-        <label for="response-prompt">响应要求</label
+      <div v-if="template.context_mode === 'summary'" class="field">
+        <label for="response-prompt">智能体在总结时的额外要求</label
         ><STextarea
           id="response-prompt"
           v-model="template.response_prompt"
           rows="4"
           maxlength="10000"
         ></STextarea>
+        <SButton type="button" @click="resetSummary = true">重置为默认</SButton>
+        <div class="field-state"><div v-for="[name, label] in promptVariables" :key="name">{{ variableName(name) }} · {{ label }}</div></div>
       </div>
       <span v-if="error" class="form-error">{{ error }}</span>
     </form>
@@ -543,6 +496,10 @@ onMounted(load);
       </SButton></template
     ></UiModal
   >
+  <UiModal :open="resetSummary" title="重置为默认" @close="resetSummary = false">
+    <span>重置智能体在总结时的额外要求？</span>
+    <template #footer><SButton @click="resetSummary = false">取消</SButton><SButton variant="primary" @click="template.response_prompt = summaryDefault; resetSummary = false">重置</SButton></template>
+  </UiModal>
   <UiModal :open="!!deleting" title="删除" @close="deleting = null"
     ><strong>{{ deleting?.name }}</strong
     ><span v-if="error" class="form-error">{{ error }}</span
@@ -557,8 +514,8 @@ onMounted(load);
 
 <style scoped>
 .trigger-accordion { display:grid;gap:10px; }
-.trigger-item { border:1px solid var(--border);border-radius:11px;background:#fff;overflow:hidden;transition:border-color .2s,opacity .2s; }
-.trigger-item:has(.trigger-expand.open) { border-color:#cfc7ee; }
+.trigger-item { border:1px solid var(--border);border-radius:11px;background:var(--surface);overflow:hidden;transition:border-color .2s,opacity .2s; }
+.trigger-item:has(.trigger-expand.open) { border-color:var(--palette-border-cfc7ee); }
 .trigger-item.disabled { opacity:.55; }
 .trigger-header { display:flex;align-items:center;gap:10px;padding:13px 15px;cursor:pointer;font-weight:550; }
 .trigger-item.disabled .trigger-header { cursor:not-allowed; }

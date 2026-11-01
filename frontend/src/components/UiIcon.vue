@@ -25,6 +25,7 @@ import {
   X,
   Power,
   Pause,
+  Square,
   LogOut,
   Menu,
   Inbox,
@@ -45,12 +46,18 @@ import {
   Upload,
   Download,
   MessagesSquare,
+  Sun,
+  Moon,
+  Monitor,
 } from '@lucide/vue'
 const props = withDefaults(defineProps<{ name: string; size?: number; strokeWidth?: number }>(), {
   size: 19,
   strokeWidth: 1.7,
 })
 const icons = {
+  sun: Sun,
+  moon: Moon,
+  monitor: Monitor,
   chat: MessagesSquare,
   folder: Folder,
   file: FileText,
@@ -80,6 +87,7 @@ const icons = {
   close: X,
   power: Power,
   pause: Pause,
+  stop: Square,
   logout: LogOut,
   menu: Menu,
   empty: Inbox,

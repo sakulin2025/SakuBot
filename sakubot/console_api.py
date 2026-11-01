@@ -14,8 +14,10 @@ def register_console_api(app, authorize, config, store, runtime, config_lock):
 
     @app.get("/api/plugin-registry", dependencies=auth)
     async def plugin_registry():
+        from .plugin import PAGE_GROUPS
         return {"revision": runtime.registry.revision, "pages": runtime.registry.page_manifest(),
-            "plugins": runtime.registry.installed_catalog()}
+            "plugins": runtime.registry.installed_catalog(),
+            "page_groups": [{'id': key, 'label': value[0], 'order': value[1], 'builtin_only': key == 'system'} for key, value in PAGE_GROUPS.items()]}
 
     @app.patch("/api/plugins/{identifier}", dependencies=auth)
     async def toggle_plugin(identifier: str, request: Request):
@@ -92,6 +94,10 @@ def register_console_api(app, authorize, config, store, runtime, config_lock):
             else:
                 file.unlink(missing_ok=True)
                 file.with_suffix(".json").unlink(missing_ok=True)
+            preinstalled = store.kv_get('preinstalled:state', {})
+            if identifier in preinstalled.get('ids', []):
+                preinstalled['ids'] = [name for name in preinstalled['ids'] if name != identifier]
+                store.kv_set('preinstalled:state', preinstalled)
             if purge:
                 data_dir = config.root / 'plugin_data' / identifier
                 if data_dir.is_symlink():

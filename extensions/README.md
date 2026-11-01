@@ -1,6 +1,6 @@
 # SakuBot 外部插件
 
-这些包通过公共 Plugin API 加载，不在核心镜像里。开发源码在本目录，部署副本在 `data/plugins`，状态与配置在 `data/plugin_data` 或框架提供的插件命名空间 KV 中。删除程序不删除业务数据。
+这些包通过公共 Plugin API 加载。SSH 设备、和风天气、DeepSeek 余额查询、AList、Home Assistant 和我的世界服务器状态作为预装第三方插件随镜像提供，首次部署时导入 `data/plugins`，默认不启用。其他插件仍需手动导入。状态与配置在 `data/plugin_data` 或框架提供的插件命名空间 KV 中。删除程序不删除业务数据，删除后重启不会重新导入。
 
 | 包 | 页面与能力 |
 | --- | --- |
@@ -13,6 +13,9 @@
 | deepseek_balance | 复用框架供应商的官方账户余额主动查询 |
 | image_gallery | 审核通过图片、图片ID、附件URL、待审核计数与发送 |
 | context_reminders | 单一主上下文中的背景提醒、指定目标参考、有效期 |
+| freereps_activity | FreeReps 健康及训练查询，训练记录轮询、去重与主动事件 |
+| mattermost | Mattermost 主人私聊主对话源、消息与附件收发 |
+| calorie_calendar | 每日热量摄入和消耗记录、确认统计、日历和饮食估算技能 |
 
 ## 发布
 

@@ -69,7 +69,7 @@ async function remove() {
 }
 </script>
 <template>
-  <SPageHeader title="人格">
+  <SPageHeader title="人格" floating>
     <SButton class="button primary" @click="edit()">
       <UiIcon name="plus" :size="17" />
       新增人格

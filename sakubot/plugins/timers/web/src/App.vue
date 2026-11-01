@@ -27,8 +27,9 @@ const draft = reactive({
   timing: "interval",
   at: "",
   interval: 300,
-  target: "main",
-  target_id: "",
+  daily_time: "09:00",
+  timezone: "Asia/Shanghai",
+  send_result_to_source: true,
   enabled: true,
   include_context: false,
 });
@@ -54,15 +55,16 @@ function edit(row?: Schedule) {
     name: row?.data.name || "",
     content: row?.data.content || "",
     mode: row?.data.mode || "wake",
-    timing: at ? "once" : "interval",
+    timing: at ? "once" : row?.data.daily_time ? "daily" : "interval",
     at: at
       ? new Date(at.getTime() - at.getTimezoneOffset() * 60000)
           .toISOString()
           .slice(0, 16)
       : "",
     interval: row?.data.interval_seconds || 300,
-    target: row?.data.target || "main",
-    target_id: row?.data.target_id || "",
+    daily_time: row?.data.daily_time || "09:00",
+    timezone: row?.data.timezone || "Asia/Shanghai",
+    send_result_to_source: row?.data.send_result_to_source ?? true,
     enabled: row?.data.enabled ?? true,
     include_context: row?.data.include_context || false,
   });
@@ -80,8 +82,9 @@ async function save() {
       at: draft.timing === "once" ? new Date(draft.at).toISOString() : "",
       interval_seconds:
         draft.timing === "interval" ? Number(draft.interval) : 0,
-      target: draft.target,
-      target_id: draft.target === "main" ? "" : draft.target_id,
+      daily_time: draft.timing === "daily" ? draft.daily_time : "",
+      timezone: draft.timezone,
+      send_result_to_source: draft.send_result_to_source,
       enabled: draft.enabled,
       include_context: draft.include_context,
     });
@@ -111,11 +114,11 @@ async function remove() {
 onMounted(load);
 </script>
 <template>
-  <div class="page-heading">
+  <Teleport to="body"><div class="floating-actions">
     <SButton class="button primary" @click="edit()">
       <UiIcon name="plus" :size="16" />新增任务
     </SButton>
-  </div>
+  </div></Teleport>
   <SCard class="surface">
     <div class="table-toolbar">
       <div class="search-field">
@@ -150,10 +153,7 @@ onMounted(load);
           <tr v-for="row in filtered" :key="row.id">
             <td>
               <strong>{{ row.data.name }}</strong
-              ><span class="cell-sub mono"
-                >{{ row.data.target
-                }}{{ row.data.target_id ? ":" + row.data.target_id : "" }}</span
-              >
+              ><span v-if="row.data.legacy_target" class="cell-sub">旧目标：{{ row.data.legacy_target }} · 待重新设置</span>
             </td>
             <td><UiBadge :status="row.data.mode" /></td>
             <td class="nowrap">
@@ -213,6 +213,7 @@ onMounted(load);
           <label for="timing">触发方式</label
           ><SSelect id="timing" v-model="draft.timing">
             <option value="interval">固定间隔</option>
+            <option value="daily">每天</option>
             <option value="once">指定时间</option>
           </SSelect>
         </div>
@@ -228,30 +229,15 @@ onMounted(load);
           required
         />
       </div>
-      <div v-else class="field">
-        <label for="at">时间</label
-        ><SInput id="at" v-model="draft.at" type="datetime-local" required />
+      <div v-else-if="draft.timing === 'once'" class="field">
+        <label for="at">时间</label>
+        <SInput id="at" v-model="draft.at" type="datetime-local" required />
       </div>
-      <div class="field">
-        <label for="target">目标会话</label
-        ><SSelect id="target" v-model="draft.target">
-          <option value="main">主对话 · main</option>
-          <option value="private">私聊 · private</option>
-          <option value="group">群聊 · group</option>
-        </SSelect>
+      <div v-else class="form-row">
+        <div class="field"><label for="daily-time">每天</label><SInput id="daily-time" v-model="draft.daily_time" type="time" required /></div>
+        <div class="field"><label for="timezone">时区</label><SInput id="timezone" v-model="draft.timezone" required /></div>
       </div>
-      <div v-if="draft.target !== 'main'" class="field">
-        <label for="target-id">{{
-          draft.target === "private" ? "QQ 号" : "群号"
-        }}</label>
-        <SInput
-          id="target-id"
-          v-model="draft.target_id"
-          inputmode="numeric"
-          pattern="[1-9][0-9]{0,19}"
-          required
-        />
-      </div>
+      <label v-if="draft.mode !== 'context'" class="checkbox-field"><SCheckbox v-model="draft.send_result_to_source" />发送到主对话源</label>
       <div class="form-row">
         <label class="checkbox-field"
           ><SCheckbox v-model="draft.enabled" />启用</label

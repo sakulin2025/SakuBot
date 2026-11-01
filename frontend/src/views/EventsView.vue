@@ -7,6 +7,7 @@ import UiIcon from '../components/UiIcon.vue'
 import UiBadge from '../components/UiBadge.vue'
 import UiModal from '../components/UiModal.vue'
 import UiEmpty from '../components/UiEmpty.vue'
+import StructuredValue from '../components/StructuredValue.vue'
 defineProps<{ embedded?: boolean }>()
 const store = useConsole()
 const events = ref<EventRecord[]>([])
@@ -22,8 +23,17 @@ const submitting = ref(false)
 const selected = ref<EventRecord | null>(null)
 const selectedRun = ref<{ trace: string; status: string } | null>(null)
 const detailBusy = ref(false)
-type RunTrace = { api_requests?: { step: number; body: unknown }[]; result?: string; messages?: { role?: string; content?: unknown; tool_calls?: unknown[] }[] }
+const requestView = ref<'visual' | 'json'>('visual')
+const expandedMessages = ref<Record<number, boolean>>({})
+const asObject = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+const requestMessages = (body: unknown): unknown[] => Array.isArray(asObject(body).messages) ? asObject(body).messages as unknown[] : []
+const requestTools = (body: unknown): unknown[] => Array.isArray(asObject(body).tools) ? asObject(body).tools as unknown[] : []
+const otherFields = (body: unknown) => Object.fromEntries(Object.entries(asObject(body)).filter(([key]) => key !== 'messages' && key !== 'tools'))
+const messageRole = (value: unknown) => String(asObject(value).role || '消息')
+const toolName = (value: unknown) => String(asObject(asObject(value).function).name || asObject(value).name || asObject(value).type || '工具')
+type RunTrace = { compressions?: { id: string; status: string; chunks: unknown[]; error?: string; summary?: string }[]; api_requests?: { step: number; body: unknown }[]; temporary_contexts?: { step: number; messages: unknown[] }[]; result?: string; messages?: { role?: string; content?: unknown; tool_calls?: unknown[] }[] }
 const trace = computed(() => parseJson(selectedRun.value?.trace) as RunTrace | undefined)
+const injectionsForStep = (step: number) => trace.value?.temporary_contexts?.find((item) => item.step === step)?.messages || []
 const requests = computed(() => {
   return Array.isArray(trace.value?.api_requests) ? trace.value.api_requests : []
 })
@@ -33,7 +43,7 @@ const runResult = computed(() => {
   const last = trace.value.messages.at(-1)
   return last?.role === 'assistant' && !last.tool_calls?.length && typeof last.content === 'string' ? last.content : null
 })
-const draft = reactive({ kind: 'wake', text: '', target: '', include_context: false })
+const draft = reactive({ kind: 'wake', text: '', send_result_to_source: true, include_context: false })
 const visible = computed(() =>
   events.value.filter((event) => kind.value === 'all' || event.kind === kind.value),
 )
@@ -69,7 +79,7 @@ function create() {
   Object.assign(draft, {
     kind: 'wake',
     text: '',
-    target: store.status?.main_session || '',
+    send_result_to_source: true,
     include_context: false,
   })
   creating.value = true
@@ -110,6 +120,8 @@ function newer() {
 }
 async function inspect(event: EventRecord) {
   selected.value = event
+  requestView.value = 'visual'
+  expandedMessages.value = {}
   selectedRun.value = null
   detailBusy.value = !!event.run_id
   if (!event.run_id) return
@@ -125,12 +137,12 @@ async function inspect(event: EventRecord) {
 onMounted(load)
 </script>
 <template>
-  <div class="page-heading">
+  <Teleport to="body"><div class="floating-actions">
     <SButton class="button primary" @click="create">
       <UiIcon name="plus" :size="17" />
       创建事件
     </SButton>
-  </div>
+  </div></Teleport>
   <SCard class="surface">
     <div class="tab-bar">
       <SButton
@@ -238,10 +250,9 @@ onMounted(load)
         <label for="event-text">内容</label>
         <STextarea id="event-text" v-model="draft.text" rows="6" required></STextarea>
       </div>
-      <div class="field">
-        <label for="event-target">目标会话</label>
-        <SInput id="event-target" v-model="draft.target" required />
-      </div>
+      <label v-if="draft.kind !== 'context'" class="checkbox-field">
+        <SCheckbox v-model="draft.send_result_to_source" />发送到主对话源
+      </label>
       <label v-if="draft.kind === 'notify'" class="checkbox-field">
         <SCheckbox v-model="draft.include_context" />
         加入上下文
@@ -273,12 +284,62 @@ onMounted(load)
           </div>
           <div v-if="!requests.length">暂无请求体</div>
         </template>
-        <details v-for="(request, index) in requests" :key="index">
+        <details v-for="compression in trace?.compressions || []" :key="compression.id" class="request-detail">
+          <summary>上下文压缩 · {{ compression.status }}</summary>
+          <StructuredValue :value="compression" />
+        </details>
+        <div v-if="requests.length" class="tab-bar">
+          <SButton class="tab" :class="{ active: requestView === 'visual' }" @click="requestView = 'visual'">可视化</SButton>
+          <SButton class="tab" :class="{ active: requestView === 'json' }" @click="requestView = 'json'">JSON</SButton>
+        </div>
+        <details v-for="(request, index) in requests" :key="index" class="request-detail" :open="index === requests.length - 1">
           <summary>API 请求体 · 第 {{ request.step }} 轮</summary>
-          <pre class="json-block">{{ JSON.stringify(request.body, null, 2) }}</pre>
+          <pre v-if="requestView === 'json'" class="json-block">{{ JSON.stringify(request.body, null, 2) }}</pre>
+          <div v-else class="request-visual">
+            <section v-if="injectionsForStep(request.step).length" class="request-section">
+              <strong>临时注入 · {{ injectionsForStep(request.step).length }}</strong>
+              <article v-for="(item, itemIndex) in injectionsForStep(request.step)" :key="itemIndex" class="request-message">
+                <StructuredValue :value="item" />
+              </article>
+            </section>
+            <section class="request-section">
+              <strong>请求参数</strong>
+              <StructuredValue :value="request.body && typeof request.body === 'object' && !Array.isArray(request.body) ? otherFields(request.body) : request.body" />
+            </section>
+            <section class="request-section">
+              <strong>工具 · {{ requestTools(request.body).length }}</strong>
+              <details v-for="(tool, toolIndex) in requestTools(request.body)" :key="toolIndex" class="request-item">
+                <summary>{{ toolName(tool) }}</summary>
+                <StructuredValue :value="tool" />
+              </details>
+              <span v-if="!requestTools(request.body).length" class="subtle">无工具</span>
+            </section>
+            <section class="request-section">
+              <strong>消息 · {{ requestMessages(request.body).length }}</strong>
+              <article v-for="(message, messageIndex) in [...requestMessages(request.body)].reverse().slice(0, expandedMessages[index] ? undefined : 10)" :key="messageIndex" class="request-message">
+                <div class="message-heading"><span>{{ messageRole(message) }}</span><span class="subtle">#{{ requestMessages(request.body).length - messageIndex }}</span></div>
+                <StructuredValue :value="message" />
+              </article>
+              <SButton v-if="requestMessages(request.body).length > 10" class="button" @click="expandedMessages[index] = !expandedMessages[index]">
+                {{ expandedMessages[index] ? '收起' : `显示全部 ${requestMessages(request.body).length} 条` }}
+              </SButton>
+            </section>
+          </div>
         </details>
       </template>
       <div v-if="selected.error" class="record-error">{{ selected.error }}</div>
     </div>
   </UiModal>
 </template>
+
+<style scoped>
+.request-detail { border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+.request-detail > summary, .request-item > summary { cursor: pointer; font-weight: 600; overflow-wrap: anywhere; }
+.request-visual, .request-section { display: grid; gap: 12px; min-width: 0; }
+.request-visual { padding-top: 16px; }
+.request-section { padding: 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.request-item { border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
+.request-item[open] > summary { margin-bottom: 12px; }
+.request-message { min-width: 0; border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+.message-heading { display: flex; justify-content: space-between; gap: 12px; font-weight: 600; margin-bottom: 10px; }
+</style>

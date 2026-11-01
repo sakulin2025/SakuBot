@@ -14,7 +14,17 @@ from starlette.routing import compile_path
 import jsonschema
 from .store import encode
 from .components import SYSTEM_ROOT, BUILTIN_ROOT, required, builtin, canonical, system_ids
+from .injections import injection
 
+PAGE_GROUPS = {
+    'system': ('系统功能', 30),
+    'conversation': ('会话连接', 40),
+    'smart_home': ('智能家居', 50),
+    'network': ('网络与设备', 60),
+    'media': ('媒体娱乐', 70),
+    'productivity': ('效率工具', 80),
+    'extensions': ('插件', 100),
+}
 
 @dataclass
 class Invocation:
@@ -35,9 +45,15 @@ class Invocation:
     send_result_to_source: bool = True
     temporary_tools: dict = field(default_factory=dict)
 
-    def inject_temporary(self, content):
+    def inject_temporary(self, content, *, source='plugin', category='reminder', priority=0):
         """Supply a reminder to the next model request of this invocation only."""
-        self.temporary_next.extend(temporary_messages(content))
+        if content:
+            self.temporary_next.append(injection(content, source=source, category=category, lifetime='request', priority=priority))
+
+    def inject_context(self, content, *, source='plugin', category='guidance', lifetime='wake', role='system', priority=0):
+        if content:
+            item = injection(content, source=source, category=category, lifetime=lifetime, role=role, priority=priority)
+            (self.temporary_next if lifetime == 'request' else self.temporary_context).append(item)
 
 
 def temporary_messages(content):
@@ -113,9 +129,9 @@ class Plugin:
         from .plugin_support import register_function
         return register_function(self, handler, name, description)
 
-    def management(self, title, sections, state, action, *, icon='plugins', order=50):
+    def management(self, title, sections, state, action, *, icon='plugins', order=50, group_id='extensions'):
         from .plugin_support import management
-        return management(self, title, sections, state, action, icon=icon, order=order)
+        return management(self, title, sections, state, action, icon=icon, order=order, group_id=group_id)
 
     def setup(self):
         pass
@@ -192,8 +208,8 @@ class Plugin:
         return await self.runtime.run_agent(self.id + ":" + identifier, goal,
             invocation=invocation, context=context, run_id=run_id)
 
-    def page(self, identifier, title, directory, *, icon="plugins", order=50, aliases=()):
-        self.runtime.registry.add_page(self.id, identifier, title, directory, icon, order, aliases)
+    def page(self, identifier, title, directory, *, icon="plugins", order=50, aliases=(), group_id='extensions'):
+        self.runtime.registry.add_page(self.id, identifier, title, directory, icon, order, aliases, group_id)
 
     def api(self, path, handler, methods=("GET",)):
         self.runtime.registry.add_api(self.id, path, handler, methods)
@@ -257,14 +273,19 @@ class Registry:
     def onboarding(self):
         return [dict(step, plugin_id=plugin.id, optional=True) for plugin in self.plugins for step in plugin.onboarding()]
 
-    def add_page(self, plugin, identifier, title, directory, icon, order, aliases):
+    def add_page(self, plugin, identifier, title, directory, icon, order, aliases, group_id='extensions'):
         if not re.fullmatch(r"[a-z][a-z0-9_-]{0,40}", identifier) or any(owner == plugin for owner, _ in self.pages):
             raise ValueError("每个插件最多声明一个页面，且页面 ID 必须有效")
         if any(not alias.startswith("/") or alias.startswith("//") for alias in aliases):
             raise ValueError("插件页面别名无效")
+        if group_id not in PAGE_GROUPS:
+            raise ValueError('插件页面分组 ID 无效')
+        if group_id == 'system' and not builtin(plugin):
+            raise ValueError('系统功能分组仅限内置插件')
+        group, group_order = PAGE_GROUPS[group_id]
         self.pages[(plugin, identifier)] = {"plugin_id": plugin, "id": identifier, "title": title,
-            "directory": Path(directory).resolve(), "group": "系统" if builtin(plugin) else "插件", "icon": icon, "order": order,
-            "group_order": 90 if builtin(plugin) else 100, "aliases": list(aliases),
+            "directory": Path(directory).resolve(), "group_id": group_id, "group": group, "icon": icon, "order": order,
+            "group_order": group_order, "aliases": list(aliases),
             "route": f"/extensions/{plugin}/{identifier}", "url": f"/extensions/{plugin}/{identifier}/"}
 
     def page_manifest(self):
@@ -307,6 +328,8 @@ class Registry:
     def available(self, inv):
         if inv.instance:
             inv.instance.ensure_active()
+            if not inv.instance.tools_enabled:
+                return []
         visible = self.visible_plugin_ids(inv)
         tools = dict(self.tools)
         if inv.instance and inv.instance.active:
@@ -464,6 +487,7 @@ class Registry:
 
     def installed_catalog(self):
         definitions = {}
+        preinstalled = set(self.runtime.store.kv_get('preinstalled:state', {}).get('ids', []))
         for root in (SYSTEM_ROOT, BUILTIN_ROOT, self.runtime.config.root / "plugins"):
             if not root.is_dir():
                 continue
@@ -483,6 +507,7 @@ class Registry:
                 if name in definitions:
                     continue
                 definitions[name] = {"builtin": root in (SYSTEM_ROOT, BUILTIN_ROOT), "name": name, "label": str(metadata.get("label") or name),
+                    "preinstalled": root == self.runtime.config.root / 'plugins' and name in preinstalled,
                     "required": root == SYSTEM_ROOT, **self.availability(name), "icon": str(metadata.get("icon") or "plugins"),
                     "selected": root == SYSTEM_ROOT or name in self.runtime.config.settings.plugins, "loaded": self.loaded(name)}
         from .plugin_settings import declaration, configuration, missing

@@ -84,6 +84,7 @@ class ConversationSettings(BaseModel):
     mode: Literal['broadcast', 'intelligent'] = 'intelligent'
     targets: list[str] = Field(default_factory=list, max_length=100)
     tool_events: bool = False
+    wake_insertion: Literal['queue', 'next_boundary'] = 'queue'
 
 
 class AgentPreferences(BaseModel):
@@ -180,6 +181,9 @@ class Settings(BaseModel):
 class Config:
     def __init__(self):
         self.root = Path(os.environ.get("SAKUBOT_DATA", "./data"))
+        plugin_root = self.root / 'plugins'
+        self.fresh_install = (not any((self.root / name).exists() for name in ('config.json', 'sakubot.sqlite3', 'admin_token'))
+            and (not plugin_root.exists() or (plugin_root.is_dir() and not any(plugin_root.iterdir()))))
         self.root.mkdir(mode=0o700, parents=True, exist_ok=True)
         for directory in ('plugins', 'plugin_data'):
             (self.root / directory).mkdir(mode=0o700, exist_ok=True)
@@ -187,13 +191,9 @@ class Config:
         raw = json.loads(self.path.read_text()) if self.path.exists() else {}
         legacy_processing = raw.pop("message_processing", None)
         if isinstance(legacy_processing, dict):
-            qq_path = self.root / "plugin_data" / "qq" / "config.json"
-            qq_path.parent.mkdir(parents=True, exist_ok=True)
-            qq_config = json.loads(qq_path.read_text()) if qq_path.exists() else {}
-            for key in ("image_model_id", "speech_recognition"):
-                if key in legacy_processing and key not in qq_config:
-                    qq_config[key] = legacy_processing[key]
-            self.atomic(qq_path, json.dumps(qq_config, ensure_ascii=False, indent=2) + "\n")
+            legacy_path = self.root / 'plugin_data' / 'legacy_message_processing.json'
+            if not legacy_path.exists():
+                self.atomic(legacy_path, json.dumps(legacy_processing, ensure_ascii=False, indent=2) + "\n")
             self.atomic(self.path, json.dumps(raw, ensure_ascii=False, indent=2) + "\n")
         self.legacy_persona = raw.get("persona", "")
         self.settings = Settings.model_validate(raw)

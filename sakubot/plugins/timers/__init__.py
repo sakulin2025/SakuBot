@@ -4,7 +4,8 @@ import re
 import time
 import uuid
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sakubot.plugin import Plugin, object_schema, text
 from sakubot.store import encode
@@ -18,34 +19,30 @@ class Extension(Plugin):
         CREATE TABLE IF NOT EXISTS schedules (
           id TEXT PRIMARY KEY, data TEXT NOT NULL, next_at REAL NOT NULL);
         """)
-        # Convert legacy aliases and compound targets once; new inputs use the enum below.
+        # Preserve old explicit destinations for review; never silently redirect them.
         for row in self.runtime.store.rows('SELECT id,data FROM schedules'):
             data = json.loads(row['data'])
-            old = data.get('target') or 'main'
-            if old == 'owner':
-                data['target'] = 'main'
-            elif ':' in old:
-                data['target'], data['target_id'] = old.split(':', 1)
-            else:
-                data['target'] = old
-            try:
-                self.destination(data)
-            except ValueError:
+            target = data.get('target') or 'main'
+            if target not in ('main', 'owner'):
+                data['legacy_target'] = target + (':' + str(data.get('target_id')) if data.get('target_id') and ':' not in target else '')
                 data['enabled'] = False
-                self.runtime.store.log('warning', self.id, 'schedule.target.invalid', data={'schedule_id': row['id']})
+                self.runtime.store.log('warning', self.id, 'schedule.legacy_target.paused', data={'schedule_id': row['id']})
+            data['target'] = 'main'
+            data.pop('target_id', None)
+            data.setdefault('send_result_to_source', True)
             self.runtime.store.execute('UPDATE schedules SET data=? WHERE id=?', (encode(data), row['id']))
-        self.page("manage", "定时任务", Path(__file__).parent / "web" / "dist", icon="clock", order=10, aliases=("/schedules",))
+        self.page("manage", "定时任务", Path(__file__).parent / "web" / "dist", icon="clock", order=10, aliases=("/schedules",), group_id='system')
         self.api("schedules", self.page_list)
         self.api("schedules", self.page_manage, methods=("POST",))
-        self.tool("schedule_manage", "管理持久定时任务。mode=wake 唤醒主 Agent，context 仅记录，notify 仅发固定文字。target 只能是 main/private/group：main 使用主上下文并按当前主对话路由回应；private/group 必须同时提供 target_id，通知或唤醒后的最终文本固定投递到指定私聊/群，不改变主对话当前响应源。所有唤醒仍使用唯一主上下文。owner 不再接受。可指定带时区的 at，或 interval_seconds 重复。停机期间重复任务只补一次。",
+        self.tool("schedule_manage", "管理主会话定时任务。mode=wake 唤醒主智能体，context 加入上下文，notify 显示固定通知。时间可选带时区的 at、interval_seconds 间隔或 daily_time 每天当地时间，三选一。send_result_to_source 控制唤醒结果或通知是否发送到当前主对话源；网页始终显示。每天任务指定 IANA timezone，默认 Asia/Shanghai；停机期间重复任务只触发一次。",
             object_schema({"action": {"type": "string", "enum": ["list", "save", "delete"]},
-                           "id": text("更新/删除的任务 ID，新增留空"), "name": text(), "content": text(),
+                           "id": text("更新或删除的任务 ID"), "name": text(), "content": text(),
                            "mode": {"type": "string", "enum": ["context", "wake", "notify"]},
-                           "at": text("一次性时间，例如 2026-10-26T09:00:00+08:00"),
+                           "at": text("一次性时间，需带时区，例如 2026-10-26T09:00:00+08:00"),
                            "interval_seconds": {"type": "integer", "minimum": 0, "maximum": 31536000},
-                           "target": {"type": "string", "enum": ["main", "private", "group"], "default": "main", "description": "main=当前主对话路由；private=固定私聊；group=固定群聊"},
-                           "target_id": text("target 为 private/group 时必填 QQ号/群号，仅数字；main 时省略"), "enabled": {"type": "boolean"},
-                           "include_context": {"type": "boolean"}}, ("action",)), self.manage)
+                           "daily_time": text("每日时间，格式 HH:MM"), "timezone": text("IANA 时区，例如 Asia/Shanghai"),
+                           "send_result_to_source": {"type": "boolean", "description": "是否发送结果或通知到主对话源，默认 true"},
+                           "enabled": {"type": "boolean"}, "include_context": {"type": "boolean"}}, ("action",)), self.manage)
 
     async def page_list(self, request):
         return self.runtime.store.list_records("schedules")
@@ -57,17 +54,24 @@ class Extension(Plugin):
         self.background(self.loop())
 
     @staticmethod
-    def destination(data):
-        target = data.get('target', 'main')
-        if target not in ('main', 'private', 'group'):
-            raise ValueError('target 仅支持 main、private、group；不再接受 owner 或带冒号的目标')
-        if target == 'main':
-            data.pop('target_id', None)
-            return 'main'
-        identifier = data.get('target_id', '')
-        if not isinstance(identifier, str) or not re.fullmatch(r'[1-9][0-9]{0,19}', identifier):
-            raise ValueError('private/group 必须提供仅含数字的 target_id')
-        return target + ':' + identifier
+    def next_daily(clock, zone_name, after):
+        if not isinstance(clock, str) or not re.fullmatch(r'(?:[01]\d|2[0-3]):[0-5]\d', clock):
+            raise ValueError('每日时间格式须为 HH:MM')
+        try:
+            zone = ZoneInfo(zone_name)
+        except (ZoneInfoNotFoundError, ValueError, TypeError):
+            raise ValueError('时区无效，请使用 IANA 时区名称')
+        hour, minute = map(int, clock.split(':'))
+        day = datetime.fromtimestamp(after, zone).date()
+        for offset in range(370):
+            date = day + timedelta(days=offset)
+            local = datetime(date.year, date.month, date.day, hour, minute, tzinfo=zone, fold=0)
+            # Skip nonexistent local times at spring DST transitions.
+            if local.astimezone(timezone.utc).astimezone(zone).replace(tzinfo=None) != local.replace(tzinfo=None):
+                continue
+            if local.timestamp() > after:
+                return local.timestamp()
+        raise ValueError('无法计算下一次每日触发时间')
 
     async def manage(self, inv, args):
         store = self.runtime.store
@@ -84,22 +88,37 @@ class Extension(Plugin):
         data.setdefault("enabled", True)
         data.setdefault("mode", "wake")
         data.setdefault("include_context", False)
-        data.setdefault('target', 'main')
-        self.destination(data)
-        interval = int(data.get("interval_seconds", 0))
-        if interval and interval < 30:
-            raise ValueError("重复间隔至少30秒")
-        if data.get("at") and interval:
-            raise ValueError("一次性时间和重复间隔只选一个；改类型时清空另一个字段")
-        if data.get("at"):
-            at = datetime.fromisoformat(data["at"])
+        if args.get('target') not in (None, '', 'main', 'owner') or args.get('target_id'):
+            raise ValueError('定时任务只支持主会话，请使用 send_result_to_source 控制是否报告')
+        data['target'] = 'main'
+        data.pop('target_id', None)
+        data.pop('legacy_target', None)
+        data.setdefault('send_result_to_source', True)
+        if not isinstance(data['send_result_to_source'], bool):
+            raise ValueError('是否发送到主对话源须为布尔值')
+        if data['mode'] not in ('wake', 'context', 'notify'):
+            raise ValueError('事件类型无效')
+        interval = int(data.get('interval_seconds') or 0)
+        daily = data.get('daily_time') or ''
+        if interval < 0 or interval > 31536000 or (interval and interval < 30):
+            raise ValueError('重复间隔须在 30 至 31536000 秒之间')
+        if sum(bool(x) for x in (data.get('at'), interval, daily)) != 1:
+            raise ValueError('一次性时间、重复间隔和每日时间须且只能选择一个')
+        if data.get('at'):
+            at = datetime.fromisoformat(data['at'])
             if at.tzinfo is None:
-                raise ValueError("时间必须带时区，例如 +08:00")
+                raise ValueError('时间必须带时区，例如 +08:00')
             next_at = at.timestamp()
         elif interval:
-            next_at = old["next_at"] if old and "interval_seconds" not in args else time.time() + interval
+            unchanged = old and json.loads(old['data']).get('interval_seconds') == interval and not json.loads(old['data']).get('at') and not json.loads(old['data']).get('daily_time')
+            next_at = old['next_at'] if unchanged else time.time() + interval
         else:
-            raise ValueError("请提供一次性 at 或 interval_seconds")
+            zone = data.get('timezone') or 'Asia/Shanghai'
+            data['timezone'] = zone
+            candidate = self.next_daily(daily, zone, time.time())
+            previous = json.loads(old['data']) if old else {}
+            unchanged = old and previous.get('daily_time') == daily and (previous.get('timezone') or 'Asia/Shanghai') == zone
+            next_at = old['next_at'] if unchanged else candidate
         store.execute("INSERT OR REPLACE INTO schedules VALUES (?,?,?)", (identifier, encode(data), next_at))
         return {"id": identifier, "data": data, "next_at": next_at}
 
@@ -111,16 +130,23 @@ class Extension(Plugin):
                 data = json.loads(row["data"])
                 if not data.get("enabled", True):
                     continue
-                # Deterministic event ID bridges a crash between enqueue and schedule advance.
-                destination = self.destination(data)
-                await self.emit(data.get("mode", "wake"), data["content"],
-                    target=destination, priority=10,
-                    meta={"schedule_id": row["id"], "name": data["name"], "scheduled_at": row["next_at"],
-                        "reply_target": '' if destination == 'main' else destination},
-                    uid=f"schedule:{row['id']}:{row['next_at']}", include_context=data.get("include_context", False))
-                interval = data.get("interval_seconds", 0)
-                if interval:
-                    self.runtime.store.execute("UPDATE schedules SET next_at=? WHERE id=?", (now + interval, row["id"]))
-                else:
-                    data["enabled"] = False
-                    self.runtime.store.execute("UPDATE schedules SET data=? WHERE id=?", (encode(data), row["id"]))
+                try:
+                    # Deterministic ID bridges a crash between enqueue and schedule advance.
+                    await self.emit(data.get('mode', 'wake'), data['content'],
+                        target='main', priority=10,
+                        meta={'schedule_id': row['id'], 'name': data['name'], 'scheduled_at': row['next_at']},
+                        uid=f"schedule:{row['id']}:{row['next_at']}", include_context=data.get('include_context', False),
+                        send_result_to_source=data.get('send_result_to_source', True) if data.get('mode', 'wake') != 'context' else True)
+                    interval = data.get('interval_seconds', 0)
+                    if interval:
+                        self.runtime.store.execute('UPDATE schedules SET next_at=? WHERE id=?', (now + interval, row['id']))
+                    elif data.get('daily_time'):
+                        next_at = self.next_daily(data['daily_time'], data.get('timezone') or 'Asia/Shanghai', now)
+                        self.runtime.store.execute('UPDATE schedules SET next_at=? WHERE id=?', (next_at, row['id']))
+                    else:
+                        data['enabled'] = False
+                        self.runtime.store.execute('UPDATE schedules SET data=? WHERE id=?', (encode(data), row['id']))
+                except Exception as exc:
+                    data['enabled'] = False
+                    self.runtime.store.execute('UPDATE schedules SET data=? WHERE id=?', (encode(data), row['id']))
+                    self.runtime.store.log('error', self.id, 'schedule.failed', data={'schedule_id': row['id'], 'error': str(exc)})

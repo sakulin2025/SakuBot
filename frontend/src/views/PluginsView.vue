@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue'
 import { api } from '../api'
 import { useConsole } from '../stores/console'
+import { sessionToken, unauthorized } from '../credentials'
 import UiIcon from '../components/UiIcon.vue'
 import UiBadge from '../components/UiBadge.vue'
 import UiModal from '../components/UiModal.vue'
@@ -67,9 +68,10 @@ function choose(event: Event) {
 }
 async function transfer(path: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers)
-  headers.set('Authorization', 'Bearer ' + (sessionStorage.getItem('sakubot-token') || ''))
+  const token = sessionToken()
+  headers.set('Authorization', 'Bearer ' + token)
   const response = await fetch('/api/' + path, { ...init, headers })
-  if (response.status === 401) window.dispatchEvent(new Event('sakubot-unauthorized'))
+  if (response.status === 401) unauthorized(token)
   if (!response.ok) {
     const body = await response.json().catch(() => ({ detail: '操作失败' }))
     throw new Error(typeof body.detail === 'string' ? body.detail : '操作失败')
@@ -159,6 +161,7 @@ async function removePlugin() {
       <div class="plugin-name-row">
         <h2>{{ plugin.label }}</h2>
         <UiBadge v-if="plugin.required" status="enabled" label="基础能力" class="plugin-core-tag" />
+        <UiBadge v-else-if="plugin.preinstalled" status="neutral" label="预装插件" class="plugin-core-tag" />
       </div>
       <span class="plugin-id mono">{{ plugin.name }}</span>
       <div class="plugin-card-bottom">
@@ -262,9 +265,9 @@ async function removePlugin() {
 
 <style scoped>
 .plugin-section { margin-top: 22px; }
-.plugin-section-toggle, .plugin-section-heading { display:flex;align-items:center;gap:10px;width:100%;padding:14px 16px;margin:0 0 14px;border:1px solid var(--border);border-radius:12px;background:#fff;color:var(--ink);text-align:left;font:inherit; }
+.plugin-section-toggle, .plugin-section-heading { display:flex;align-items:center;gap:10px;width:100%;padding:14px 16px;margin:0 0 14px;border:1px solid var(--border);border-radius:12px;background:var(--palette-bg-ffffff);color:var(--ink);text-align:left;font:inherit; }
 .plugin-section-toggle { cursor:pointer; transition:border-color .18s, background .18s; }
-.plugin-section-toggle:hover { border-color:#c9c1e8;background:#fcfbff; }
+.plugin-section-toggle:hover { border-color:var(--palette-border-c9c1e8);background:var(--palette-bg-fcfbff); }
 .plugin-section-toggle svg { color:var(--accent);transition:transform .2s ease; }
 .plugin-section-toggle svg.expanded { transform:rotate(90deg); }
 .plugin-section-heading { border:0;background:transparent;padding:8px 0; }
@@ -318,9 +321,9 @@ async function removePlugin() {
   padding: 0;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--palette-bg-ffffff);
   color: var(--muted);
-  box-shadow: 0 1px 2px #30294604;
+  box-shadow: 0 1px 2px var(--palette-shadow-30294604);
   transition:
     background var(--s-motion),
     border-color var(--s-motion),
@@ -329,8 +332,8 @@ async function removePlugin() {
 }
 .plugin-action:hover:not(:disabled) {
   color: var(--accent);
-  border-color: #d7cfed;
-  background: #f6f3fd;
+  border-color: var(--palette-border-d7cfed);
+  background: var(--palette-bg-f6f3fd);
   transform: translateY(-1px);
 }
 .plugin-action:focus-visible {
@@ -339,8 +342,8 @@ async function removePlugin() {
 }
 .plugin-action-danger:hover:not(:disabled) {
   color: var(--negative);
-  border-color: #eacbd3;
-  background: #fff5f7;
+  border-color: var(--palette-border-eacbd3);
+  background: var(--palette-bg-fff5f7);
 }
 .plugin-action:disabled {
   cursor: not-allowed;
@@ -356,4 +359,9 @@ async function removePlugin() {
     min-height: 28px;
   }
 }
+
+ :global(html[data-theme="dark"]) .plugin-section-toggle { background: var(--surface); border-color: var(--border); }
+:global(html[data-theme="dark"]) .plugin-section-toggle:hover { background: var(--surface-alt); }
+:global(html[data-theme="dark"]) .plugin-action { background: var(--surface-alt); border-color: var(--border); color: var(--muted); }
+:global(html[data-theme="dark"]) .plugin-action:hover { background: var(--palette-dark-bg-39314b); color: var(--accent); }
 </style>

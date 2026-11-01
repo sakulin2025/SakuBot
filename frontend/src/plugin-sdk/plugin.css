@@ -1,8 +1,12 @@
 .plugin-document {
   margin: 0;
-  padding: 0 2px 28px;
+  padding: 33px 40px 96px;
   background: var(--canvas);
 }
+@media (max-width: 1200px) { .plugin-document { padding: 28px 28px 96px; } }
+@media (max-width: 900px) { .plugin-document { padding: 26px 26px 96px; } }
+@media (max-width: 700px) { .plugin-document { padding: 23px 17px 96px; } }
 .plugin-document .page-heading {
   margin-top: 0;
 }
+.plugin-document #app { max-width: 1440px; margin: 0 auto; }

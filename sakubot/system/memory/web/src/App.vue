@@ -2,6 +2,7 @@
 import {
   ref,
   reactive,
+  computed,
   onMounted,
   UiIcon,
   UiBadge,
@@ -19,10 +20,16 @@ const saving = ref(false);
 const editing = ref(false);
 const configuring = ref(false);
 const uploading = ref(false);
-const models = ref<{ id: string; name: string; provider: string; dimensions: number }[]>([]);
+const models = ref<{ id: string; name: string; provider: string; dimensions: number; features: string }[]>([]);
 const settings = reactive({ model_id: '', auto_memory: true, recall_limit: 5, min_score: 0.3, ready: false, indexed: 0, total: 0 });
 const savedModel = ref('');
 const confirming = ref(false);
+const confirmingDirect = ref(false);
+const canReuseVectors = computed(() => {
+  const previous = models.value.find(model => model.id === savedModel.value);
+  const next = models.value.find(model => model.id === settings.model_id);
+  return !!previous && !!next && previous.id !== next.id && previous.features === next.features;
+});
 const fileInput = ref<HTMLInputElement | null>(null);
 const deleting = ref<Memory | null>(null);
 const draft = reactive({
@@ -50,13 +57,14 @@ async function search() {
   catch (error) { host.toast(error instanceof Error ? error.message : '检索失败', true); }
   finally { loading.value = false; }
 }
-async function saveSettings() {
+async function saveSettings(reuseVectors = false) {
   saving.value = true;
   try {
     const { model_id, auto_memory, recall_limit, min_score } = settings;
-    Object.assign(settings, await host.api('settings', { model_id, auto_memory, recall_limit, min_score }));
+    Object.assign(settings, await host.api('settings', { model_id, auto_memory, recall_limit, min_score, reuse_vectors: reuseVectors }));
     savedModel.value = settings.model_id;
     confirming.value = false;
+    confirmingDirect.value = false;
     configuring.value = false;
     host.toast('已保存');
   } catch (error) { host.toast(error instanceof Error ? error.message : '保存失败', true); }
@@ -64,7 +72,7 @@ async function saveSettings() {
 }
 function requestSaveSettings() {
   if (settings.model_id !== savedModel.value && settings.total > 0) confirming.value = true;
-  else void saveSettings();
+  else void saveSettings(false);
 }
 async function upload(event: Event) {
   const input = event.target as HTMLInputElement;
@@ -116,14 +124,14 @@ async function remove() {
 onMounted(load);
 </script>
 <template>
-  <div class="page-heading">
+  <Teleport to="body"><div class="floating-actions">
     <SButton class="button" @click="configuring = true">设置</SButton>
     <SButton class="button" :disabled="!settings.ready || uploading" @click="fileInput?.click()">上传文档</SButton>
     <input ref="fileInput" type="file" accept=".txt,.md,.pdf,.docx" class="file-input" @change="upload" />
     <SButton class="button primary" :disabled="!settings.ready" @click="edit()">
       <UiIcon name="plus" :size="16" />新增记忆
     </SButton>
-  </div>
+  </div></Teleport>
   <SCard class="surface">
     <div class="table-toolbar">
       <form class="search-field" @submit.prevent="search">
@@ -196,7 +204,11 @@ onMounted(load);
   </UiModal>
   <UiModal :open="confirming" title="确认切换向量模型" @close="confirming = false">
     <p>切换后需要重新建立全部记忆和文档的向量索引，可能产生模型调用费用；重建期间检索结果可能不完整。原有内容会保留。</p>
-    <template #footer><SButton class="button" @click="confirming = false">取消</SButton><SButton class="button primary" :disabled="saving" @click="saveSettings">确认切换</SButton></template>
+    <template #footer><SButton class="button" @click="confirming = false">取消</SButton><SButton v-if="canReuseVectors" class="button" :disabled="saving" @click="confirmingDirect = true">直接更换</SButton><SButton class="button primary" :disabled="saving" @click="saveSettings(false)">重建索引</SButton></template>
+  </UiModal>
+  <UiModal :open="confirmingDirect" title="确认直接更换" @close="confirmingDirect = false">
+    <p>将沿用已有向量索引，不会重新生成向量。更换前后的模型基础特征一致，请在确认他们是相同模型的前提下再选择“直接更换”。</p>
+    <template #footer><SButton class="button" @click="confirmingDirect = false">取消</SButton><SButton class="button primary" :disabled="saving" @click="saveSettings(true)">直接更换</SButton></template>
   </UiModal>
   <UiModal :open="editing" title="记忆" @close="editing = false"
     ><form id="memory-form" class="form-stack" @submit.prevent="save">

@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 
 from .model import Model
 from .plugin import Invocation, Registry, Tool, object_schema, temporary_messages
+from .injections import injection, ordered
 from .store import encode
 from .components import required
 from .personas import Personas
@@ -25,7 +26,7 @@ from .delivery import Deliveries
 SYSTEM = """你是 SakuBot 的主 Agent，主上下文为 main。
 所有插件声明的主对话源与网页共用这一份上下文；网页始终同步，回复由框架按当前响应模式投递。
 只有一个主上下文。其他会话消息、平台通知和设备状态默认归档，需要时通过工具查询；只有明确触发的任务与提醒进入主上下文。
-来源={source}，默认回复目的地={target}。人员使用真实 ID 区分，昵称是显示资料。
+人员使用真实 ID 区分，昵称是显示资料。
 本轮待处理事件是当前任务，历史事件和工具结果用于理解背景，不自动重新执行历史指令。
 根据需要使用当前人格可见插件提供的函数，不捏造操作结果。结果未知时先检查状态。
 普通回答由框架按主对话设置自动投递；需要向其他会话发送时使用平台插件提供的工具，避免重复发送相同内容。
@@ -56,6 +57,7 @@ class Runtime:
         self.model = None
         self.jobs = []
         self.main_job = None
+        self.main_stopping = False
         self.sources_started = False
         self.current_run = None
         self.error = ""
@@ -68,6 +70,8 @@ class Runtime:
         self.registry = Registry()
         self.model = Model(self.config.settings)
         try:
+            from .preinstalled import bootstrap
+            bootstrap(self.config, self.store)
             await self.registry.load(self)
             await self.registry.start()
             self.sources_started = True
@@ -84,6 +88,8 @@ class Runtime:
                 raise
 
     async def sync_main_worker(self):
+        if self.main_stopping:
+            return
         if self.config.settings.ready():
             if self.main_job is None or self.main_job.done():
                 self.main_job = asyncio.create_task(self.worker(), name="main-agent")
@@ -104,6 +110,26 @@ class Runtime:
         await self.sync_main_worker()
         self.agents.changed()
         self.store.log("info", "agents", "main.enabled" if enabled else "main.disabled")
+
+    async def stop_main_run(self, run_id):
+        if not isinstance(run_id, str) or not run_id:
+            raise ValueError('运行 ID 无效')
+        if self.main_stopping or not self.current_run or self.current_run['id'] != run_id:
+            return {'stopped': False, 'run_id': run_id}
+        job = self.main_job
+        if job is None or job.done():
+            return {'stopped': False, 'run_id': run_id}
+        self.main_stopping = True
+        self.store.log('warning', 'agent', 'agent.stop_requested', run_id=run_id)
+        try:
+            job.cancel()
+            await asyncio.gather(job, return_exceptions=True)
+            if self.main_job is job:
+                self.main_job = None
+        finally:
+            self.main_stopping = False
+        await self.sync_main_worker()
+        return {'stopped': True, 'run_id': run_id}
 
     def clear_main_context(self):
         instance = self.agents.get('main')
@@ -158,23 +184,26 @@ class Runtime:
         return target
 
     async def emit(self, kind, source, content, *, actor="", label="", target="", meta=None,
-                   uid=None, priority=20, expires=0, include_context=False, temporary_context="", send_result_to_source=True):
+                   uid=None, priority=20, expires=0, include_context=False, temporary_context="", send_result_to_source=True, insertion='queue'):
         if kind not in ("context", "wake", "notify"):
             raise ValueError("事件类型仅支持 context / wake / notify")
         if not isinstance(content, str) or len(content) > 200000:
             raise ValueError("事件正文必须为文本，最多200000字符")
         target = self.main_target() if not target or target == 'owner' else target
         self.validate_target(target)
-        if not isinstance(send_result_to_source, bool) or (kind != 'wake' and not send_result_to_source):
-            raise ValueError('结果投递设置仅支持 wake 布尔值')
+        if not isinstance(send_result_to_source, bool) or (kind == 'context' and not send_result_to_source):
+            raise ValueError('结果投递设置仅支持 wake / notify 布尔值')
+        if insertion not in ('queue', 'next_boundary') or (kind != 'wake' and insertion != 'queue'):
+            raise ValueError('唤醒插入模式无效')
         uid = uid or uuid.uuid4().hex
         if kind == 'notify':
             if not content.strip():
                 raise ValueError('通知文字不能为空')
             row = self.store.event('notify', source, content, target=target, uid='notify:' + uid,
-                meta={**(meta or {}), 'role': 'assistant', 'exclude_context': not include_context})
+                meta={**(meta or {}), 'role': 'assistant', 'exclude_context': not include_context, 'send_result_to_source': send_result_to_source})
             if target == 'main':
-                self.conversation.publish('text', response_id='notify:' + uid, text=content, final=True)
+                if send_result_to_source:
+                    self.conversation.publish('text', response_id='notify:' + uid, text=content, final=True)
                 return {'id': row['id'], 'uid': uid, 'kind': kind}
             delivery_id = 'notify:' + uid
             self.deliveries.enqueue(target, content, delivery_id)
@@ -186,6 +215,12 @@ class Runtime:
             meta = {**(meta or {}), 'temporary_context': temporary_context}
         if kind == 'wake':
             meta = {**(meta or {}), 'send_result_to_source': send_result_to_source}
+            for key in ('insertion_run_id', 'absorbed_run_id', 'insertion_mode', 'wake_submitted', 'wake_request_id', 'wake_run_id'):
+                meta.pop(key, None)
+            if insertion == 'next_boundary' and target == 'main':
+                meta['insertion_mode'] = 'next_boundary'
+                if self.current_run:
+                    meta['insertion_run_id'] = self.current_run['id']
         row = self.store.event(kind, source, content, actor=actor, label=label, target=target,
             meta=meta, uid=uid, priority=priority, expires=expires)
         self.changed.set()
@@ -224,6 +259,8 @@ class Runtime:
         return await self.agents.get(identifier, owner).wake(goal, invocation=invocation, context=context, run_id=run_id)
 
     async def recall_for_wake(self, inv, query):
+        if inv.instance and not inv.instance.plugin_context_enabled:
+            return
         visible = self.registry.visible_plugin_ids(inv)
         for plugin in self.registry.plugins:
             callback = getattr(plugin, 'recall_for_wake', None)
@@ -232,21 +269,122 @@ class Runtime:
             try:
                 context = await asyncio.wait_for(callback(inv, query), timeout=15)
                 if context:
-                    inv.temporary_context.extend(temporary_messages(context))
+                    event_ids = inv.metadata.get('_recall_event_ids')
+                    if event_ids:
+                        context = '关联消息 ' + ', '.join(map(str, event_ids)) + ' 的检索资料：\n' + context
+                    inv.inject_context(context, source=plugin.id, category='data', role='user')
+                    if event_ids:
+                        inv.temporary_context[-1]['_observation'] = True
             except Exception as exc:
                 self.store.log('warning', plugin.id, 'memory.recall.failed', run_id=inv.run_id, data={'error': type(exc).__name__})
+
+    async def collect_wake_context(self, inv):
+        if inv.instance and not inv.instance.plugin_context_enabled:
+            return
+        visible = self.registry.visible_plugin_ids(inv)
+        for plugin in self.registry.plugins:
+            callback = getattr(plugin, 'wake_context', None)
+            if plugin.id not in visible or not callback:
+                continue
+            try:
+                value = callback(inv)
+                if inspect.isawaitable(value):
+                    value = await value
+                if value:
+                    inv.inject_context(value, source=plugin.id, category='environment')
+            except Exception as exc:
+                self.store.log('warning', plugin.id, 'plugin.wake_context.failed', run_id=inv.run_id, data={'error': type(exc).__name__})
+
+    @staticmethod
+    def main_event_message(row):
+        metadata = json.loads(row['meta'])
+        item = {key: row[key] for key in ('id', 'at', 'source', 'actor', 'label', 'target')}
+        item['text'] = row['text']
+        item['metadata'] = {key: value for key, value in metadata.items() if key not in ('segments', 'raw', 'packet', 'temporary_context', 'send_result_to_source', 'injected_context', 'history_context', 'prompt_text', 'insertion_run_id', 'absorbed_run_id', 'insertion_mode', 'wake_submitted', 'wake_request_id', 'wake_run_id')}
+        if isinstance(metadata.get('prompt_text'), str):
+            return {'role': 'user', 'content': metadata['prompt_text'], '_event_id': row['id']}
+        return {'role': 'assistant' if metadata.get('role') == 'assistant' else 'user', 'content': encode(item), '_event_id': row['id']}
+
+    def wake_messages(self, event, *, initial=False):
+        metadata = json.loads(event['meta'])
+        result = []
+        for item in [*metadata.get('history_context', []), *metadata.get('injected_context', [])]:
+            if isinstance(item, dict) and item.get('role') in ('user', 'assistant') and isinstance(item.get('content'), str):
+                result.append({'role': item['role'], 'content': item['content'], '_temporary': bool(item.get('_temporary'))})
+        if metadata.get('temporary_context'):
+            result.append({'role': 'system', 'content': f"关联消息 {event['id']} 的本轮临时要求（从此消息加入起到本轮结束有效）：\n" + metadata['temporary_context'], '_temporary': True})
+        result.append({**self.main_event_message(event), '_wake_body': True})
+        for message in result:
+            message['_wake_event_id'] = event['id']
+        if initial:
+            result[0]['_active_event'] = True
+        return result
+
+    @staticmethod
+    def merge_wake_bodies(messages):
+        # Keep each event's injected context immediately before its body. Ordinary
+        # consecutive messages without such context can share a single user entry.
+        result = []
+        for message in messages:
+            current = dict(message)
+            if result and current.get('_wake_body') and current['role'] == 'user' and result[-1].get('_wake_body') and result[-1]['role'] == 'user':
+                previous = result[-1]
+                previous['content'] += '\n\n' + current['content']
+                previous['_event_id'] = max(previous.get('_event_id', 0), current.get('_event_id', 0))
+            else:
+                result.append(current)
+        return result
+
+    async def prepare_wake_batch(self, messages, inv):
+        if inv.agent_id != 'main':
+            self.absorb_wakes(messages, inv)
+            return
+        # A snapshot is prepared as one batch. Messages arriving during asynchronous
+        # preparation are drained again before the actual model request is built.
+        while True:
+            self.absorb_wakes(messages, inv)
+            batch = inv.metadata.pop('_wake_unprepared', [])
+            if not batch:
+                return
+            absorbed = [row for row in batch if row['id'] != inv.metadata['_main_event_id']]
+            if absorbed:
+                payload = {'run_id': inv.run_id, 'events': copy.deepcopy(absorbed), 'invocation': inv}
+                await inv.instance.dispatch('messages_absorbed', payload)
+                for plugin in self.registry.plugins:
+                    callback = getattr(plugin, 'on_messages_absorbed', None)
+                    if callback and plugin.id in self.registry.visible_plugin_ids(inv):
+                        try:
+                            value = callback(inv, copy.deepcopy(absorbed))
+                            if inspect.isawaitable(value):
+                                await value
+                        except Exception as exc:
+                            self.store.log('warning', plugin.id, 'plugin.absorbed.failed', run_id=inv.run_id, data={'error': type(exc).__name__})
+            # Share the query budget across events so later messages are represented.
+            budget = max(1, 20000 // len(batch))
+            queries = []
+            for row in batch:
+                metadata = json.loads(row['meta'])
+                parts = [row['text']] + [item['content'] for item in metadata.get('injected_context', []) if isinstance(item, dict) and isinstance(item.get('content'), str)]
+                queries.append(('\n'.join(parts))[:budget])
+            inv.metadata['_recall_event_ids'] = [row['id'] for row in batch]
+            try:
+                await self.recall_for_wake(inv, '\n'.join(queries)[:20000])
+            finally:
+                inv.metadata.pop('_recall_event_ids', None)
 
     def prompt(self, event, inv):
         profile = self.prepare_agent(inv)
         settings = self.config.settings
-        system = SYSTEM.format(source=event["source"], target=inv.target)
-        if inv.metadata.get('reply_target'):
-            system += '\n本轮最终文本将由框架自动投递到 ' + inv.metadata['reply_target'] + '，不要再用发送工具重复发送最终回复。当前主对话响应源不改变。'
+        system = SYSTEM
         cutoff = self.store.one("SELECT max(id) AS id FROM events")["id"] or 0
         memo = self.store.kv_get("agent:main-summary", {"cutoff": 0, "text": ""})
         events = self.store.rows("SELECT * FROM events WHERE id>? AND id<=? ORDER BY id DESC", (memo["cutoff"], cutoff))
+        turns = self.store.rows('SELECT event_id,run_id,response_id,messages FROM main_context_turns WHERE event_id>?', (memo['cutoff'],))
+        by_event = {row['event_id']: row for row in turns}
+        completed_runs = {row['run_id'] for row in self.store.rows('SELECT run_id FROM main_context_turns')}
+        response_ids = {row['response_id'] for row in self.store.rows('SELECT response_id FROM main_context_turns WHERE response_id!=\'\'')}
         candidates = []
-        for row in events:
+        for row in reversed(events):
             if row["id"] == event["id"]:
                 continue
             if row["kind"] == "wake" and row["status"] in ("pending", "running") and row["id"] != event["id"]:
@@ -256,13 +394,19 @@ class Runtime:
                 continue
             if row["kind"] == "wake" and row["status"] in ("cancelled", "expired"):
                 continue
-            item = {key: row[key] for key in ("id", "at", "source", "actor", "label", "target")}
-            item["text"] = row["text"]
-            item["metadata"] = {key: value for key, value in metadata.items() if key not in ("segments", "raw", "packet", "temporary_context", "send_result_to_source")}
-            if 'injected_context' in item['metadata']:
-                item['metadata']['injected_context'] = [x for x in item['metadata']['injected_context'] if not x.get('_temporary')]
-            content = encode(item)
-            candidates.append({"role": "assistant" if metadata.get("role") == "assistant" else "user", "content": content, "_event_id": row["id"]})
+            if metadata.get('response_id') in response_ids:
+                continue
+            if metadata.get('absorbed_run_id') in completed_runs:
+                continue
+            saved = json.loads(by_event[row['id']]['messages']) if row['id'] in by_event else {}
+            if isinstance(saved, list):
+                saved = {'after': saved}
+            candidates.extend({**message, '_event_id': row['id']} for message in saved.get('before', []))
+            if 'active' in saved:
+                candidates.extend({**message, '_event_id': row['id']} for message in saved['active'])
+            else:
+                candidates.append(self.main_event_message(row))
+            candidates.extend({**message, '_event_id': row['id']} for message in saved.get('after', []))
         contributions = []
         visible_plugins = self.registry.visible_plugin_ids(inv)
         for plugin in self.registry.plugins:
@@ -272,36 +416,81 @@ class Runtime:
             if context:
                 contributions.append({"plugin_id": plugin.id, "data": context(inv)})
         memory_text = encode(contributions)[:min(12000, settings.context_chars // 4)]
-        # Explicitly repeat the active event: a high-priority older wake must not get lost in recent traffic.
-        active = {key: event[key] for key in ("id", "source", "actor", "label", "target", "text")}
         instance = self.agents.get("main")
-        injected = instance.take_pending() + json.loads(event["meta"]).get("injected_context", [])
-        inv.temporary_context = temporary_messages(json.loads(event['meta']).get('temporary_context', '')) + [
-            {'role': row['role'], 'content': row['content']} for row in injected if row.get('_temporary')]
+        injected = instance.take_pending()
+        inv.metadata['_wake_temporary'] = []
+        inv.temporary_context.extend(injection(row['content'], source=event['source'], category='data', role=row['role']) for row in injected if row.get('_temporary'))
+        context = '本轮来源=' + event['source'] + '，默认回复目的地=' + inv.target + '。下方当前事件是本轮待处理任务。'
+        if inv.metadata.get('reply_target'):
+            context += '\n本轮最终文本将由框架自动投递到 ' + inv.metadata['reply_target'] + '，不要再用发送工具重复发送最终回复。当前主对话响应源不改变。'
+        inv.inject_context(context + '\n插件上下文：' + memory_text, source='framework', category='environment')
         injected = [row for row in injected if not row.get('_temporary')]
+        inv.metadata['_main_injected'] = copy.deepcopy(injected)
         summary = [{"role": "assistant", "content": "历史上下文摘要：" + memo["text"], "_summary": True}] if memo["text"] else []
-        return [{"role": "system", "content": profile["prompt"] + "\n" + system + "\n插件上下文：" + memory_text},
-            *summary, *reversed(candidates), *injected, {"role": "user", "content": "本轮待处理事件：" + encode(active)}]
+        active = self.wake_messages(event, initial=True)
+        inv.metadata['_wake_unprepared'] = [event]
+        return [{"role": "system", "content": profile["prompt"] + "\n" + system},
+            *summary, *candidates, *injected, *active]
 
     async def refresh_capabilities(self, messages, invocation):
-        visible = self.registry.visible_plugin_ids(invocation)
-        content = []
-        for plugin in self.registry.plugins:
-            if plugin.id in visible:
-                try:
-                    contribution = plugin.prompt_context(invocation)
-                    if inspect.isawaitable(contribution):
-                        contribution = await contribution
-                except Exception as exc:
-                    self.store.log('warning', plugin.id, 'plugin.context.failed', run_id=invocation.run_id,
-                        data={'error': type(exc).__name__})
-                    continue
-                if contribution:
-                    content.append(contribution)
+        content = invocation.metadata.get('_capabilities_content')
+        if content is None:
+            visible = self.registry.visible_plugin_ids(invocation)
+            content = []
+            for plugin in self.registry.plugins if not invocation.instance or invocation.instance.plugin_context_enabled else []:
+                if plugin.id in visible:
+                    try:
+                        contribution = plugin.prompt_context(invocation)
+                        if inspect.isawaitable(contribution):
+                            contribution = await contribution
+                    except Exception as exc:
+                        self.store.log('warning', plugin.id, 'plugin.context.failed', run_id=invocation.run_id,
+                            data={'error': type(exc).__name__})
+                        continue
+                    if contribution:
+                        content.append(contribution)
+            invocation.metadata['_capabilities_content'] = content
         messages[:] = [message for message in messages if not message.get('_capabilities')]
         if content:
             messages.insert(1 if messages and messages[0].get('role') == 'system' else 0,
                 {'role': 'system', 'content': '\n\n'.join(content), '_capabilities': True})
+
+    def absorb_wakes(self, messages, inv):
+        if inv.agent_id == 'main':
+            rows = self.store.rows("SELECT * FROM events WHERE kind='wake' AND status='pending' AND target='main' AND (json_extract(meta,'$.insertion_mode')='next_boundary' OR json_extract(meta,'$.insertion_run_id') IS NOT NULL) AND (expires=0 OR expires>?) ORDER BY id", (time.time(),))
+            absorbed = 0
+            for row in rows:
+                changed = self.store.execute("UPDATE events SET status='running',meta=json_set(meta,'$.absorbed_run_id',?,'$.wake_run_id',?) WHERE id=? AND status='pending'", (inv.run_id, inv.run_id, row['id'])).rowcount
+                if not changed:
+                    continue
+                row = self.store.one('SELECT * FROM events WHERE id=?', (row['id'],))
+                messages.extend(self.wake_messages(row))
+                inv.metadata.setdefault('absorbed_events', []).append(row['id'])
+                inv.metadata.setdefault('wake_events', []).append(copy.deepcopy(row))
+                inv.metadata.setdefault('_wake_unprepared', []).append(row)
+                self.chat.event(row)
+                self.store.log('info', row['source'], 'event.absorbed', run_id=inv.run_id, data={'event_id': row['id']})
+                absorbed += 1
+            return absorbed
+        rows = self.store.rows("SELECT * FROM agent_wake_insertions WHERE agent_id=? AND run_id=? AND status='pending' ORDER BY created,id LIMIT 100", (inv.agent_id, inv.run_id))
+        for row in rows:
+            if not self.store.execute("UPDATE agent_wake_insertions SET status='running' WHERE id=? AND status='pending'", (row['id'],)).rowcount:
+                continue
+            data = json.loads(row['payload'])
+            for item in data.get('injected', []):
+                if item.get('role') in ('user', 'assistant') and isinstance(item.get('content'), str):
+                    messages.append({'role': item['role'], 'content': item['content'], '_temporary': bool(item.get('_temporary'))})
+            temporary = data.get('temporary_context')
+            if temporary:
+                messages.append({'role': 'system', 'content': str(temporary), '_temporary': True})
+            if data.get('instructions'):
+                messages.append({'role': 'system', 'content': str(data['instructions']), '_temporary': True})
+            if data.get('context'):
+                messages.append({'role': 'user', 'content': str(data['context'])})
+            messages.append({'role': 'user', 'content': data['goal']})
+            self.store.log('info', row['owner'], 'agent.wake.absorbed', run_id=inv.run_id,
+                data={'agent_id': inv.agent_id, 'insertion_id': row['id']})
+        return len(rows)
 
     async def agent_loop(self, messages, inv, *, lightweight=False, max_steps=None):
         self.prepare_agent(inv)
@@ -309,6 +498,7 @@ class Runtime:
         for step in range(max_steps or self.config.settings.max_steps):
             if inv.instance:
                 inv.instance.ensure_active()
+            await self.prepare_wake_batch(messages, inv)
             provider, selected = self.model.settings.selected_model(model_id=inv.model_id)
             available = self.registry.available(inv) if selected and selected.capabilities.tools else []
             tools = [tool.schema() for tool in available]
@@ -316,12 +506,23 @@ class Runtime:
             await self.compression.compact(messages, inv, tools)
             if inv.instance:
                 await inv.instance.dispatch("model_request", {"run_id": inv.run_id, "step": step+1, "invocation": inv})
-            temporary = inv.temporary_context + inv.temporary_next
+            await self.prepare_wake_batch(messages, inv)
+            available = self.registry.available(inv) if selected and selected.capabilities.tools else []
+            tools = [tool.schema() for tool in available]
+            wake_temporary = inv.metadata.get('_wake_temporary', [])
+            before_active = ordered([row for row in inv.temporary_context if not row.get('_observation')] + wake_temporary)
+            observations = [row for row in inv.temporary_context if row.get('_observation')]
+            one_shot = ordered(inv.temporary_next)
+            temporary = before_active + observations + one_shot
             inv.temporary_next = []
-            request_messages = list(messages)
+            request_messages = self.merge_wake_bodies(messages)
             if temporary:
-                request_messages[1:1] = [row for row in temporary if not row.get('_observation')]
-                request_messages.extend(row for row in temporary if row.get('_observation'))
+                active = next((i for i, row in enumerate(request_messages) if row.get('_active_event') or row.get('_active_task')), None)
+                if active is None:
+                    active = max((i for i, row in enumerate(request_messages) if row.get('role') == 'user' and not row.get('_observation')), default=len(request_messages))
+                request_messages[active:active] = before_active
+                request_messages.extend(observations)
+                request_messages.extend(one_shot)
                 traced = [{'role': row['role'], 'preview_paths': row['_preview_paths']} if row.get('_preview_paths') else row for row in temporary]
                 inv.metadata.setdefault('temporary_contexts', []).append({'step': step + 1, 'messages': traced})
             snapshot = [{"plugin_id": tool.plugin_id, **tool.schema()} for tool in available]
@@ -338,11 +539,18 @@ class Runtime:
             async def delta(text):
                 self.conversation.process('model.delta', request_id=request_id, run_id=inv.run_id, agent_id=inv.agent_id, text=text)
             def capture_request(payload):
+                if inv.agent_id == 'main':
+                    for event_id in [inv.metadata.get('_main_event_id'), *inv.metadata.get('absorbed_events', [])]:
+                        if event_id:
+                            changed = self.store.execute("UPDATE events SET meta=json_set(meta,'$.wake_submitted',json('true'),'$.wake_request_id',?) WHERE id=? AND status='running' AND coalesce(json_extract(meta,'$.wake_submitted'),0)=0", (request_id, event_id)).rowcount
+                            if changed:
+                                self.chat.event(self.store.one('SELECT * FROM events WHERE id=?', (event_id,)))
                 inv.metadata.setdefault('api_requests', []).append({'step': step + 1, 'at': time.time(), 'body': copy.deepcopy(payload)})
                 self.save_trace(inv, messages, usage)
             try:
                 message, used = await self.model.complete(request_messages, tools, model_id=inv.model_id,
                     on_delta=delta if inv.agent_id == 'main' else None, on_request=capture_request)
+                inv.metadata['_model_responses'] = inv.metadata.get('_model_responses', 0) + 1
                 if inv.agent_id == 'main':
                     self.conversation.process('model.completed', request_id=request_id, run_id=inv.run_id, agent_id=inv.agent_id)
             except BaseException as exc:
@@ -360,6 +568,8 @@ class Runtime:
                 inv.metadata['result'] = message.get('content') or ''
             self.save_trace(inv, messages, usage)
             if not calls:
+                if step + 1 < (max_steps or self.config.settings.max_steps) and self.absorb_wakes(messages, inv):
+                    continue
                 return message.get("content") or "", usage
             for call in calls:
                 inv.call_id = call["id"]
@@ -403,30 +613,51 @@ class Runtime:
             self.current_run = {"id": run_id, "event_id": event["id"], "started": time.time(), 'reply_target': reply_target, 'send_result_to_source': send_result_to_source}
             self.store.execute("INSERT INTO runs VALUES (?,?,?,NULL,'running','{}','')", (run_id, event["id"], time.time()))
             inv = Invocation(run_id, event["target"], event["actor"], instance=self.agents.get("main"))
+            inv.metadata['_main_event_id'] = event['id']
+            inv.metadata['wake_events'] = [copy.deepcopy(event)]
+            self.store.execute("UPDATE events SET meta=json_set(meta,'$.wake_run_id',?) WHERE id=?", (run_id, event['id']))
+            self.chat.event(self.store.one('SELECT * FROM events WHERE id=?', (event['id'],)))
             inv.send_result_to_source = send_result_to_source
-            if not send_result_to_source:
-                async def report_owner(invocation, arguments):
-                    invocation.send_result_to_source = True
-                    if self.current_run and self.current_run['id'] == invocation.run_id:
-                        self.current_run['send_result_to_source'] = True
-                    return {'ok': True, 'message': '本轮最终结果将发送给主人'}
-                inv.temporary_tools['report_to_owner'] = Tool('report_to_owner', '需要向主人报告：当本轮结果需要通过主对话源发送给主人时调用；调用后本轮最终回答将发送给主人。无需发送时不调用。', object_schema(), report_owner)
+            async def report_owner(invocation, arguments):
+                invocation.send_result_to_source = True
+                if self.current_run and self.current_run['id'] == invocation.run_id:
+                    self.current_run['send_result_to_source'] = True
+                return {'ok': True, 'send_result_to_source': True, 'message': '本轮最终结果将发送到当前响应目标'}
+            async def cancel_report(invocation, arguments):
+                invocation.send_result_to_source = False
+                if self.current_run and self.current_run['id'] == invocation.run_id:
+                    self.current_run['send_result_to_source'] = False
+                return {'ok': True, 'send_result_to_source': False, 'message': '本轮最终结果不再自动发送到响应目标；网页仍可查看'}
+            inv.temporary_tools['report_to_owner'] = Tool('report_to_owner', '开启本轮自动报告：需要将最终回答发送到当前响应目标时调用。', object_schema(), report_owner)
+            inv.temporary_tools['cancel_report'] = Tool('cancel_report', '取消本轮自动报告：不需要将最终回答发送到当前响应目标时调用；网页主对话仍可查看。不会撤回已发送内容。', object_schema(), cancel_report)
             inv.metadata['reply_target'] = reply_target
             self.conversation.process("run.started", run_id=run_id, event_id=event["id"], agent_id="main")
             self.store.log("info", "agent", "agent.started", run_id=run_id, data={"event_id": event["id"], "agent_id": "main"})
+            retry_deferred = False
             try:
                 self.prepare_agent(inv)
                 await inv.instance.dispatch("started", {"run_id": run_id, "invocation": inv})
                 messages = self.prompt(event, inv)
-                recall_parts = [event['text']]
-                for item in event_meta.get('injected_context', []):
-                    if isinstance(item, dict) and isinstance(item.get('content'), str):
-                        recall_parts.append(item['content'][:12000])
-                await self.recall_for_wake(inv, '\n'.join(recall_parts)[:20000])
+                await self.collect_wake_context(inv)
                 result, usage = await asyncio.wait_for(self.agent_loop(messages, inv), 600)
                 if result.strip():
                     await self.deliver_reply(inv, result)
+                active = next((i for i, row in enumerate(messages) if row.get('_active_event')), None)
+                if active is not None:
+                    original_end = next((i + 1 for i, row in enumerate(messages) if row.get('_wake_body') and row.get('_wake_event_id') == event['id']), active + 1)
+                    def persistent(rows):
+                        return [{key: value for key, value in row.items() if not key.startswith('_')}
+                                for row in rows if row.get('role') in ('user', 'assistant', 'tool') and not row.get('_temporary')]
+                    turn = {'before': inv.metadata.get('_main_injected', []),
+                        'active': persistent(messages[active:original_end]),
+                        'after': persistent(messages[original_end:])}
+                    self.store.execute('INSERT OR REPLACE INTO main_context_turns(event_id,run_id,response_id,messages) VALUES (?,?,?,?)',
+                        (event['id'], run_id, inv.metadata.get('response_id', '') if result.strip() else '', encode(turn)))
                 self.store.execute("UPDATE events SET status='done' WHERE id=?", (event["id"],))
+                self.chat.event(self.store.one('SELECT * FROM events WHERE id=?', (event['id'],)))
+                for event_id in inv.metadata.get('absorbed_events', []):
+                    self.store.execute("UPDATE events SET status='done' WHERE id=? AND status='running'", (event_id,))
+                    self.chat.event(self.store.one('SELECT * FROM events WHERE id=?', (event_id,)))
                 self.store.execute("UPDATE runs SET status='done', finished=? WHERE id=?", (time.time(), run_id))
                 await inv.instance.dispatch("completed", {"run_id": run_id, "result": result, "usage": usage, "invocation": inv})
                 for plugin in self.registry.plugins:
@@ -443,8 +674,18 @@ class Runtime:
                 interrupted = isinstance(exc, asyncio.CancelledError)
                 error = "运行被中断，远端操作可能已执行" if interrupted else (
                     str(exc)[:500] if isinstance(exc, (RuntimeError, ValueError)) else type(exc).__name__)
-                self.store.execute("UPDATE events SET status=?,error=? WHERE id=?",
-                                   ("interrupted" if interrupted else "failed", error, event["id"]))
+                for event_id in [event['id'], *inv.metadata.get('absorbed_events', [])]:
+                    row = self.store.one('SELECT meta FROM events WHERE id=? AND status=\'running\'', (event_id,))
+                    metadata = json.loads(row['meta']) if row else {}
+                    eligible = metadata.get('insertion_mode') == 'next_boundary' or 'insertion_run_id' in metadata or 'absorbed_run_id' in metadata
+                    if eligible and not metadata.get('wake_submitted'):
+                        if not retry_deferred:
+                            self.changed.clear()
+                        retry_deferred = True
+                        self.store.execute("UPDATE events SET status='pending',error='',meta=json_remove(meta,'$.absorbed_run_id') WHERE id=? AND status='running'", (event_id,))
+                    else:
+                        self.store.execute("UPDATE events SET status=?,error=? WHERE id=? AND status='running'", ('interrupted' if interrupted else 'failed', error, event_id))
+                    self.chat.event(self.store.one('SELECT * FROM events WHERE id=?', (event_id,)))
                 self.store.execute("UPDATE runs SET status=?,finished=?,error=? WHERE id=?",
                                    ("interrupted" if interrupted else "failed", time.time(), error, run_id))
                 self.error = error
@@ -455,6 +696,10 @@ class Runtime:
                     raise
             finally:
                 self.current_run = None
+            if retry_deferred:
+                # Preserve unsubmitted messages without spinning on the same error.
+                # A new wake or an explicit restart allows another attempt.
+                await self.changed.wait()
 
     def main_context_usage(self):
         _, model = self.config.settings.selected_model()

@@ -4,6 +4,7 @@ import { formatDate, parseJson, ApiError } from '../api'
 import '../style.css'
 import './plugin.css'
 import SakuUI from '../components/ui'
+import { initTheme } from '../theme'
 export * from '../components/ui'
 
 export { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
@@ -35,13 +36,14 @@ function message(type: string, payload: Record<string, unknown> = {}) {
   window.parent.postMessage({ type, ...payload }, window.location.origin)
 }
 async function request<T>(path: string, body?: unknown, method?: string): Promise<T> {
-  const context = await ready
+  await ready
+  const context = host!
   const response = await fetch(path, {
     method: method || (body === undefined ? 'GET' : 'POST'),
     headers: { Authorization: 'Bearer ' + context.token, 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
-  if (response.status === 401) message('sakubot:unauthorized')
+  if (response.status === 401) message('sakubot:unauthorized', { token: context.token })
   if (!response.ok) {
     const data = await response.json().catch(() => ({}))
     throw new ApiError(
@@ -54,13 +56,14 @@ async function request<T>(path: string, body?: unknown, method?: string): Promis
 export function usePluginHost() {
   return {
     upload: async <T>(path: string, file: File): Promise<T> => {
-      const context = await ready
+      await ready
+      const context = host!
       const response = await fetch('/api/extensions/' + context.plugin + '/' + path.replace(/^\//, ''), {
         method: 'PUT',
         headers: { Authorization: 'Bearer ' + context.token, 'Content-Type': 'application/octet-stream' },
         body: file,
       })
-      if (response.status === 401) message('sakubot:unauthorized')
+      if (response.status === 401) message('sakubot:unauthorized', { token: context.token })
       if (!response.ok) {
         const data = await response.json().catch(() => ({}))
         throw new ApiError(
@@ -71,11 +74,12 @@ export function usePluginHost() {
       return response.json()
     },
     download: async (path: string, name: string) => {
-      const context = await ready
+      await ready
+      const context = host!
       const response = await fetch('/api/extensions/' + context.plugin + '/' + path.replace(/^\//, ''), {
         headers: { Authorization: 'Bearer ' + context.token },
       })
-      if (response.status === 401) message('sakubot:unauthorized')
+      if (response.status === 401) message('sakubot:unauthorized', { token: context.token })
       if (!response.ok) {
         const data = await response.json().catch(() => ({}))
         throw new ApiError(
@@ -103,6 +107,7 @@ export function usePluginHost() {
   }
 }
 export async function mountPlugin(component: Component) {
+  initTheme()
   document.body.classList.add('plugin-document')
   message('sakubot:ready')
   const interval = setInterval(() => {

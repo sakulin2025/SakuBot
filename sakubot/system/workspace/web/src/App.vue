@@ -302,7 +302,7 @@ async function confirmUpload() {
 onMounted(load);
 </script>
 <template>
-  <SPageHeader title="工作空间" :count="total"
+  <SPageHeader title="工作空间" :count="total" floating
     ><SButton icon="folder" @click="createFolder">新建目录</SButton
     ><SButton icon="file" @click="createFile">新建文件</SButton
     ><SButton icon="upload" :loading="busy" @click="uploadInput?.click()"

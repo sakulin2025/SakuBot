@@ -11,7 +11,7 @@ class Extension(Plugin):
 
     def setup(self):
         self.function(self.balance, name='deepseek_balance')
-        self.management('调用余额',[collection('providers','供应商',[field('id','ID'),field('name','名称'),field('last_balance','最近余额')],create=False,edit=False,remove=False,row_commands=[{'id':'query','label':'查询余额'}])],self.view,self.manage)
+        self.management('DeepSeek 余额查询',[collection('providers','供应商',[field('id','ID'),field('name','名称'),field('last_balance','最近余额')],create=False,edit=False,remove=False,row_commands=[{'id':'query','label':'查询余额'}])],self.view,self.manage,group_id='productivity')
 
     def official(self, provider):
         try:

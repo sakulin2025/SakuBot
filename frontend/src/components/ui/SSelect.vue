@@ -422,10 +422,10 @@ export default defineComponent({
   outline: 0;
   border-color: var(--accent);
   box-shadow: var(--s-ring);
-  background: #fff;
+  background: var(--palette-bg-ffffff);
 }
 .s-select:disabled {
-  background: #f5f5f9;
+  background: var(--palette-bg-f5f5f9);
   color: var(--muted);
   cursor: not-allowed;
 }
@@ -456,9 +456,9 @@ export default defineComponent({
   min-width: 0;
   min-height: 38px;
   padding: 9px 12px;
-  border: 1px solid #e0ddeb;
+  border: 1px solid var(--palette-border-e0ddeb);
   border-radius: 8px;
-  background: #fff;
+  background: var(--palette-bg-ffffff);
   color: var(--ink);
   font-size: 12px;
   font-weight: 400;
@@ -471,7 +471,7 @@ export default defineComponent({
     background var(--s-motion);
 }
 .s-select-trigger:hover:not(:disabled) {
-  border-color: #bcb3df;
+  border-color: var(--palette-border-bcb3df);
 }
 .s-select-trigger:focus-visible,
 .s-select.is-open .s-select-trigger {
@@ -480,7 +480,7 @@ export default defineComponent({
   box-shadow: var(--s-ring);
 }
 .s-select-trigger:disabled {
-  background: #f5f4f9;
+  background: var(--palette-bg-f5f4f9);
   color: var(--muted);
   cursor: not-allowed;
   opacity: 0.65;
@@ -499,7 +499,7 @@ export default defineComponent({
 }
 .s-select-chevron {
   flex-shrink: 0;
-  color: #aaa3bd;
+  color: var(--palette-text-aaa3bd);
   transform: rotate(90deg);
   transition:
     transform var(--s-motion),
@@ -534,13 +534,13 @@ export default defineComponent({
   max-width: calc(100vw - 20px);
   max-height: 320px;
   overflow: hidden;
-  border: 1px solid #e8e3f4;
+  border: 1px solid var(--palette-border-e8e3f4);
   border-radius: 11px;
-  background: #fff;
+  background: var(--palette-bg-ffffff);
   color: var(--ink);
   box-shadow:
-    0 12px 40px #30215d1a,
-    0 2px 7px #30215d08;
+    0 12px 40px var(--palette-shadow-30215d1a),
+    0 2px 7px var(--palette-shadow-30215d08);
   font: 12px/1.5 var(--font);
   z-index: 2000;
 }
@@ -562,7 +562,7 @@ export default defineComponent({
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
-  scrollbar-color: #d7d0e9 transparent;
+  scrollbar-color: var(--palette-bg-d7d0e9) transparent;
 }
 .s-select-option {
   display: flex;
@@ -587,10 +587,10 @@ export default defineComponent({
   flex-shrink: 0;
 }
 .s-select-option.is-active {
-  background: #f4f1fb;
+  background: var(--palette-bg-f4f1fb);
 }
 .s-select-option.is-selected {
-  background: #f0ecfc;
+  background: var(--palette-bg-f0ecfc);
   color: var(--accent);
   font-weight: 550;
 }
@@ -613,7 +613,7 @@ export default defineComponent({
   flex-shrink: 0;
 }
 .s-select-search:focus-within {
-  border-color: #b9adee;
+  border-color: var(--palette-border-b9adee);
 }
 .s-select-search input {
   width: 100%;
@@ -669,14 +669,14 @@ export default defineComponent({
 
 .filter-select {
   width: 100%;
-  background: #fff;
-  border: 1px solid #e0e5ee;
+  background: var(--palette-bg-ffffff);
+  border: 1px solid var(--palette-border-e0e5ee);
   border-radius: 7px;
   padding: 10px 12px;
-  color: #535d71;
+  color: var(--palette-text-535d71);
   min-height: 39px;
   font-size: 12px;
-  box-shadow: 0 1px 2px #1c295103;
+  box-shadow: 0 1px 2px var(--palette-shadow-1c295103);
   transition:
     border-color 0.15s,
     box-shadow 0.15s;
@@ -686,7 +686,7 @@ export default defineComponent({
   min-height: 36px;
   height: 36px;
   font-size: 10px;
-  color: #969eae;
+  color: var(--palette-text-969eae);
   margin-left: auto;
 }
 @media (max-width: 700px) {
@@ -697,4 +697,9 @@ export default defineComponent({
     max-width: 105px;
   }
 }
+
+html[data-theme="dark"] .s-select-trigger, html[data-theme="dark"] .s-select-popup, html[data-theme="dark"] .s-select-search { background: var(--surface-alt); color: var(--ink); border-color: var(--border); }
+html[data-theme="dark"] .s-select-trigger:disabled { background: var(--palette-dark-bg-25222f); color: var(--muted); }
+html[data-theme="dark"] .s-select-option.is-active, html[data-theme="dark"] .s-select-option.is-selected { background: var(--palette-dark-bg-39314c); color: var(--accent); }
+html[data-theme="dark"] .s-select-search input { color: var(--ink); background: transparent; }
 </style>

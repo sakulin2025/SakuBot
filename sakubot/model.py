@@ -83,6 +83,7 @@ class Model:
             allowed = ("role", "content", "tool_calls", "reasoning_content")
             result = {key: value for key, value in message.items() if key in allowed}
             result["role"] = "assistant"
+            result["_finish_reason"] = body["choices"][0].get("finish_reason")
             if result.get("tool_calls") and not model.capabilities.tools:
                 raise RuntimeError("模型返回了未启用的工具调用")
             if not isinstance(result.get("content"), (str, type(None))):
@@ -206,13 +207,22 @@ class Model:
             return size + images * 16384 + reserve
 
         # Preserve the current user event and its entire tool-call chain.
-        active = max((index for index, msg in enumerate(messages) if msg.get("role") == "user" and not msg.get('_observation')), default=1)
+        active = next((index for index, msg in enumerate(messages) if msg.get('_active_event') or msg.get('_active_task')), None)
+        if active is None:
+            active = max((index for index, msg in enumerate(messages) if msg.get("role") == "user" and not msg.get('_observation')), default=1)
         prefix = 0
         while prefix < len(prepared) and prepared[prefix].get("role") == "system":
             prefix += 1
         while cost() > window and active > prefix:
-            prepared.pop(prefix)
+            removed = prepared.pop(prefix)
             active -= 1
+            # A tool-call message and all its results must stay together.
+            if removed.get('role') == 'assistant' and removed.get('tool_calls'):
+                pending = {call.get('id') for call in removed['tool_calls']}
+                while pending and active > prefix and prepared[prefix].get('role') == 'tool':
+                    pending.discard(prepared[prefix].get('tool_call_id'))
+                    prepared.pop(prefix)
+                    active -= 1
         if cost() > window:
             raise RuntimeError("当前任务超出模型上下文窗口")
         return prepared

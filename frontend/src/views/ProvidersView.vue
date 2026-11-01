@@ -83,12 +83,12 @@ async function remove() {
 }
 </script>
 <template>
-  <div class="page-heading">
+  <Teleport to="body"><div class="floating-actions">
     <SButton class="button primary" @click="edit()">
       <UiIcon name="plus" :size="17" />
       新增供应商
     </SButton>
-  </div>
+  </div></Teleport>
   <div class="page-toolbar">
     <div class="search-field">
       <UiIcon name="search" :size="17" />

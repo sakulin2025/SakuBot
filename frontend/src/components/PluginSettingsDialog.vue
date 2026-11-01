@@ -109,9 +109,9 @@ async function save() {
 .settings-error {
   margin-top: 20px;
   padding: 12px 15px;
-  border: 1px solid #c67b8733;
+  border: 1px solid var(--palette-border-c67b8733);
   border-radius: 10px;
-  background: #fff6f7;
+  background: var(--palette-bg-fff6f7);
   color: var(--negative);
   font-size: 13px;
   line-height: 1.7;

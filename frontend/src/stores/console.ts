@@ -13,6 +13,7 @@ import type {
   AgentInfo,
 } from '../types'
 import { synchronizePluginRoutes } from '../plugin-routes'
+import { clearToken, rememberToken, setSessionToken } from '../credentials'
 
 export const useConsole = defineStore('console', () => {
   const authenticated = ref(false)
@@ -94,17 +95,19 @@ export const useConsole = defineStore('console', () => {
     }
   }
   async function login(token: string) {
-    sessionStorage.setItem('sakubot-token', token.trim())
+    token = token.trim()
+    setSessionToken(token)
     try {
       await refresh()
+      rememberToken(token)
       authenticated.value = true
     } catch (error) {
-      logout()
+      logout(false)
       throw error
     }
   }
-  function logout() {
-    sessionStorage.removeItem('sakubot-token')
+  function logout(forget = true) {
+    clearToken(forget)
     authenticated.value = false
     status.value = null
     config.value = null

@@ -11,6 +11,7 @@ from .onebot import OneBot
 from .messages import Messages
 from .receiver import Receiver
 from .external_reply import ExternalReplies
+from .prompt_templates import MAIN_DEFAULT, OLD_DEFAULT, SUMMARY_DEFAULT, VARIABLES
 
 
 READ_ACTIONS = ["get_login_info", "get_friend_list", "get_group_list", "get_group_info",
@@ -38,21 +39,40 @@ class Extension(ExternalReplies, Plugin):
         self.runtime.store.execute("UPDATE people SET data=json_remove(data,'$.is_owner') WHERE json_type(data,'$.is_owner') IS NOT NULL")
         self.config_path = self.data_dir / 'config.json'
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
-        self.settings = Settings.model_validate(json.loads(self.config_path.read_text()) if self.config_path.exists() else {})
+        legacy_path = self.runtime.config.root / 'plugin_data' / 'legacy_message_processing.json'
+        if legacy_path.exists():
+            legacy = json.loads(legacy_path.read_text(encoding='utf-8'))
+            saved = json.loads(self.config_path.read_text(encoding='utf-8')) if self.config_path.exists() else {}
+            if isinstance(legacy, dict) and isinstance(saved, dict):
+                for key in ('image_model_id', 'speech_recognition'):
+                    if key in legacy and key not in saved:
+                        saved[key] = legacy[key]
+                self.runtime.config.atomic(self.config_path, json.dumps(saved, ensure_ascii=False, indent=2) + '\n')
+                legacy_path.unlink()
+        saved = json.loads(self.config_path.read_text()) if self.config_path.exists() else {}
+        if 'external_prompt' not in saved:
+            old = self.runtime.store.kv_get('qq:external_reply', {}).get('requirements', {})
+            prompt = old.get('prompt', MAIN_DEFAULT)
+            saved['external_prompt'] = MAIN_DEFAULT if prompt == OLD_DEFAULT else prompt
+            saved['external_prompt_mode'] = old.get('mode', 'temporary')
+            self.runtime.config.atomic(self.config_path, json.dumps(saved, ensure_ascii=False, indent=2) + '\n')
+        self.settings = Settings.model_validate(saved)
         self.messages = Messages(self)
         self.receiver = Receiver(self)
         self.client = OneBot(self)
         self.page('manage', 'QQ', Path(__file__).parent / 'web' / 'dist', icon='connection', order=15,
-            aliases=('/qq', '/connection', '/people', '/extensions/qq/connection', '/extensions/qq/people', '/extensions/external_reply/manage'))
+            aliases=('/qq', '/connection', '/people', '/extensions/qq/connection', '/extensions/qq/people', '/extensions/external_reply/manage'), group_id='conversation')
         self.api('config', self.get_config)
         self.api('config', self.save_config, methods=('POST',))
+        self.api('prompt-defaults', self.prompt_defaults)
         self.api('status', self.status)
         self.api('image-models', self.image_models)
         self.delivery_adapter('message', self.deliver, accepts=self.accepts_target, timeout=None)
         self.setup_replies()
 
         self.conversation_source('owner', 'QQ 主人私聊',
-            handlers={kind: self.main_response for kind in ('text', 'image', 'video', 'file', 'audio')},
+            handlers={**{kind: self.main_response for kind in ('text', 'image', 'video', 'file', 'audio')},
+                'tool': self.main_tool_event},
             availability=self.availability, timeout=None)
         self.api("people", self.people_records)
         self.tool('people_lookup', '通过 QQ ID 或昵称检索曾见过的人，返回稳定 ID、昵称和群名片。同名需区分 ID。',
@@ -107,10 +127,6 @@ class Extension(ExternalReplies, Plugin):
             self.runtime.store.kv_set('agent:main-summary', {'cutoff': boundary['cutoff'], 'text': ''})
             self.runtime.store.log('info', self.id, 'context.archives.isolated', data={'records': changed})
 
-    def onboarding(self):
-        return [{'key': self.id + '.connection', 'title': '连接 QQ', 'icon': 'connection',
-            'path': '/extensions/' + self.id + '/manage', 'completed': self.client.online.is_set()}]
-
     def prompt_context(self, invocation):
         return 'QQ 插件：主人 QQ=' + self.settings.owner_id + '，账号 QQ=' + self.client.self_id + '。向其他 QQ 会话发送请使用 qq_send，owner 表示主人固定私聊。'
 
@@ -141,11 +157,16 @@ class Extension(ExternalReplies, Plugin):
             values[name + '_configured'] = bool(values.pop(name))
         return values
 
+    async def prompt_defaults(self, request):
+        return {'main': MAIN_DEFAULT, 'summary': SUMMARY_DEFAULT, 'variables': list(VARIABLES)}
+
     async def save_config(self, request):
         import asyncio
         data = await request.json()
         if not isinstance(data, dict):
             raise ValueError('配置格式不正确')
+        for name in ('external_prompt', 'external_prompt_mode'):
+            data.setdefault(name, getattr(self.settings, name))
         for name in ('napcat_token', 'snowluma_token'):
             if not data.get(name):
                 data[name] = getattr(self.settings, name)
@@ -177,6 +198,17 @@ class Extension(ExternalReplies, Plugin):
 
     async def main_response(self, packet):
         return await self.send_part(self.client.owner_target(), packet)
+
+    async def main_tool_event(self, packet):
+        event = packet.get('event')
+        if event not in ('tool.started', 'compression.started', 'compression.completed', 'compression.failed'):
+            return
+        target = self.client.owner_target()
+        message = ('🔨函数调用：' + str(packet.get('name', ''))) if event == 'tool.started' else {'compression.started': '🗜️ 正在压缩上下文', 'compression.completed': '🗜️ 上下文压缩完成', 'compression.failed': '⚠️ 上下文压缩失败'}[event]
+        identifier = 'qq:tool:' + str(packet['run_id']) + ':' + str(packet.get('call_id') or packet.get('compression_id')) + ':' + event
+        params = {**OneBot.target_params(target), 'message': [{'type': 'text', 'data': {'text': message}}]}
+        async with self.client.target_lock(target):
+            return await self.client.action('send_msg', params, identifier, target, message)
 
     async def send_part(self, target, packet):
         from sakubot.artifacts import media_url

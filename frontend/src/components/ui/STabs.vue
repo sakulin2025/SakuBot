@@ -112,7 +112,7 @@ onBeforeUnmount(() => observer?.disconnect())
   padding: 13px 18px 15px;
   background: transparent;
   border: 0;
-  color: #9294a7;
+  color: var(--palette-text-9294a7);
   font-weight: 550;
   border-radius: 8px 8px 0 0;
   transition:
@@ -122,7 +122,7 @@ onBeforeUnmount(() => observer?.disconnect())
 }
 .s-tab:hover {
   color: var(--accent);
-  background: #7162eb06;
+  background: var(--palette-bg-7162eb06);
 }
 .s-tab[aria-selected='true'] {
   color: var(--accent);
@@ -132,15 +132,15 @@ onBeforeUnmount(() => observer?.disconnect())
   line-height: 18px;
   min-width: 20px;
   padding: 0 6px;
-  background: #edeef5;
+  background: var(--palette-bg-edeef5);
   border-radius: 6px;
-  color: #9294a7;
+  color: var(--palette-text-9294a7);
   transition:
     background var(--s-motion),
     color var(--s-motion);
 }
 .s-tab[aria-selected='true'] .s-tab-count {
-  background: #7162eb12;
+  background: var(--palette-bg-7162eb12);
   color: var(--accent);
 }
 .s-tab-indicator {
@@ -189,4 +189,7 @@ onBeforeUnmount(() => observer?.disconnect())
     padding: 12px 13px;
   }
 }
+
+html[data-theme="dark"] .s-tab-count { background: var(--surface-alt); color: var(--muted); }
+html[data-theme="dark"] .s-tab[aria-selected="true"] .s-tab-count { background: var(--palette-dark-bg-3b3152); color: var(--accent); }
 </style>

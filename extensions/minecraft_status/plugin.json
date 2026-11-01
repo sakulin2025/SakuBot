@@ -1,6 +1,6 @@
 {
   "name": "minecraft_status",
-  "label": "Minecraft",
+  "label": "我的世界服务器状态",
   "version": "1.0.0",
   "settings": {
     "fields": [

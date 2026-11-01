@@ -15,7 +15,7 @@ class Extension(Plugin):
         self.client=AList(self.config);self.lock=asyncio.Lock();self.previews={}
         self.fields=[field('base_url','URL',required=True),field('token','Token','secret'),field('username','用户名'),field('password','密码','secret'),field('path_password','目录密码','secret'),field('public_url','公开 URL'),field('timeout','超时 · 秒','number',min=1,max=300),field('max_upload_mb','上传上限 · MiB','number',min=1,max=100)]
         self.function(self.scan,name='alist_scan_folders');self.function(self.browse,name='alist_browse');self.function(self.write,name='alist_write')
-        self.management('AList',[collection('folders','目录',[field('path','第一层目录',readonly=True),field('ignore','忽略','boolean'),field('download','下载','boolean'),field('add','添加','boolean'),field('delete','删除','boolean')],key='path',create=False,remove=False,commands=[{'id':'scan','label':'扫描目录'}]),settings_section(self.fields)],self.view,self.manage)
+        self.management('AList',[collection('folders','目录',[field('path','第一层目录',readonly=True),field('ignore','忽略','boolean'),field('download','下载','boolean'),field('add','添加','boolean'),field('delete','删除','boolean')],key='path',create=False,remove=False,commands=[{'id':'scan','label':'扫描目录'}]),settings_section(self.fields)],self.view,self.manage,group_id='network')
     def availability(self):
         return {'available':bool(self.config.get('base_url')),'reason':'' if self.config.get('base_url') else '尚未配置 AList'}
     def view(self):return {'data':{'config':self.config.public([f['key'] for f in self.fields]),'folders':self.config['folder_rules']}}

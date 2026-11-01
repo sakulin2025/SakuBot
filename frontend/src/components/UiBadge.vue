@@ -81,31 +81,37 @@ const tone = computed(() =>
   opacity: 0.8;
 }
 .badge.neutral {
-  background: #f1f3f7;
-  color: #8991a1;
-  border-color: #e9ecf2;
+  background: var(--palette-bg-f1f3f7);
+  color: var(--palette-text-8991a1);
+  border-color: var(--palette-border-e9ecf2);
 }
 .badge.positive {
-  background: #edf7f0;
-  color: #5c9570;
-  border-color: #e1efe6;
+  background: var(--palette-bg-edf7f0);
+  color: var(--palette-text-5c9570);
+  border-color: var(--palette-border-e1efe6);
 }
 .badge.negative {
-  background: #fbedee;
-  color: #c06e79;
-  border-color: #f5dfe3;
+  background: var(--palette-bg-fbedee);
+  color: var(--palette-text-c06e79);
+  border-color: var(--palette-border-f5dfe3);
 }
 .badge.warning {
-  background: #fcf5e9;
-  color: #ba9861;
-  border-color: #f3e9d3;
+  background: var(--palette-bg-fcf5e9);
+  color: var(--palette-text-ba9861);
+  border-color: var(--palette-border-f3e9d3);
 }
 .badge.accent {
-  background: #f0f0ff;
-  color: #7d7bd0;
-  border-color: #e7e6fb;
+  background: var(--palette-bg-f0f0ff);
+  color: var(--palette-text-7d7bd0);
+  border-color: var(--palette-border-e7e6fb);
 }
 .badge {
   border-radius: 6px;
 }
+
+html[data-theme="dark"] .badge.neutral { background: var(--palette-dark-bg-302d3b); color: var(--palette-dark-text-b2aaba); border-color: var(--palette-dark-border-45404f); }
+html[data-theme="dark"] .badge.positive { background: var(--palette-dark-bg-21392d); color: var(--palette-dark-text-9bd4af); border-color: var(--palette-dark-border-315440); }
+html[data-theme="dark"] .badge.negative { background: var(--palette-dark-bg-44292f); color: var(--palette-dark-text-f2a3af); border-color: var(--palette-dark-border-683842); }
+html[data-theme="dark"] .badge.warning { background: var(--palette-dark-bg-403427); color: var(--palette-dark-text-e5bf83); border-color: var(--palette-dark-border-65503a); }
+html[data-theme="dark"] .badge.accent { background: var(--palette-dark-bg-352e4a); color: var(--palette-dark-text-c1b2ff); border-color: var(--palette-dark-border-504365); }
 </style>

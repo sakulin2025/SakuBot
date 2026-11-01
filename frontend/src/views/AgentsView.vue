@@ -56,7 +56,7 @@ onUnmounted(() => {
 defineProps<{ embedded?: boolean }>()
 </script>
 <template>
-  <SPageHeader v-if="!embedded" title="Agent 管理" :count="store.agents.length">
+  <SPageHeader v-if="!embedded" title="Agent 管理" :count="store.agents.length" floating>
     <RouterLink to="/personas" class="button">
       <UiIcon name="persona" :size="16" />
       管理人格

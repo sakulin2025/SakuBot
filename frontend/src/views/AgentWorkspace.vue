@@ -8,10 +8,10 @@ const tab = computed({
   get: () => route.query.tab === 'personas' ? 'personas' : 'agents',
   set: value => { void router.push({ path: '/agents', query: { ...route.query, tab: value } }) },
 })
-const tabs = [{value:'personas',label:'人格'}, {value:'agents',label:'Agent 管理'}]
+const tabs = [{value:'personas',label:'人格'}, {value:'agents',label:'智能体列表'}]
 </script>
 <template>
-  <SPageHeader title="Agent 管理" />
+  <SPageHeader title="智能体" />
   <STabs v-model="tab" :items="tabs">
     <Transition name="s-page" mode="out-in">
       <div :key="tab">

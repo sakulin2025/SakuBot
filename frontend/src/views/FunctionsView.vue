@@ -33,7 +33,7 @@ onMounted(load)
 watch([() => store.status?.registry_revision, () => store.status?.agents_revision], load)
 </script>
 <template>
-  <SPageHeader v-if="!embedded" title="可用函数">
+  <SPageHeader v-if="!embedded" title="可用函数" floating>
     <SButton :loading="loading" @click="load">刷新</SButton>
   </SPageHeader>
   <div class="page-toolbar">

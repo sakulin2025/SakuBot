@@ -49,7 +49,7 @@ class Extension(Confirmations, Plugin):
             self.runtime.store.kv_set('team:members', migrated)
         self.sync_agents(migrated)
         self.page("manage", "专业团队", Path(__file__).parent / "web" / "dist",
-            icon="people", order=30, aliases=("/team",))
+            icon="people", order=30, aliases=("/team",), group_id='system')
         self.api("members", self.page_members)
         self.api("members", self.save_member, methods=("POST",))
         self.api("members/{identifier}", self.delete_member, methods=("DELETE",))

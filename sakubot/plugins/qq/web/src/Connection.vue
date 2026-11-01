@@ -2,11 +2,15 @@
 import {
   reactive,
   ref,
+  computed,
   onMounted,
   onUnmounted,
   usePluginHost,
   UiBadge,
+  UiModal,
 } from "@sakubot/ui";
+import { promptVariables, variableName } from './promptVariables';
+defineProps<{ active: boolean }>();
 const host = usePluginHost();
 const values = reactive({
   owner_id: "", backend: "napcat", napcat_ws: "", napcat_token: "", snowluma_ws: "", snowluma_token: "",
@@ -14,7 +18,10 @@ const values = reactive({
   reply_trim: true, reply_merge_newlines: true,
   reply_interval_min: 3, reply_interval_max: 5,
   image_model_id: "", speech_recognition: "unimplemented",
+  external_prompt: "", external_prompt_mode: "temporary",
 });
+const promptDefaults = ref({ main: "", summary: "", variables: [] as string[] });
+const resetPrompt = ref(false);
 const imageModels = ref<{ id: string; name: string }[]>([]);
 const tokenConfigured = reactive({ napcat: false, snowluma: false });
 const status = ref({
@@ -25,6 +32,8 @@ const status = ref({
   retry_at: 0,
 });
 const busy = ref(false);
+const saved = ref("");
+const dirty = computed(() => !!saved.value && JSON.stringify(values) !== saved.value);
 let timer: ReturnType<typeof setInterval> | undefined;
 async function loadStatus() {
   try {
@@ -34,6 +43,7 @@ async function loadStatus() {
   }
 }
 async function save() {
+  if (busy.value || !dirty.value) return;
   busy.value = true;
   try {
     const data = await host.api<{ napcat_token_configured: boolean; snowluma_token_configured: boolean }>(
@@ -44,6 +54,7 @@ async function save() {
     values.snowluma_token = "";
     tokenConfigured.napcat = data.napcat_token_configured;
     tokenConfigured.snowluma = data.snowluma_token_configured;
+    saved.value = JSON.stringify(values);
     await loadStatus();
     host.refresh();
     host.toast("已保存");
@@ -71,6 +82,8 @@ onMounted(async () => {
       reply_interval_max: number;
       image_model_id: string;
       speech_recognition: string;
+      external_prompt: string;
+      external_prompt_mode: string;
     }>("config");
     values.owner_id = data.owner_id;
     values.backend = data.backend;
@@ -85,6 +98,10 @@ onMounted(async () => {
     values.reply_interval_max = data.reply_interval_max;
     values.image_model_id = data.image_model_id;
     values.speech_recognition = data.speech_recognition;
+    values.external_prompt = data.external_prompt;
+    values.external_prompt_mode = data.external_prompt_mode;
+    promptDefaults.value = await host.api<typeof promptDefaults.value>("prompt-defaults");
+    saved.value = JSON.stringify(values);
     imageModels.value = await host.api<{ id: string; name: string }[]>("image-models");
     tokenConfigured.napcat = data.napcat_token_configured;
     tokenConfigured.snowluma = data.snowluma_token_configured;
@@ -97,13 +114,10 @@ onMounted(async () => {
 onUnmounted(() => clearInterval(timer));
 </script>
 <template>
-  <SPageHeader title="QQ"
-    ><UiBadge :status="status.online ? 'online' : 'offline'"
-  /></SPageHeader>
-  <SForm @submit="save">
+  <SForm id="qq-connection-settings" class="qq-connection" :disabled="busy" @submit="save">
     <div class="settings-grid">
       <SCard title="连接"
-        ><div class="form-body">
+        ><template #actions><UiBadge :status="status.online ? 'online' : 'offline'" /></template><div class="form-body">
           <SFormItem label="协议端" for="qq-backend">
             <SSelect id="qq-backend" v-model="values.backend"><option value="napcat">NapCat</option><option value="snowluma">SnowLuma</option></SSelect>
           </SFormItem>
@@ -186,11 +200,32 @@ onUnmounted(() => clearInterval(timer));
           </SFormItem>
         </div>
       </SCard>
-    </div>
-    <div class="settings-save">
-      <SButton type="submit" variant="primary" :loading="busy" icon="check"
-        >保存配置</SButton
-      >
+      <SCard title="外部消息回应">
+        <div class="form-body">
+          <SFormItem label="主智能体在响应时的额外要求" for="qq-external-prompt">
+            <STextarea id="qq-external-prompt" v-model="values.external_prompt" :maxlength="10000" rows="8" />
+          </SFormItem>
+          <div class="prompt-actions"><SButton type="button" @click="resetPrompt = true">重置为默认</SButton></div>
+          <div class="field-state"><div v-for="[name, label] in promptVariables" :key="name">{{ variableName(name) }} · {{ label }}</div></div>
+          <SFormItem label="注入模式" for="qq-external-mode">
+            <SSelect id="qq-external-mode" v-model="values.external_prompt_mode"><option value="temporary">临时</option><option value="context">上下文</option></SSelect>
+          </SFormItem>
+        </div>
+      </SCard>
     </div>
   </SForm>
+  <UiModal :open="resetPrompt" title="重置为默认" @close="resetPrompt = false">
+    <span>重置主智能体在响应时的额外要求？</span>
+    <template #footer><SButton @click="resetPrompt = false">取消</SButton><SButton variant="primary" @click="values.external_prompt = promptDefaults.main; resetPrompt = false">重置</SButton></template>
+  </UiModal>
+  <Teleport v-if="active" to="body">
+    <div class="floating-actions">
+      <SButton type="submit" form="qq-connection-settings" :variant="dirty ? 'primary' : 'default'" :disabled="!dirty" :loading="busy" icon="check">保存配置</SButton>
+    </div>
+  </Teleport>
 </template>
+<style scoped>
+.qq-connection { width: 100%; max-width: 820px; margin: 0 auto; }
+.qq-connection .settings-grid { grid-template-columns: minmax(0, 1fr); }
+.prompt-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+</style>

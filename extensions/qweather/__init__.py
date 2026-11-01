@@ -13,10 +13,10 @@ class Extension(Plugin):
         self.config = self.configure({'host':'','key':'','default_city':''}, secrets=('key',))
         self.client = QWeather(self.config)
         self.brief = {}
-        self.fields = [field('host','Host',required=True),field('key','Key','secret'),field('default_city','默认城市',required=True)]
+        self.fields = [field('host','和风天气 API 加密地址',required=True),field('key','应用认证密钥','secret'),field('default_city','默认城市',required=True)]
         self.function(self.geo_tool,name='qweather_geo')
         self.function(self.weather_tool,name='qweather_weather')
-        self.management('天气',[settings_section(self.fields),{'id':'weather','label':'天气','kind':'text','commands':[{'id':'refresh','label':'更新'}]}],self.view,self.manage)
+        self.management('和风天气',[settings_section(self.fields),{'id':'weather','label':'天气','kind':'text','commands':[{'id':'refresh','label':'更新'}]}],self.view,self.manage,group_id='productivity')
     def availability(self):
         ok = all(self.config.get(k) for k in ('host','key','default_city'))
         return {'available':bool(ok),'reason':'' if ok else '尚未配置天气连接'}

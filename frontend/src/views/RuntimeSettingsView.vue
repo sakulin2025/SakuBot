@@ -3,6 +3,7 @@ import { onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { api, ApiError } from '../api'
 import { useConsole } from '../stores/console'
 import SecretInput from '../components/SecretInput.vue'
+import { rememberToken } from '../credentials'
 const store = useConsole()
 const values = reactive({
   max_steps: 16,
@@ -31,14 +32,13 @@ interface ConversationSource {
 }
 const sources = ref<ConversationSource[]>([])
 const currentSource = ref('')
-const routing = reactive<{ mode: 'broadcast' | 'intelligent'; targets: string[]; tool_events: boolean }>({
+const routing = reactive<{ mode: 'broadcast' | 'intelligent'; targets: string[]; tool_events: boolean; wake_insertion: 'queue' | 'next_boundary' }>({
   mode: 'intelligent',
   targets: [],
   tool_events: false,
+  wake_insertion: 'queue',
 })
-const routingBusy = ref(false)
 const routingDirty = ref(false)
-const routingError = ref('')
 let sourceTimer: ReturnType<typeof setInterval> | undefined
 async function loadSources() {
   try {
@@ -56,23 +56,6 @@ watch(
   },
   { immediate: true },
 )
-async function saveRouting() {
-  routingBusy.value = true
-  routingError.value = ''
-  try {
-    const result = await api<{ config: NonNullable<typeof store.config> }>('config', {
-      method: 'PATCH',
-      body: { section: 'conversation', values: { conversation: routing } },
-    })
-    routingDirty.value = false
-    store.config = result.config
-    store.toast('已保存')
-  } catch {
-    routingError.value = '保存失败'
-  } finally {
-    routingBusy.value = false
-  }
-}
 onMounted(() => {
   void loadSources()
   sourceTimer = setInterval(loadSources, 3000)
@@ -110,9 +93,7 @@ const tokenBusy = ref(false)
 const tokenError = ref('')
 const error = ref('')
 const dirty = ref(false)
-function scrollTo(id: string) {
-  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-}
+const saving = ref(false)
 watch(
   () => store.config,
   (config) => {
@@ -128,18 +109,32 @@ watch(
   { immediate: true },
 )
 async function save() {
+  if (saving.value || (!dirty.value && !routingDirty.value)) return
   error.value = ''
+  saving.value = true
   try {
-    await store.save('settings', {
-      max_steps: values.max_steps,
-      context_chars: values.context_chars,
-      agent_concurrency: values.agent_concurrency,
-      compression_enabled: values.compression_enabled,
-      compression_threshold: values.threshold / 100,
-    })
+    if (dirty.value) {
+      await store.save('settings', {
+        max_steps: values.max_steps,
+        context_chars: values.context_chars,
+        agent_concurrency: values.agent_concurrency,
+        compression_enabled: values.compression_enabled,
+        compression_threshold: values.threshold / 100,
+        ...(routingDirty.value ? { conversation: { ...routing, targets: [...routing.targets] } } : {}),
+      })
+    } else {
+      const result = await api<{ config: NonNullable<typeof store.config> }>('config', {
+        method: 'PATCH', body: { section: 'conversation', values: { conversation: { ...routing, targets: [...routing.targets] } } },
+      })
+      store.config = result.config
+      store.toast('已保存')
+    }
     dirty.value = false
+    routingDirty.value = false
   } catch {
     error.value = '保存失败'
+  } finally {
+    saving.value = false
   }
 }
 async function changeToken() {
@@ -151,7 +146,7 @@ async function changeToken() {
   tokenBusy.value = true
   try {
     await api('admin-token', { method: 'PATCH', body: { token: token.value } })
-    sessionStorage.setItem('sakubot-token', token.value)
+    rememberToken(token.value)
     token.value = ''
     token.confirmation = ''
     store.toast('令牌已更新')
@@ -164,17 +159,8 @@ async function changeToken() {
 </script>
 <template>
   <div class="runtime-layout">
-    <SPageHeader title="运行设置">
-      <div class="settings-shortcuts">
-        <SButton type="button" variant="text" @click="scrollTo('execution')">执行参数</SButton>
-        <SButton type="button" variant="text" @click="scrollTo('compression')">上下文压缩</SButton>
-        <SButton type="button" variant="text" @click="scrollTo('conversation')">主对话</SButton>
-        <SButton type="button" variant="text" @click="scrollTo('security')">管理令牌</SButton>
-        <SButton type="button" variant="text" @click="scrollTo('danger')">危险操作</SButton>
-      </div>
-    </SPageHeader>
-    <SForm id="runtime-settings" @submit="save" @input="dirty = true" @change="dirty = true">
-      <div class="settings-grid">
+    <SForm id="runtime-settings" :disabled="saving" @submit="save">
+      <div class="settings-grid" @input="dirty = true" @change="dirty = true">
         <SCard id="execution" title="执行参数" class="settings-section">
           <div class="form-body">
             <div class="form-row">
@@ -236,28 +222,24 @@ async function changeToken() {
           </div>
         </SCard>
       </div>
-      <div class="settings-save">
-        <span v-if="error" class="form-error">{{ error }}</span>
-        <SButton variant="primary" type="submit" :loading="store.saving" icon="check">保存设置</SButton>
-      </div>
-    </SForm>
     <SCard id="conversation" title="主对话" class="settings-section security-card">
-      <SForm
+      <div
         class="form-body"
-        @submit="saveRouting"
         @input="routingDirty = true"
         @change="routingDirty = true"
       >
+        <SFormItem label="消息唤醒方式" for="wake-insertion">
+          <SSelect id="wake-insertion" v-model="routing.wake_insertion">
+            <option value="queue">加入队列</option>
+            <option value="next_boundary">在安全位置插入</option>
+          </SSelect>
+        </SFormItem>
         <SFormItem label="回复发送方式" for="conversation-mode">
           <SSelect id="conversation-mode" v-model="routing.mode">
             <option value="intelligent">跟随消息来源</option>
             <option value="broadcast">广播至指定对话源</option>
           </SSelect>
         </SFormItem>
-        <div class="settings-row">
-          <label>网页同步</label>
-          <SSwitch :model-value="true" disabled />
-        </div>
         <div class="settings-row">
           <label>同步工具调用过程</label>
           <SSwitch v-model="routing.tool_events" @change="routingDirty = true" />
@@ -288,12 +270,16 @@ async function changeToken() {
           </tbody>
         </STable>
         <SEmpty v-else label="暂无对话源" />
-        <div class="settings-save">
-          <span v-if="routingError" class="form-error">{{ routingError }}</span>
-          <SButton type="submit" variant="primary" :loading="routingBusy">保存</SButton>
-        </div>
-      </SForm>
+      </div>
     </SCard>
+    </SForm>
+    <Teleport to="body">
+      <div class="floating-actions runtime-save">
+        <span v-if="error" class="form-error">{{ error }}</span>
+        <SButton type="submit" form="runtime-settings" :variant="dirty || routingDirty ? 'primary' : 'default'"
+          :disabled="!dirty && !routingDirty" :loading="saving" icon="check">保存设置</SButton>
+      </div>
+    </Teleport>
     <SCard id="security" title="管理令牌" class="settings-section security-card">
       <SForm class="form-body security-form" @submit="changeToken">
         <SFormItem label="新令牌" for="new-admin-token" required>
@@ -351,7 +337,10 @@ async function changeToken() {
 </template>
 
 <style scoped>
+.runtime-layout { width: 100%; max-width: 820px; margin: 0 auto; }
+.settings-grid { grid-template-columns: minmax(0, 1fr); }
+.runtime-layout .form-row { grid-template-columns: minmax(0, 1fr); }
 .danger-zone {
-  border-color: var(--danger, #dc5c62);
+  border-color: var(--danger, var(--palette-border-dc5c62));
 }
 </style>

@@ -14,9 +14,9 @@ class Extension(Plugin):
         self.client = HomeAssistant(self.config,self.data_dir,self.config.save)
         self.lock=asyncio.Lock()
         self.fields=[field('base_url','URL',required=True),field('token','Token','secret'),field('timeout','超时 · 秒','number',min=1,max=300)]
-        for name, method in [('ha_initialize',self.initialize_tool),('ha_query',self.query),('ha_control',self.control),('ha_manual',self.operation_manual)]:self.function(method,name=name)
+        for name, method in [('ha_initialize',self.initialize_tool),('ha_query',self.query),('ha_history',self.history),('ha_control',self.control),('ha_manual',self.operation_manual)]:self.function(method,name=name)
         policies=[{'value':x,'label':y} for x,y in [('controllable','可控制'),('readonly','只读'),('ignore','忽略')]]
-        self.management('Home Assistant',[collection('entities','实体',[field('entity_id','实体 ID',readonly=True),field('name','名称',readonly=True),field('area','房间',readonly=True),field('alias','别名'),field('group','分组'),field('policy','策略','select',options=policies)],key='entity_id',create=False,remove=False),collection('rooms','房间',[field('area','ID',readonly=True),field('name','名称',readonly=True),field('enabled','启用','boolean')],key='area',create=False,remove=False),settings_section([field('content','用户要求与操作手册','text')],label='操作手册',id='manual'),settings_section(self.fields)],self.view,self.manage)
+        self.management('Home Assistant',[collection('entities','实体',[field('entity_id','实体 ID',readonly=True),field('name','名称',readonly=True),field('area','房间',readonly=True),field('alias','别名'),field('group','分组'),field('policy','策略','select',options=policies)],key='entity_id',create=False,remove=False),collection('rooms','房间',[field('area','ID',readonly=True),field('name','名称',readonly=True),field('enabled','启用','boolean')],key='area',create=False,remove=False),settings_section([field('content','用户要求与操作手册','text')],label='操作手册',id='manual'),settings_section(self.fields)],self.view,self.manage,group_id='smart_home')
     def availability(self):
         ok=bool(self.config.get('base_url') and self.config.get('token'))
         return {'available':ok,'reason':'' if ok else '尚未配置 HA 连接'}
@@ -70,6 +70,21 @@ class Extension(Plugin):
         try:
             result = await asyncio.to_thread(self.client.query, entity_id, match, domain, summary)
             return result
+        except PluginError as exc:
+            return str(exc)
+
+    async def history(self, entity_id: str, start: str='', end: str='', limit: int=200, offset: int=0):
+        """查询 HA 实体在指定时间段的历史状态，不控制设备。先用 ha_query 根据名称或别名找到完整实体 ID；只能查询已启用房间且策略允许读取的实体。历史受 Home Assistant 记录器配置和保留时间限制，空结果不代表没有变化。默认查询最近 24 小时；首条可能是区间开始时沿用的状态，而非一次新变化。结果 truncated 为 true 时用 next_offset 继续读取同一时间范围，不要把一页当作全部。
+
+                Args:
+                    entity_id(string): 完整实体 ID，例如 sensor.temperature。
+                    start(string): 开始时间，ISO 8601 格式并带时区，例如 2026-10-31T00:00:00+08:00；留空为结束时间前 24 小时。
+                    end(string): 结束时间，ISO 8601 格式并带时区；留空为当前时间。分页时保持首次返回的 start 和 end 不变。
+                    limit(int): 每页记录数，默认 200，最大 1000。
+                    offset(int): 从第几条开始，默认 0；下一页使用 next_offset。
+                """
+        try:
+            return await asyncio.to_thread(self.client.history, entity_id, start, end, limit, offset)
         except PluginError as exc:
             return str(exc)
 

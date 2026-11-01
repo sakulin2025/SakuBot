@@ -1,0 +1,10 @@
+---
+name: freereps-activity
+description: 按需查询 FreeReps 的运动、健康指标、睡眠和训练详情，处理新训练记录事件。
+---
+
+使用 freereps_workouts 查询训练列表，freereps_workout_detail 查询单次训练；合成训练需传列表中的开始与结束时间以查询动作组。freereps_activity、freereps_metrics 和 freereps_sleep 分别查询活动、指标和睡眠。查询数据不足时明确说明，不推测缺失的数值、训练、睡眠或诊断。指标的单位和时间以实际返回数据为准。训练记录到达可能滞后于训练结束，不把新同步误认为刚刚完成。训练事件只携带简短信息；需要时主动查询详情。不同来源可能对应同一次训练，避免重复报告。路线、心率等仅在任务需要时读取或展示。
+
+接口返回的带时区时间统一转换为 Asia/Shanghai（UTC+08:00）；查询日期也按该时区理解。仅有日期的值与数值时间戳保持原样。
+
+需要训练可视化时，使用 freereps_workout_report(id) 在工作空间生成 PNG，再通过 workspace_publish 发送。仅有有效数据的图表才会出现；GPS 背景为无底图轨迹，配速由有效速度采样换算，缺失数据不应推测。

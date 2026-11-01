@@ -41,19 +41,19 @@ onBeforeUnmount(() => {
 <style>
 .modal {
   width: min(570px, calc(100vw - 32px));
-  border: 1px solid #e1e5ed;
+  border: 1px solid var(--palette-border-e1e5ed);
   border-radius: 13px;
   padding: 0;
-  background: #fff;
+  background: var(--palette-bg-ffffff);
   color: var(--ink);
   max-height: 88vh;
-  box-shadow: 0 25px 100px #101b4026;
+  box-shadow: 0 25px 100px var(--palette-shadow-101b4026);
 }
 .modal.wide {
   width: min(870px, calc(100vw - 32px));
 }
 .modal::backdrop {
-  background: #22283d55;
+  background: var(--palette-bg-22283d55);
   backdrop-filter: blur(4px);
 }
 .modal-header {
@@ -95,7 +95,7 @@ onBeforeUnmount(() => {
 }
 .modal[open]::backdrop {
   animation: s-backdrop-in 0.2s ease;
-  background: #24233e59;
+  background: var(--palette-bg-24233e59);
   backdrop-filter: blur(4px);
 }
 .modal.is-leaving {
@@ -137,15 +137,15 @@ html:has(dialog[open]) {
   overflow: hidden;
 }
 .modal {
-  border: 1px solid #f2f0fa;
+  border: 1px solid var(--palette-border-f2f0fa);
   border-radius: 16px;
-  box-shadow: 0 24px 80px #24213b24;
+  box-shadow: 0 24px 80px var(--palette-shadow-24213b24);
 }
 .modal-header {
-  background: #fdfcfe;
+  background: var(--palette-bg-fdfcfe);
 }
 .modal-footer {
-  background: #faf9fd;
+  background: var(--palette-bg-faf9fd);
 }
 .plugin-document .modal {
   max-height: 94vh;
@@ -153,4 +153,9 @@ html:has(dialog[open]) {
 .plugin-document .modal-content {
   max-height: calc(94vh - 140px);
 }
+
+html[data-theme="dark"] .modal { background: var(--surface); color: var(--ink); border-color: var(--border); }
+html[data-theme="dark"] .modal::backdrop { background: var(--palette-dark-bg-07060bb3); }
+html[data-theme="dark"] .modal-header, html[data-theme="dark"] .modal-footer { background: var(--surface); border-color: var(--border); }
+html[data-theme="dark"] .modal-content pre { background: var(--surface-alt); color: var(--ink); }
 </style>

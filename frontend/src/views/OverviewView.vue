@@ -1,13 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed } from 'vue'
 import { useConsole } from '../stores/console'
-import { api, formatDate } from '../api'
-import type { EventRecord } from '../types'
 import UiIcon from '../components/UiIcon.vue'
 import UiBadge from '../components/UiBadge.vue'
-import UiEmpty from '../components/UiEmpty.vue'
 const store = useConsole()
-const events = ref<EventRecord[]>([])
 const steps = computed(() => [
   {
     key: 'model',
@@ -15,44 +11,16 @@ const steps = computed(() => [
     icon: 'model',
     path: store.config?.providers.length ? '/model' : '/providers',
   },
-  { key: 'persona', title: '配置 Agent', icon: 'persona', path: '/agents' },
-  { key: 'plugins', title: '激活插件', icon: 'plugins', path: '/plugins' },
-  ...(store.setup?.steps || []),
+  { key: 'agent', title: '配置智能体', icon: 'persona', path: '/agents' },
 ])
 const next = computed(() =>
   steps.value.find((step) => store.requiredSteps.includes(step.key) && !store.setup?.completed[step.key]),
 )
 const complete = (key: string) =>
-  store.setup?.completed[key] ||
-  store.setup?.steps.some((step) => step.key === key && step.completed) ||
-  false
-async function toggle() {
-  try {
-    await store.activate()
-  } catch {
-    /* Store owns toast. */
-  }
-}
-onMounted(async () => {
-  try {
-    events.value = (await api<{ items: EventRecord[] }>('events?limit=5')).items
-  } catch {
-    store.toast('记录加载失败', true)
-  }
-})
+  store.setup?.completed[key] || false
 </script>
 <template>
-  <SPageHeader title="主导览">
-    <SButton
-      class="button"
-      :class="store.config?.enabled ? 'danger-soft' : 'primary'"
-      :disabled="store.saving || (!store.ready && !store.config?.enabled)"
-      @click="toggle"
-    >
-      <UiIcon :name="store.config?.enabled ? 'pause' : 'power'" :size="17" />
-      {{ store.config?.enabled ? '暂停 SakuBot' : '启动 SakuBot' }}
-    </SButton>
-  </SPageHeader>
+  <div class="overview">
   <section class="setup-panel">
     <div class="setup-header">
       <div class="section-heading">
@@ -90,18 +58,7 @@ onMounted(async () => {
             <template v-else>0{{ index + 1 }}</template>
           </span>
         </div>
-        <h3>
-          {{ step.title }}
-          <span
-            v-if="
-              store.setup?.optional?.includes(step.key) ||
-              store.setup?.steps.some((item) => item.key === step.key)
-            "
-            class="optional-tag"
-          >
-            可选
-          </span>
-        </h3>
+        <h3>{{ step.title }}</h3>
         <div class="step-bottom">
           <span>{{ complete(step.key) ? '已配置' : '待配置' }}</span>
           <UiIcon name="external" :size="17" />
@@ -141,60 +98,20 @@ onMounted(async () => {
       </div>
     </div>
   </div>
-  <div class="overview-bottom">
-    <SCard class="surface">
-      <div class="surface-heading">
-        <h2>最近事件</h2>
-        <RouterLink to="/events" class="text-button">
-          全部
-          <UiIcon name="right" :size="14" />
-        </RouterLink>
-      </div>
-      <div v-if="events.length" class="recent-list">
-        <div v-for="event in events" :key="event.id" class="recent-item">
-          <span class="recent-icon">
-            <UiIcon
-              :name="event.kind === 'wake' ? 'events' : event.kind === 'notify' ? 'bell' : 'memory'"
-              :size="17"
-            />
-          </span>
-          <div class="recent-main">
-            <strong>{{ event.label || event.source }}</strong>
-            <span>{{ event.text.slice(0, 72) }}</span>
-          </div>
-          <div class="recent-status">
-            <UiBadge :status="event.status" />
-            <time>{{ formatDate(event.at) }}</time>
-          </div>
-        </div>
-      </div>
-      <UiEmpty v-else />
-    </SCard>
-    <SCard class="surface quick-panel">
-      <div class="surface-heading"><h2>快捷入口</h2></div>
-      <RouterLink
-        v-for="item in [
-          ...store.pages.map((p) => ({ path: p.route, icon: p.icon, title: p.title })),
-          { path: '/chat', icon: 'chat', title: '主对话' },
-          { path: '/runs', icon: 'activity', title: '运行记录' },
-        ]"
-        :key="item.path"
-        :to="item.path"
-        class="quick-link"
-      >
-        <UiIcon :name="item.icon" :size="19" />
-        <span>{{ item.title }}</span>
-        <UiIcon name="right" :size="15" />
-      </RouterLink>
-    </SCard>
+  <footer class="overview-footer">
+    <a href="https://github.com/sakulin2025/SakuBot" target="_blank" rel="noopener noreferrer">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .297a12 12 0 0 0-3.793 23.387c.6.111.82-.261.82-.577v-2.234c-3.338.726-4.042-1.416-4.042-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.09-.745.083-.73.083-.73 1.205.085 1.84 1.236 1.84 1.236 1.07 1.835 2.807 1.305 3.492.998.108-.776.418-1.305.762-1.605-2.665-.304-5.467-1.333-5.467-5.93 0-1.311.469-2.381 1.236-3.221-.124-.303-.536-1.524.117-3.176 0 0 1.008-.322 3.3 1.23a11.5 11.5 0 0 1 6.006 0c2.291-1.552 3.297-1.23 3.297-1.23.655 1.652.243 2.873.12 3.176.77.84 1.235 1.91 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.103.823 2.222v3.294c0 .319.216.694.825.576A12.001 12.001 0 0 0 12 .297"/></svg>
+      <span>github.com/sakulin2025/SakuBot</span>
+    </a>
+  </footer>
   </div>
 </template>
 
 <style scoped>
-.optional-tag {
-  font-size: 10px;
-  font-weight: 400;
-  color: var(--muted);
-  margin-left: 8px;
-}
+.overview { display: flex; flex-direction: column; min-height: calc(100dvh - 202px); }
+.overview-footer { display: flex; justify-content: center; margin-top: auto; padding-top: 48px; }
+.overview-footer a { display: inline-flex; align-items: center; gap: 9px; color: var(--muted); text-decoration: none; font-size: 12px; transition: color .2s; }
+.overview-footer a:hover { color: var(--accent); }
+.setup-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 700px) { .setup-grid { grid-template-columns: 1fr; } .overview { min-height: calc(100dvh - 180px); } }
 </style>

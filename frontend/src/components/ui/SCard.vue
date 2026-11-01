@@ -23,7 +23,7 @@ defineProps<{ title?: string; loading?: boolean; divided?: boolean }>()
 
 <style>
 .surface {
-  background: #fff;
+  background: var(--palette-bg-ffffff);
   border: 1px solid var(--border);
   border-radius: 10px;
   box-shadow: var(--shadow);
@@ -48,7 +48,7 @@ defineProps<{ title?: string; loading?: boolean; divided?: boolean }>()
     border-color var(--s-motion),
     box-shadow var(--s-motion);
   border-radius: var(--s-radius);
-  background: #fff;
+  background: var(--palette-bg-ffffff);
 }
 .s-card-header {
   display: flex;
@@ -63,7 +63,7 @@ defineProps<{ title?: string; loading?: boolean; divided?: boolean }>()
   position: absolute;
   inset: 0;
   z-index: 5;
-  background: #ffffffbd;
+  background: var(--palette-bg-ffffffbd);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -80,7 +80,7 @@ defineProps<{ title?: string; loading?: boolean; divided?: boolean }>()
 }
 .surface {
   border-color: var(--border);
-  box-shadow: 0 2px 8px #27213e03;
+  box-shadow: 0 2px 8px var(--palette-shadow-27213e03);
   border-radius: var(--s-radius);
 }
 @media (max-width: 900px) {
@@ -88,4 +88,7 @@ defineProps<{ title?: string; loading?: boolean; divided?: boolean }>()
     padding: 16px 18px;
   }
 }
+
+html[data-theme="dark"] .surface, html[data-theme="dark"] .s-card { background: var(--surface); border-color: var(--border); box-shadow: var(--shadow); }
+html[data-theme="dark"] .s-loading-mask { background: var(--palette-dark-bg-201e2ac9); }
 </style>

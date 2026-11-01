@@ -8,6 +8,21 @@ frontend/dist
 sakubot/plugins/*/web/dist
 
 backups
-extensions
+extensions/*
+!extensions/requirements.txt
+!extensions/requirements.lock
+!extensions/ssh_devices/
+!extensions/ssh_devices/**
+!extensions/qweather/
+!extensions/qweather/**
+!extensions/deepseek_balance/
+!extensions/deepseek_balance/**
+!extensions/alist_manage/
+!extensions/alist_manage/**
+!extensions/ha_control/
+!extensions/ha_control/**
+!extensions/minecraft_status/
+!extensions/minecraft_status/**
+extensions/*/web/dist
 
 sakubot/system/*/web/dist

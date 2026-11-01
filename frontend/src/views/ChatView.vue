@@ -3,7 +3,10 @@ import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { api, ApiError, formatDate } from '../api'
 import { useConsole } from '../stores/console'
 import UiIcon from '../components/UiIcon.vue'
+import UiModal from '../components/UiModal.vue'
 import MessageContent from '../components/MessageContent.vue'
+import ChatInput from '../components/ChatInput.vue'
+import { sessionToken, unauthorized } from '../credentials'
 interface Message {
   id: number
   uid: string
@@ -12,6 +15,7 @@ interface Message {
   label: string
   text: string
   status: string
+  wake_stage?: string
   role: 'user' | 'assistant' | 'event'
   meta: Record<string, unknown>
   target: string
@@ -38,6 +42,19 @@ interface Pending {
   error?: string
   sent_at?: number
 }
+interface ProcessEntry {
+  key: string
+  kind: 'model' | 'tool' | 'compression'
+  at: number
+  status: string
+  finished?: number | null
+  step?: number
+  name?: string
+  arguments?: unknown
+  output?: unknown
+  error?: string
+}
+interface ProcessRun { id: string; event_id: number; status: string; entries: ProcessEntry[] }
 interface Snapshot {
   context_revision: number
   context_cutoff: number
@@ -48,6 +65,7 @@ interface Snapshot {
   activity: Activity[]
   running: { id: string; event_id: number; started: number } | null
   sequence: number
+  processes: ProcessRun[]
   tools?: {
     key: string
     name: string
@@ -77,7 +95,6 @@ const tools = ref<
 const text = ref(''),
   error = ref(''),
   socketState = ref('connecting'),
-  showProcess = ref(true),
   loading = ref(false),
   olderBusy = ref(false)
 const before = ref<number | null>(null),
@@ -85,9 +102,43 @@ const before = ref<number | null>(null),
   running = ref<Snapshot['running']>(null)
 const feed = ref<HTMLElement>(),
   follow = ref(true)
+const composerHeight = ref(52)
+const processes = ref<ProcessRun[]>([])
+const clock = ref(Date.now() / 1000)
+function toolDuration(entry: ProcessEntry) {
+  const end = entry.finished ?? (entry.status === 'running' || entry.status === 'waiting' ? clock.value : null)
+  if (end == null || end - entry.at <= 10) return ''
+  const seconds = Math.floor(end - entry.at)
+  const hours = Math.floor(seconds / 3600), minutes = Math.floor(seconds % 3600 / 60)
+  return (hours ? `${hours} 小时 ` : '') + (minutes ? `${minutes} 分 ` : '') + `${seconds % 60} 秒`
+}
+const selectedTool = ref<{ runId: string; key: string } | null>(null)
+const stopping = ref(false)
+function wakeStage(message: Message) {
+  return ({ queued: '排队中', waiting: '待吸收', merged: '已合并 · 尚未提交', submitted: '已提交模型', done: '已完成', failed: '失败', interrupted: '已中断' } as Record<string, string>)[message.wake_stage || ''] || ''
+}
+const selectedEntry = computed(() => {
+  const selection = selectedTool.value
+  return selection ? processes.value.find(run => run.id === selection.runId)?.entries.find(entry => entry.key === selection.key) : undefined
+})
+const runsByEvent = computed(() => {
+  const grouped = new Map<number, ProcessRun[]>()
+  for (const run of processes.value) grouped.set(run.event_id, [...(grouped.get(run.event_id) || []), run])
+  return grouped
+})
+function processEntry(runId: string, entry: ProcessEntry) {
+  const run = processes.value.find(item => item.id === runId)
+  if (!run) return
+  const index = run.entries.findIndex(item => item.key === entry.key)
+  if (index < 0) run.entries.push(entry)
+  else run.entries[index] = { ...run.entries[index], ...entry }
+  run.entries.sort((a, b) => a.at - b.at)
+  void scroll()
+}
 let socket: WebSocket | undefined,
   reconnect: ReturnType<typeof setTimeout> | undefined,
   poll: ReturnType<typeof setInterval> | undefined,
+  clockTimer: ReturnType<typeof setInterval> | undefined,
   disposed = false,
   attempt = 0,
   sequence = 0,
@@ -101,20 +152,6 @@ const ghost = computed(() => activeSteps.value.at(-1))
 const canSend = computed(
   () => store.config?.enabled && !!store.agents.find((agent) => agent.id === 'main')?.ready,
 )
-const activityNames: Record<string, string> = {
-  'agent.started': 'Agent 开始运行',
-  'model.request': '模型请求',
-  'model.completed': '模型响应完成',
-  'tool.started': '工具调用',
-  'tool.completed': '工具调用完成',
-  'tool.failed': '工具调用失败',
-  'agent.completed': 'Agent 运行完成',
-  'agent.failed': 'Agent 运行失败',
-  'agent.interrupted': 'Agent 运行中断',
-  'context.compressed': '上下文压缩',
-  'team.request.waiting': '团队等待答复',
-  'team.request.answered': '已答复',
-}
 function pretty(value: unknown) {
   return typeof value === 'string' ? value : JSON.stringify(value, null, 2)
 }
@@ -134,6 +171,8 @@ function clearPage(revision: number, cutoff: number) {
   steps.value = []
   activity.value = []
   tools.value = []
+  processes.value = []
+  selectedTool.value = null
   pending.value = []
   running.value = null
   before.value = null
@@ -170,6 +209,13 @@ function snapshot(data: Snapshot, replace = true, authoritative = false) {
       if (!messages.value.some((item) => item.id === row.id)) messages.value.push(row)
     }
   messages.value.sort((a, b) => a.id - b.id)
+  if (!replace || authoritative || data.sequence >= sequence) {
+    for (const run of data.processes || []) {
+      const index = processes.value.findIndex(item => item.id === run.id)
+      if (index < 0) processes.value.push(run)
+      else processes.value[index] = run
+    }
+  }
   pending.value = pending.value.filter(
     (item) => !messages.value.some((row) => row.uid === 'web-chat:' + item.id),
   )
@@ -213,6 +259,8 @@ function runDone(id: string, status: string, message?: string) {
     if (row) row.status = status
   }
   if (running.value?.id === id) running.value = null
+  const process = processes.value.find(item => item.id === id)
+  if (process) process.status = status
   for (const step of steps.value.filter((step) => step.run_id === id)) step.status = status
   if (message) error.value = message
   void scroll()
@@ -243,6 +291,7 @@ function receive(packet: Record<string, any>) {
   } else if (packet.type === 'plugin.state') void store.refreshStatus()
   else if (packet.type === 'run.started') {
     running.value = { id: packet.run_id, event_id: packet.event_id, started: packet.at }
+    if (!processes.value.some(item => item.id === packet.run_id)) processes.value.push({ id: packet.run_id, event_id: packet.event_id, status: 'running', entries: [] })
     tools.value = []
     steps.value = []
     const row = messages.value.find((row) => row.id === packet.event_id)
@@ -250,7 +299,8 @@ function receive(packet: Record<string, any>) {
     void scroll()
   } else if (packet.type === 'run.completed') runDone(packet.run_id, 'done')
   else if (packet.type === 'run.failed') runDone(packet.run_id, 'failed', packet.error)
-  else if (packet.type === 'model.started')
+  else if (packet.type === 'model.started') {
+    processEntry(packet.run_id, { key: 'model:' + packet.step, kind: 'model', at: packet.at, step: packet.step, status: 'running' })
     steps.value.push({
       request_id: packet.request_id,
       run_id: packet.run_id,
@@ -258,6 +308,7 @@ function receive(packet: Record<string, any>) {
       content: '',
       status: 'running',
     })
+  }
   else if (packet.type === 'model.delta') {
     let step = steps.value.find((step) => step.request_id === packet.request_id)
     if (!step) {
@@ -268,11 +319,22 @@ function receive(packet: Record<string, any>) {
     void scroll()
   } else if (packet.type === 'model.completed' || packet.type === 'model.failed') {
     const step = steps.value.find((step) => step.request_id === packet.request_id)
-    if (step) step.status = packet.type === 'model.completed' ? 'done' : 'failed'
+    if (step) {
+      step.status = packet.type === 'model.completed' ? 'done' : 'failed'
+      const entry = processes.value.find(item => item.id === packet.run_id)?.entries.find(item => item.key === 'model:' + step.step)
+      if (entry) entry.status = step.status
+    }
   } else if (packet.type === 'activity') {
     activity.value.push(packet.activity)
     activity.value = activity.value.slice(-100)
-  } else if (packet.type === 'tool.started')
+
+  } else if (packet.type === 'compression.started') {
+    processEntry(packet.run_id, { key: 'compression:' + packet.compression_id, kind: 'compression', at: packet.at, status: 'running' })
+  } else if (packet.type === 'compression.completed' || packet.type === 'compression.failed') {
+    const entry = processes.value.find(item => item.id === packet.run_id)?.entries.find(item => item.key === 'compression:' + packet.compression_id)
+    if (entry) { entry.status = packet.type === 'compression.completed' ? 'done' : 'failed'; entry.finished = packet.at; entry.error = packet.error }
+  } else if (packet.type === 'tool.started') {
+    processEntry(packet.run_id, { key: 'tool:' + packet.call_id, kind: 'tool', at: packet.at, name: packet.name, status: 'running', arguments: packet.arguments })
     tools.value.push({
       key: packet.run_id + ':' + packet.call_id,
       name: packet.name,
@@ -280,6 +342,7 @@ function receive(packet: Record<string, any>) {
       arguments: packet.arguments,
       agent_id: packet.agent_id,
     })
+  }
   else if (packet.type === 'tool.completed' || packet.type === 'tool.failed') {
     const tool = tools.value.find((tool) => tool.key === packet.run_id + ':' + packet.call_id)
     if (tool) {
@@ -287,12 +350,15 @@ function receive(packet: Record<string, any>) {
       tool.output = packet.output
       tool.error = packet.error
     }
+    const entry = processes.value.find(item => item.id === packet.run_id)?.entries.find(item => item.key === 'tool:' + packet.call_id)
+    if (entry) { entry.status = packet.type === 'tool.completed' ? 'done' : 'failed'; entry.finished = packet.at; entry.output = packet.output; entry.error = packet.error }
+    void scroll()
   }
 }
 function connect() {
   if (disposed) return
   socketState.value = 'connecting'
-  wsToken = sessionStorage.getItem('sakubot-token') || ''
+  wsToken = sessionToken()
   const current = new WebSocket(
     (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/api/chat/live',
   )
@@ -309,8 +375,9 @@ function connect() {
   current.onclose = (event) => {
     if (disposed || socket !== current) return
     socketState.value = 'offline'
-    if (event.code === 4401 && wsToken === (sessionStorage.getItem('sakubot-token') || '')) {
-      window.dispatchEvent(new Event('sakubot-unauthorized'))
+    if (event.code === 4401 && wsToken === sessionToken()) {
+      unauthorized(wsToken)
+      reconnect = setTimeout(connect, 1000)
       return
     }
     reconnect = setTimeout(connect, Math.min(10000, 1000 * 2 ** Math.min(attempt++, 4)))
@@ -352,21 +419,22 @@ async function send() {
   follow.value = true
   await dispatch(item)
 }
-function key(event: KeyboardEvent) {
-  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
-    event.preventDefault()
-    void send()
-  }
-}
-async function toggle(value: boolean) {
+async function stopRun() {
+  const runId = running.value?.id
+  if (!runId || stopping.value) return
+  stopping.value = true
   try {
-    await store.setMainEnabled(value)
-  } catch {
-    store.toast('更新失败', true)
+    await api('chat/stop', { body: { run_id: runId } })
+    await refresh()
+  } catch (exc) {
+    store.toast(exc instanceof Error ? exc.message : '停止失败', true)
+  } finally {
+    stopping.value = false
   }
 }
 onMounted(() => {
   connect()
+  clockTimer = setInterval(() => { clock.value = Date.now() / 1000 }, 1000)
   poll = setInterval(() => {
     for (const item of pending.value) {
       if (item.status === 'sending' && item.sent_at && Date.now() - item.sent_at > 30000) {
@@ -381,51 +449,27 @@ onUnmounted(() => {
   disposed = true
   clearTimeout(reconnect)
   clearInterval(poll)
+  clearInterval(clockTimer)
   socket?.close()
 })
 </script>
 <template>
   <div class="chat-page">
-    <SPageHeader title="主对话">
-      <STag
-        :status="socketState === 'online' ? 'online' : 'pending'"
-        :label="socketState === 'online' ? '实时已连接' : '重连中'"
-      />
-      <STag
-        :status="running ? 'running' : store.config?.enabled ? 'enabled' : 'disabled'"
-        :label="running ? '运行中' : store.config?.enabled ? '待命' : '已暂停'"
-      />
-      <SSwitch
-        :model-value="!!store.config?.enabled"
-        label="主 Agent"
-        :loading="store.saving"
-        :disabled="!store.agents.find((agent) => agent.id === 'main')?.ready && !store.config?.enabled"
-        @change="toggle"
-      />
-      <SButton
-        :variant="showProcess ? 'primary' : 'default'"
-        :aria-pressed="showProcess"
-        @click="showProcess = !showProcess"
-        icon="activity"
-      >
-        运行过程
-      </SButton>
-    </SPageHeader>
-    <div class="chat-layout" :class="{ 'with-process': showProcess }">
-      <SCard class="chat-main">
+    <div class="chat-layout">
+      <SCard class="chat-main" :style="{ '--composer-height': `${composerHeight}px` }">
         <div ref="feed" class="chat-feed" @scroll="trackScroll">
           <div class="chat-history">
             <SButton v-if="hasMore" variant="text" :loading="olderBusy" @click="older">更早消息</SButton>
           </div>
           <template v-for="message in messages" :key="message.uid">
-            <details v-if="message.role === 'event'" class="chat-event">
-              <summary>
+            <div v-if="message.role === 'event'" class="chat-event">
+              <div class="chat-event-head">
                 <UiIcon name="events" :size="13" />
                 <span>{{ message.label || message.source }}</span>
                 <time>{{ formatDate(message.at) }}</time>
-              </summary>
+              </div>
               <pre>{{ message.text }}</pre>
-            </details>
+            </div>
             <article v-else class="chat-message" :class="message.role">
               <div class="chat-message-meta">
                 <strong>{{ message.role === 'assistant' ? 'SakuBot' : message.label || '主人' }}</strong>
@@ -439,12 +483,31 @@ onUnmounted(() => {
                     ['pending', 'running', 'failed', 'interrupted'].includes(message.status)
                   "
                   :status="message.status"
+                  :label="wakeStage(message)"
                 />
               </div>
               <div class="chat-bubble">
                 <MessageContent :text="message.text" :parts="message.meta.parts" />
               </div>
             </article>
+            <div v-for="run in runsByEvent.get(message.id) || []" v-show="run.entries.some(item => item.kind !== 'model')" :key="run.id" class="chat-run">
+              <template v-for="entry in run.entries.filter(item => item.kind !== 'model')" :key="entry.key">
+              <button v-if="entry.kind === 'tool'" type="button" class="chat-run-entry chat-run-button" @click="selectedTool = { runId: run.id, key: entry.key }">
+                <span class="chat-run-head">
+                  <UiIcon name="plugins" :size="14" />
+                  <strong :class="{ 'tool-running': entry.status === 'running' || entry.status === 'waiting' }">{{ entry.name }}</strong>
+                  <STag v-if="entry.status === 'failed' || entry.status === 'interrupted'" :status="entry.status" />
+                  <span v-if="toolDuration(entry)" class="tool-duration">{{ toolDuration(entry) }}</span>
+                </span>
+              </button>
+              <div v-else class="chat-run-entry" :class="entry.kind">
+                <div class="chat-run-head">
+                  <UiIcon :name="entry.kind === 'model' ? 'model' : 'memory'" :size="14" />
+                  <strong :class="{ 'tool-running': entry.status === 'running' }">{{ entry.status === 'running' ? '正在压缩上下文' : entry.status === 'failed' ? '上下文压缩失败' : '上下文压缩完成' }}</strong><STag v-if="entry.status === 'failed'" status="failed" />
+                </div>
+              </div>
+              </template>
+            </div>
           </template>
           <article v-for="item in pending" :key="item.id" class="chat-message user">
             <div class="chat-message-meta">
@@ -479,17 +542,8 @@ onUnmounted(() => {
           </article>
           <SEmpty v-if="!messages.length && !pending.length && !running" label="暂无消息" icon="chat" />
         </div>
-        <div class="chat-composer">
+        <ChatInput v-model="text" class="chat-composer" :disabled="!canSend" :inactive="store.config?.enabled === false" :running="!!running" :stopping="stopping" @send="send" @stop="stopRun" @resize="composerHeight = $event">
           <span v-if="error" class="form-error" role="alert">{{ error }}</span>
-          <STextarea
-            v-model="text"
-            rows="3"
-            maxlength="100000"
-            placeholder="发送消息"
-            aria-label="发送消息"
-            @keydown="key"
-          />
-          <div class="chat-compose-actions">
             <RouterLink
               v-if="!store.agents.find((agent) => agent.id === 'main')?.ready"
               to="/model"
@@ -497,72 +551,42 @@ onUnmounted(() => {
             >
               模型
             </RouterLink>
-            <SButton variant="primary" icon="send" :disabled="!canSend || !text.trim()" @click="send">
-              发送
-            </SButton>
-          </div>
-        </div>
-      </SCard>
-      <SCard v-if="showProcess" class="chat-process" title="实时运行过程">
-        <div class="chat-process-content">
-          <details v-for="tool in tools" :key="tool.key" class="chat-tool" open>
-            <summary>
-              <UiIcon name="plugins" :size="14" />
-              <strong>{{ tool.name }}</strong>
-              <STag :status="tool.status" />
-            </summary>
-            <span class="mono chat-agent">{{ tool.agent_id }}</span>
-            <pre>{{ pretty(tool.arguments) }}</pre>
-            <pre v-if="tool.output">{{ pretty(tool.output) }}</pre>
-            <span v-if="tool.error" class="form-error">{{ tool.error }}</span>
-          </details>
-          <details v-for="step in steps" :key="step.request_id" class="chat-tool">
-            <summary>
-              <UiIcon name="model" :size="14" />
-              <strong>模型 · {{ step.step }}</strong>
-              <STag :status="step.status" />
-            </summary>
-            <pre>{{ step.content }}</pre>
-          </details>
-          <div v-for="(item, index) in [...activity].reverse()" :key="item.id || index" class="chat-activity">
-            <span class="activity-pin" />
-            <div>
-              <strong>{{ activityNames[item.event] || item.event }}</strong>
-              <span v-if="item.data?.function" class="mono">{{ item.data.function }}</span>
-              <span v-if="item.data?.error" class="form-error">{{ item.data.error }}</span>
-              <time>{{ formatDate(item.at) }}</time>
-            </div>
-          </div>
-          <SEmpty v-if="!activity.length && !tools.length" label="暂无运行过程" icon="activity" />
-        </div>
+        </ChatInput>
       </SCard>
     </div>
+    <UiModal :open="!!selectedTool" :title="selectedEntry?.name || '工具调用'" wide @close="selectedTool = null">
+      <div v-if="selectedEntry" class="tool-detail">
+        <STag v-if="selectedEntry.status === 'failed' || selectedEntry.status === 'interrupted'" :status="selectedEntry.status" />
+        <div v-if="selectedEntry.arguments !== undefined"><strong>参数</strong><pre>{{ pretty(selectedEntry.arguments) }}</pre></div>
+        <div v-if="selectedEntry.output"><strong>结果</strong><pre>{{ pretty(selectedEntry.output) }}</pre></div>
+        <span v-if="selectedEntry.error" class="form-error">{{ selectedEntry.error }}</span>
+      </div>
+    </UiModal>
   </div>
 </template>
 <style scoped>
+.chat-page { height: 100%; min-height: 0; }
 .chat-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 18px;
-  height: calc(100dvh - 182px);
-  min-height: 480px;
-}
-.chat-layout.with-process {
-  grid-template-columns: minmax(0, 1fr) 310px;
+  height: 100%;
+  min-height: 0;
 }
 .chat-main {
   display: flex;
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+  border-radius: 0;
 }
 .chat-feed {
   flex: 1;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 12px 26px 26px;
+  padding: 12px 26px calc(var(--composer-height) + 42px);
   scrollbar-width: thin;
-  scrollbar-color: #ddd7ee transparent;
+  scrollbar-color: var(--palette-bg-ddd7ee) transparent;
 }
 .chat-history {
   text-align: center;
@@ -598,20 +622,20 @@ onUnmounted(() => {
   max-width: 90%;
   padding: 12px 16px;
   border-radius: 3px 14px 14px;
-  background: #f5f3fa;
+  background: var(--palette-bg-f5f3fa);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-size: 13px;
   line-height: 1.85;
 }
 .user .chat-bubble {
-  background: #eee9fc;
+  background: var(--palette-bg-eee9fc);
   border-radius: 14px 3px 14px 14px;
-  color: #554876;
+  color: var(--palette-text-554876);
 }
 .assistant .chat-bubble {
-  background: #f8f7fb;
-  border: 1px solid #efeaf5;
+  background: var(--palette-bg-f8f7fb);
+  border: 1px solid var(--palette-border-efeaf5);
 }
 .chat-event {
   margin: 10px 0;
@@ -620,13 +644,12 @@ onUnmounted(() => {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 8px 10px;
-  background: #fdfcfe;
+  background: var(--palette-bg-fdfcfe);
 }
-.chat-event summary {
+.chat-event-head {
   display: flex;
   align-items: center;
   gap: 7px;
-  cursor: pointer;
 }
 .chat-event time {
   margin-left: auto;
@@ -634,111 +657,38 @@ onUnmounted(() => {
 .chat-event pre {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  max-height: 250px;
-  overflow: auto;
   font: 11px/1.7 var(--mono);
 }
 .chat-composer {
-  padding: 15px 18px;
-  border-top: 1px solid var(--border);
-  background: #fdfcfe;
+  position: absolute;
+  bottom: 18px;
+  left: 26px;
+  right: 26px;
+  z-index: 1;
 }
-.chat-composer textarea {
-  width: 100%;
-  min-height: 75px;
-  max-height: 220px;
-  resize: vertical;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  font-size: 13px;
-  line-height: 1.7;
-  background: #fff;
+.chat-run {
+  margin: 10px 0 16px 13px;
+  padding-left: 16px;
+  border-left: 2px solid var(--palette-border-e7e0f4);
+  max-width: min(90%, 900px);
 }
-.chat-compose-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  align-items: center;
-  margin-top: 10px;
+.chat-run-entry {
+  padding: 3px 0;
+  margin: 4px 0;
 }
-.chat-process {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
-}
-.chat-process-content {
-  padding: 16px;
-  overflow-y: auto;
-  scrollbar-width: thin;
-}
-.chat-tool {
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  padding: 10px;
-  margin-bottom: 12px;
-}
-.chat-tool summary {
-  display: flex;
-  gap: 7px;
-  align-items: center;
-  cursor: pointer;
-  font-size: 11px;
-  min-width: 0;
-}
-.chat-tool summary strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
-}
-.chat-tool pre {
-  font: 10px/1.7 var(--mono);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  max-height: 260px;
-  overflow: auto;
-  background: #f8f7fb;
-  padding: 9px;
-  border-radius: 5px;
-}
-.chat-agent {
-  font-size: 10px;
-  color: var(--muted);
-  display: block;
-  margin-top: 7px;
-}
-.chat-activity {
-  display: flex;
-  gap: 9px;
-  padding: 9px 0;
-  border-bottom: 1px solid #f3f0f8;
-}
-.activity-pin {
-  width: 5px;
-  height: 5px;
-  flex-shrink: 0;
-  background: #b5a9dc;
-  border-radius: 50%;
-  margin-top: 7px;
-}
-.chat-activity > div {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-.chat-activity strong {
-  font-size: 11px;
-  font-weight: 500;
-}
-.chat-activity span,
-.chat-activity time {
-  font-size: 10px;
-  color: var(--muted);
-  overflow-wrap: anywhere;
-}
+.chat-run-head { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; }
+.chat-run-button { display: block; max-width: 100%; text-align: left; font: inherit; cursor: pointer; border: 0; background: none; }
+.chat-run-button:hover strong { color: var(--accent); }
+.chat-run-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chat-run-head strong { color: var(--ink); font-weight: 550; overflow-wrap: anywhere; }
+.chat-run-head .tool-running { background: linear-gradient(110deg, var(--ink) 20%, var(--palette-bg-ae7ee9) 45%, var(--palette-bg-f1d8ff) 50%, var(--palette-bg-ae7ee9) 55%, var(--ink) 80%); background-size: 220% 100%; background-clip: text; -webkit-background-clip: text; color: transparent; animation: tool-glow 2s linear infinite, tool-sway 1.8s ease-in-out infinite; }
+.tool-duration { white-space: nowrap; }
+@keyframes tool-glow { to { background-position: -220% 0; } }
+@keyframes tool-sway { 50% { transform: translateX(2px); } }
+@media (prefers-reduced-motion: reduce) { .chat-run-head .tool-running { animation: none; background: none; color: var(--accent); } }
+.tool-detail { display: grid; gap: 14px; }
+.tool-detail strong { font-size: 12px; }
+.tool-detail pre { font: 12px/1.65 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 45vh; overflow: auto; background: var(--palette-bg-f4f2f8); padding: 12px; border-radius: 6px; margin: 8px 0 0; }
 .chat-live-dot {
   width: 5px;
   height: 5px;
@@ -750,13 +700,13 @@ onUnmounted(() => {
   display: flex;
   gap: 5px;
   padding: 14px 16px;
-  background: #f8f7fb;
+  background: var(--palette-bg-f8f7fb);
   border-radius: 12px;
 }
 .chat-typing i {
   width: 5px;
   height: 5px;
-  background: #b2a4d8;
+  background: var(--palette-bg-b2a4d8);
   border-radius: 50%;
   animation: chat-pulse 1s infinite;
 }
@@ -771,33 +721,19 @@ onUnmounted(() => {
     opacity: 0.3;
   }
 }
-@media (max-width: 1100px) {
-  .chat-layout.with-process {
-    grid-template-columns: minmax(0, 1fr) 260px;
-  }
-}
 @media (max-width: 760px) {
-  .chat-layout {
-    height: calc(100dvh - 170px);
-    min-height: 380px;
-  }
-  .chat-layout.with-process {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .chat-process {
-    max-height: 400px;
-  }
-  .chat-layout.with-process {
-    height: auto;
-  }
-  .chat-layout.with-process .chat-main {
-    height: calc(100dvh - 170px);
-  }
   .chat-feed {
-    padding: 10px 15px;
+    padding: 10px 15px calc(var(--composer-height) + 32px);
   }
+  .chat-composer { left: 15px; right: 15px; bottom: 12px; }
   .chat-bubble {
     max-width: 96%;
   }
 }
+
+ :global(html[data-theme="dark"]) .chat-bubble, :global(html[data-theme="dark"]) .assistant .chat-bubble, :global(html[data-theme="dark"]) .chat-typing { background: var(--palette-dark-bg-2c2937); color: var(--ink); border-color: var(--border); }
+:global(html[data-theme="dark"]) .user .chat-bubble { background: var(--palette-dark-bg-3a3152); color: var(--palette-dark-text-e8dfff); }
+:global(html[data-theme="dark"]) .chat-event { background: var(--surface-alt); border-color: var(--border); }
+:global(html[data-theme="dark"]) .chat-run { border-color: var(--palette-dark-border-4c425e); }
+:global(html[data-theme="dark"]) .tool-detail pre { background: var(--surface-alt); color: var(--ink); }
 </style>

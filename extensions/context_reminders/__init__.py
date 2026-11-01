@@ -12,7 +12,7 @@ class Extension(Plugin):
         self.config=self.configure({'default_ttl_hours':24,'max_per_turn':5})
         self.fields=[field('default_ttl_hours','默认有效期 · 小时','number',min=0,max=87600),field('max_per_turn','上下文条数','number',min=1,max=100)]
         self.function(self.add,name='add_context_reminder');self.function(self.list,name='list_context_reminders');self.function(self.remove,name='remove_context_reminder')
-        self.management('上下文提醒',[collection('items','提醒',[field('target','目标',default='main'),field('content','内容','text',required=True),field('ttl_hours','有效期 · 小时','number',default=24,min=0,max=87600)],columns=[field('id','ID'),field('target','目标'),field('content','内容'),field('expires_at','到期时间')]),settings_section(self.fields,label='设置')],self.view,self.manage)
+        self.management('上下文提醒',[collection('items','提醒',[field('target','目标',default='main'),field('content','内容','text',required=True),field('ttl_hours','有效期 · 小时','number',default=24,min=0,max=87600)],columns=[field('id','ID'),field('target','目标'),field('content','内容'),field('expires_at','到期时间')]),settings_section(self.fields,label='设置')],self.view,self.manage,group_id='productivity')
 
     def items(self):return [row for row in self.state.get('items',[]) if not row.get('expires_at') or row['expires_at']>time.time()]
     def view(self):return {'data':{'config':self.config.public(),'items':[{**row,'ttl_hours':row.get('ttl_hours',round((row['expires_at']-row.get('created_at',row['expires_at']))/3600) if row.get('expires_at') else 0)} for row in self.items()]}}

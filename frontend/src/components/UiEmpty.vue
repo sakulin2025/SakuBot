@@ -19,7 +19,7 @@ withDefaults(defineProps<{ label?: string; icon?: string }>(), { label: '暂无�
   gap: 13px;
   min-height: 235px;
   padding: 35px;
-  color: #aab1c0;
+  color: var(--palette-text-aab1c0);
   font-size: 11px;
 }
 .empty-icon {
@@ -28,9 +28,9 @@ withDefaults(defineProps<{ label?: string; icon?: string }>(), { label: '暂无�
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f7f8fb;
-  border: 1px solid #eff1f6;
+  background: var(--palette-bg-f7f8fb);
+  border: 1px solid var(--palette-border-eff1f6);
   border-radius: 14px;
-  color: #bec4d0;
+  color: var(--palette-text-bec4d0);
 }
 </style>

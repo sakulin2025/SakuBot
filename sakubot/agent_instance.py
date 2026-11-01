@@ -1,6 +1,7 @@
 import asyncio
 import copy
 import inspect
+import json
 import re
 import time
 import uuid
@@ -9,6 +10,7 @@ from contextvars import ContextVar
 import jsonschema
 
 from .plugin import Invocation, Tool, temporary_messages
+from .injections import injection
 from .personas import managed_persona
 from .store import encode
 
@@ -100,6 +102,18 @@ class AgentHandle:
         instance.ensure_managed()
         return self.with_plugins([*(instance.managed_plugins or []), identifier])
 
+    def with_tools(self, enabled=True):
+        if not isinstance(enabled, bool):
+            raise ValueError('工具开关必须是布尔值')
+        self.instance.tools_enabled = enabled
+        return self
+
+    def with_plugin_context(self, enabled=True):
+        if not isinstance(enabled, bool):
+            raise ValueError('插件上下文开关必须是布尔值')
+        self.instance.plugin_context_enabled = enabled
+        return self
+
     def tool(self, name, description, parameters, handler):
         instance = self.instance
         if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", name):
@@ -123,7 +137,7 @@ class AgentHandle:
 
     def on(self, event, callback):
         instance = self.instance
-        if event not in {"started", "model_request", "tool_call", "tool_round", "completed", "failed", "cancelled", "compressed", "waiting", "resumed", "reset"}:
+        if event not in {"started", "model_request", "tool_call", "tool_round", "completed", "failed", "cancelled", "compressed", "waiting", "resumed", "reset", "messages_absorbed"}:
             raise ValueError("生命周期事件无效")
         entry = (self.owner, callback)
         if entry not in instance.callbacks.setdefault(event, []):
@@ -138,8 +152,10 @@ class AgentHandle:
         instance = self.instance
         if instance.resetting:
             raise RuntimeError("Agent 正在重置")
+        if kwargs.get('insertion', 'queue') not in ('queue', 'next_boundary'):
+            raise ValueError('唤醒插入模式无效')
         injected = instance.take_pending(self.owner)
-        task = asyncio.create_task(instance.run(goal, _injected=injected, **kwargs), name="agent:" + instance.id)
+        task = asyncio.create_task(instance.run(goal, _injected=injected, _owner=self.owner, **kwargs), name="agent:" + instance.id)
         instance.tasks[task] = self.owner
         def finished(job):
             instance.tasks.pop(job, None)
@@ -169,7 +185,11 @@ class AgentInstance:
         self.active, self.resetting = True, False
         self.managed_prompt = ''
         self.managed_plugins = None
+        self.tools_enabled = True
+        self.plugin_context_enabled = True
         self.generation = uuid.uuid4().hex
+        self.active_wake = None
+        self.wake_waiters = {}
         self.history = self.runtime.store.kv_get("agent:history:" + identifier, [])
         self.pending = self.runtime.store.kv_get("agent:pending:" + identifier, [])
 
@@ -278,16 +298,41 @@ class AgentInstance:
         self.tools.clear()
         self.callbacks.clear()
 
-    async def run(self, goal, *, invocation=None, context="", instructions="", persist=True, timeout=300, run_id=None, target=None, metadata=None, temporary_context="", _injected=None):
+    async def run(self, goal, *, invocation=None, context="", instructions="", persist=True, timeout=300, run_id=None, target=None, metadata=None, temporary_context="", insertion='queue', _injected=None, _owner=''):
         self.ensure_active()
+        if insertion not in ('queue', 'next_boundary'):
+            raise ValueError('唤醒插入模式无效')
         if self.id == "main":
             contexts = self.take_pending() if _injected is None else _injected
             if context:
                 contexts.append({"role": "user", "content": str(context)})
             return await self.runtime.emit("wake", "agent-instance", goal or "处理注入的上下文", target=target,
-                meta={**(metadata or {}), "injected_context": contexts}, temporary_context=temporary_context)
+                meta={**(metadata or {}), "injected_context": contexts}, temporary_context=temporary_context, insertion=insertion)
         if not isinstance(goal, str) or not goal.strip() or len(goal) > 200000:
             raise ValueError("Agent 任务无效")
+        temporary_messages(temporary_context)
+        queued_insertion_id = None
+        if insertion == 'next_boundary' and self.active_wake:
+            if _CURRENT_AGENT.get() is self:
+                raise ValueError('Agent 不能等待自身的合并唤醒')
+            identifier = uuid.uuid4().hex
+            active_run = self.active_wake
+            payload = {'goal': goal, 'context': context, 'instructions': instructions,
+                'temporary_context': temporary_context, 'injected': _injected or [], 'metadata': metadata or {}}
+            future = asyncio.get_running_loop().create_future()
+            self.runtime.store.execute("INSERT INTO agent_wake_insertions VALUES (?,?,?,?,?,'pending',?)",
+                (identifier, self.id, active_run, _owner, encode(payload), time.time()))
+            self.wake_waiters[identifier] = future
+            try:
+                outcome = await asyncio.shield(future)
+                if outcome is not None:
+                    return {**outcome, 'absorbed': True, 'insertion_id': identifier}
+                queued_insertion_id = identifier
+            except asyncio.CancelledError:
+                self.runtime.store.execute("UPDATE agent_wake_insertions SET status='cancelled' WHERE id=? AND status='pending'", (identifier,))
+                raise
+            finally:
+                self.wake_waiters.pop(identifier, None)
         async with self.lock:
             self.ensure_active()
             run_id = run_id or "agent:" + uuid.uuid4().hex
@@ -301,16 +346,17 @@ class AgentInstance:
             if instructions:
                 system += "\n本次任务：" + instructions
             injected = self.take_pending() if _injected is None else _injected
-            inv.temporary_context = temporary_messages(temporary_context) + [
-                {'role': row['role'], 'content': row['content']} for row in injected if row.get('_temporary')]
+            inv.temporary_context = ([injection(temporary_context, source=_owner or self.id, category='requirement')] if temporary_context else []) + [
+                injection(row['content'], source=_owner or self.id, category='data', role=row['role']) for row in injected if row.get('_temporary')]
             injected = [row for row in injected if not row.get('_temporary')]
             messages = [{"role": "system", "content": system}, *(copy.deepcopy(self.history) if persist else []), *injected]
             if context:
                 messages.append({"role": "user", "content": str(context)})
-            messages.append({"role": "user", "content": goal})
+            messages.append({"role": "user", "content": goal, "_active_task": True})
             self.runtime.store.execute("INSERT INTO runs VALUES (?,NULL,?,NULL,'running',?,'')", (run_id, time.time(), encode({'agent_id': self.id, 'wake_goal': goal, 'agent_profile': {'name': profile['name']}})))
             job = asyncio.current_task()
             self.runtime.agent_jobs.setdefault(self.id, set()).add(job)
+            self.active_wake = run_id
             try:
                 await self.dispatch("started", {"run_id": run_id, "invocation": inv})
                 await self.runtime.agent_slots.acquire()
@@ -319,9 +365,11 @@ class AgentInstance:
                         inv.control = AgentRunControl(self, inv, deadline)
                         token = _CURRENT_AGENT.set(self)
                         try:
+                            await self.runtime.collect_wake_context(inv)
                             await self.runtime.recall_for_wake(inv, goal + ('\n' + str(context) if context else ''))
                             result, usage = await self.runtime.agent_loop(messages, inv)
                         finally:
+                            self.active_wake = None
                             _CURRENT_AGENT.reset(token)
                 finally:
                     if inv.control is None or inv.control.slot_held:
@@ -332,11 +380,19 @@ class AgentInstance:
                     "result": result, "usage": usage, "data": inv.metadata["data"]}
                 self.runtime.store.execute("UPDATE runs SET status='done',finished=? WHERE id=?", (time.time(), run_id))
                 if persist:
-                    self.history = [row for row in messages if row.get("role") != "system"]
+                    self.history = [{key: value for key, value in row.items() if key != '_active_task'}
+                                    for row in messages if row.get("role") != "system" and not row.get('_temporary')]
                     self.save_history()
+                if queued_insertion_id:
+                    self.runtime.store.execute("UPDATE agent_wake_insertions SET status='done',run_id=? WHERE id=? AND status='queued'", (run_id, queued_insertion_id))
+                self.finish_insertions(run_id, outcome)
                 await self.dispatch("completed", {**outcome, "invocation": inv})
                 return outcome
             except BaseException as exc:
+                self.active_wake = None
+                if queued_insertion_id:
+                    self.runtime.store.execute("UPDATE agent_wake_insertions SET status='interrupted',run_id=? WHERE id=? AND status='queued'", (run_id, queued_insertion_id))
+                self.finish_insertions(run_id, error=exc)
                 status = "interrupted" if isinstance(exc, asyncio.CancelledError) else "failed"
                 error = "Agent 已中断" if status == "interrupted" else str(exc)[:500] if isinstance(exc, (RuntimeError, ValueError)) else type(exc).__name__
                 self.runtime.store.execute("UPDATE runs SET status=?,finished=?,error=? WHERE id=?", (status, time.time(), error, run_id))
@@ -345,4 +401,18 @@ class AgentInstance:
                 await self.dispatch("cancelled" if status == "interrupted" else "failed", {"run_id": run_id, "error": error, "invocation": inv})
                 raise
             finally:
+                self.active_wake = None
                 self.runtime.agent_jobs.get(self.id, set()).discard(job)
+
+    def finish_insertions(self, run_id, outcome=None, error=None):
+        rows = self.runtime.store.rows("SELECT id,status FROM agent_wake_insertions WHERE agent_id=? AND run_id=? AND status IN ('pending','running')", (self.id, run_id))
+        for row in rows:
+            absorbed = row['status'] == 'running'
+            status = ('interrupted' if error else 'done') if absorbed else 'queued'
+            self.runtime.store.execute('UPDATE agent_wake_insertions SET status=? WHERE id=?', (status, row['id']))
+            waiter = self.wake_waiters.get(row['id'])
+            if waiter and not waiter.done():
+                if absorbed and error:
+                    waiter.set_exception(RuntimeError('合并的唤醒未完成：' + type(error).__name__))
+                else:
+                    waiter.set_result(outcome if absorbed else None)

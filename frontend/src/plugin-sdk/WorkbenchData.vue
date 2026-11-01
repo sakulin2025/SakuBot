@@ -105,9 +105,18 @@ const columns = computed<string[]>(() =>
   arrayObjects.value ? [...new Set<string>(data.value.flatMap((x: any) => Object.keys(x)))] : [],
 )
 const name = (key: string) => labels[key] || key
+const imageArtifact = computed(() =>
+  data.value && typeof data.value === 'object' && !Array.isArray(data.value) &&
+  typeof data.value.url === 'string' && /^\/api\/artifacts\/[0-9a-f]{64}$/.test(data.value.url) &&
+  typeof data.value.mime === 'string' && data.value.mime.startsWith('image/'),
+)
 </script>
 <template>
   <div v-if="data == null || data === ''" class="wb-data-empty">—</div>
+  <div v-else-if="imageArtifact" class="wb-data-image">
+    <img :src="data.url" :alt="data.name || '图片'" />
+    <a :href="data.url" target="_blank" rel="noopener noreferrer">打开图片</a>
+  </div>
   <div v-else-if="arrayObjects && depth < 3" class="wb-data-table">
     <table>
       <thead>
@@ -140,6 +149,9 @@ const name = (key: string) => labels[key] || key
   <span v-else class="wb-data-value">{{ data }}</span>
 </template>
 <style scoped>
+.wb-data-image { display: grid; gap: 12px; }
+.wb-data-image img { display: block; width: 100%; height: auto; border-radius: 12px; }
+.wb-data-image a { color: var(--accent); }
 .wb-data-empty {
   color: var(--muted);
 }

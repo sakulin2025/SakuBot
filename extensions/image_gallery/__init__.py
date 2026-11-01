@@ -15,7 +15,7 @@ class Extension(Plugin):
         self.fields=[field('base_url','URL',required=True),field('timeout','超时 · 秒','number',min=1,max=120),field('max_bytes','图片上限 · MiB','number',min=1,max=20)]
         self.lock=asyncio.Lock()
         self.function(self.fetch,name='fetch_anime_image');self.function(self.pending,name='count_pending_images');self.function(self.send,name='gallery_send')
-        self.management('图库',[collection('recent','最近取图',[field('id','图片 ID'),field('url','图片','image'),field('path','工作空间路径')],create=False,edit=False,remove=False,commands=[{'id':'fetch','label':'取图'},{'id':'pending','label':'待审数量'}]),settings_section(self.fields)],self.view,self.manage)
+        self.management('图库',[collection('recent','最近取图',[field('id','图片 ID'),field('url','图片','image'),field('path','工作空间路径')],create=False,edit=False,remove=False,commands=[{'id':'fetch','label':'取图'},{'id':'pending','label':'待审数量'}]),settings_section(self.fields)],self.view,self.manage,group_id='media')
 
     def availability(self):
         ok=bool(self.config.get('base_url'))
@@ -51,7 +51,6 @@ class Extension(Plugin):
 
     async def fetch(self, orientation:str=''):
         """随机获取审核通过的图片，返回图片 ID、共享工作空间路径和框架附件 URL。horizontal 横图、vertical 竖图，留空随机。主 Agent 可用 gallery_send 发送，协作 Agent 把结果交给主 Agent；不可把本地路径当远端 URL。图片 ID 可用于记忆和引用。"""
-        import json
         orientation={'横':'horizontal','竖':'vertical'}.get(orientation,orientation)
         if orientation not in ('','horizontal','vertical'):raise ValueError('方向为 horizontal、vertical 或空')
         async with self.lock:
@@ -61,8 +60,6 @@ class Extension(Plugin):
                 identifier=headers.get('x-image-id','')
                 if not identifier or any(row['id']==identifier for row in recent[-20:]):continue
                 from urllib.parse import quote
-                _,metadata=await self.get('/api/images/'+quote(identifier,safe='')+'/meta')
-                if json.loads(metadata).get('review_status')!='approved':continue
                 if content is None:headers,content=await self.get('/api/images/'+quote(identifier,safe='')+'/preview')
                 mime=headers.get('content-type','').split(';')[0]
                 extension={'image/jpeg':'.jpg','image/png':'.png','image/gif':'.gif','image/webp':'.webp','image/bmp':'.bmp'}.get(mime)

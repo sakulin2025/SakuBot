@@ -197,6 +197,14 @@ self.remove_agent("writer")
 
 `wake()` 还支持 `persist=True`、`run_id`、`target`、`metadata`、`temporary_context=""`。临时上下文只参与该次 wake 内的模型请求，下一次 wake 不再携带；不会写入 Agent 历史或压缩摘要，但会留在本次追踪记录中。结果包含 `run_id`、`agent_id`、`instance_id`、`result`、`usage`、`data`。`metadata` 的副本成为 `invocation.metadata["data"]`，工具可更新它，结果通过 `data` 返回。
 
+`wake(..., insertion="queue")` 默认排队；主 Agent 使用 `insertion="next_boundary"` 时，待处理消息不再绑定某一次运行。空闲启动、每次模型请求前、压缩和请求回调后，以及最终答复前都会检查并按事件顺序批量吸收；旧运行结束后尚未投喂的消息继续由后续运行吸收。同一批没有附带上下文的普通消息会合并为一个 user 输入；有上下文的消息保留“注入内容、临时要求、正文”的角色及顺序，仍由同一次模型请求处理。整批工具调用执行完才到达模型安全位置，不会撤销或跳过已经返回的工具调用。
+
+每个吸收批次合并做一次 `recall_for_wake` 检索，首次包含启动消息和已排队消息，后续只检索新增消息；检索资料在本轮临时生效。准备期间到达的消息再次收集处理，之后构建模型请求。启动/完成生命周期、人格、模型、工具和报告设置仍属于整轮，不逐消息重建；主对话响应路由沿用原规则。
+
+消息原始事件和 ID 保留；网页的 `wake_stage` 区分排队/待吸收、已合并但未提交、已提交模型、完成和中断。`wake_submitted` 在模型请求准备发送时持久化：提交后失败或取消不自动重放，尚未提交的消息保留待处理。准备失败不会反复重试同一批；新唤醒或显式重启后再处理。临时注入不写入正常历史和压缩摘要，仍可在该次 API 请求追踪中查看。单次模型提醒 `invocation.inject_temporary()` 仍只用于下一次请求。
+
+协作 Agent 的 `next_boundary` 仍合并到当前实例运行；调用方等待该运行结果并获得 `absorbed=True`、`insertion_id`。其 Task 和 Future 不跨重启恢复。主对话默认插入模式在运行设置配置，插件 wake 默认仍为 `queue`。
+
 `persist=True` 会读取并保存成功运行的历史；`persist=False` 不读写历史，适合判断、总结。历史保存在 SQLite，跨容器重建保留；运行中的 Python Task、Future 和回调不能跨重启恢复。工具和回调需要每次加载时注册。
 
 同一插件在 `wake()` 前暂存的注入内容会在调用时取走，归属该次排队任务。并发派发时优先用 `wake(context=...)`，避免多个调用方先后 `inject()` 混用资料。
@@ -208,6 +216,11 @@ self.remove_agent("writer")
 `get_agent("main").wake(...)` 只是提交主队列事件，返回提交结果，不等待主 Agent 完成；不要把它当作同步主 Agent RPC。
 
 ### 生命周期回调
+
+新增 `agent.on("messages_absorbed", callback)`；payload 包含 `run_id`、`events`（本批原始事件副本）和 `invocation`。该回调仅表示合入当前运行，不会额外触发 started/completed。插件也可实现 `async def on_messages_absorbed(self, invocation, events)`，仅对当前人格可见的已启用插件调用；每个回调获得独立副本，修改不会改变队列。`invocation.metadata["wake_events"]` 保留本轮启动和吸收的全部事件，便于整轮完成后统一处理。回调失败写入日志，不应自行唤醒主 Agent 形成循环。尚未提交消息恢复后可能再次触发回调，涉及外部副作用时应按事件 ID 做幂等处理。
+
+网页 `POST /api/chat/stop` 接收 `{"run_id":"当前运行 ID"}`，仅停止匹配的当前主运行，保留启用状态及待处理队列；过期 ID 不影响后来运行。网络请求或工具等待会收到取消，已经在远端执行的操作可能继续，结果按未知处理。此操作不是发送一条聊天指令。
+
 
 ```python
 async def on_completed(self, event):
@@ -317,6 +330,8 @@ class Extension(Plugin):
         self.runtime.store.kv_set(self.id + ":records", records)
         return {"saved": True}
 ```
+
+页面可通过 `self.page(..., group_id="conversation")` 或 `self.management(..., group_id="conversation")` 声明分组。内置分组 ID 为 `system`（系统功能，仅内置插件）、`conversation`（会话连接）、`smart_home`（智能家居）、`network`（网络与设备）、`media`（媒体娱乐）、`productivity`（效率工具）、`extensions`（插件，默认）。系统功能和会话连接排在其他插件分组之前；同组内使用 `order`。未声明分组的现有插件默认进入 `extensions`。管理接口 `/api/plugin-registry` 的 `page_groups` 提供分组目录。
 
 `api(path, handler, methods=("GET",))` 支持路径参数，比如 `records/{identifier}`，在 `request.path_params` 读取。返回 JSON 可序列化值。完整地址为 `/api/extensions/notebook/records`，由框架统一检查管理令牌。需要复用已注册工具及追踪时，处理函数可用 `await self.call_tool("notebook_write", payload)`。
 
@@ -556,6 +571,14 @@ agent.with_plugins(['workspace', 'skills'])
 | --- | --- |
 | `set_persona(prompt)` | 设置插件提供的运行提示词 |
 | `with_plugins(ids)` | 替换插件可见性列表，`None` 为全部，`[]` 为无插件 |
+| `with_tools(enabled)` | 设置实例是否能使用工具；`False` 禁用所有系统、插件和临时工具，默认启用 |
+| `with_plugin_context(enabled)` | 是否收集插件能力说明、唤醒上下文和长期记忆召回；默认启用，不改变工具配置 |
+
+### 临时上下文排序
+
+通过 `invocation.inject_context(content, source=plugin_id, category='guidance', lifetime='wake', role='system', priority=0)` 注入临时上下文。类别依次为 `data`、`environment`、`guidance`、`requirement`、`reminder`；同类别按 `priority` 从小到大稳定排序。`lifetime` 为 `wake` 或 `request`，后者只用于下一次模型请求。`role` 支持 `system`、`user`、`assistant`，外部消息和检索资料应使用 `data` 与 `user`，并标记为数据。排序只控制展示次序，不改变指令权，也不替代工具限制。
+
+`inject_temporary` 保持兼容，默认作为仅下一次请求的 `reminder`，可提供 `source` 和 `priority`。工具结果后产生的提醒会放在完整工具调用批次之后。唤醒日志的临时注入记录包含来源、类别、生命周期、排序值和内容；具体请求以 API 请求体为准。
 | `with_plugin(id)` | 添加一个可见插件；首次从默认全部模式切换为指定列表 |
 
 方法均返回原句柄，可链式调用，仅用于声明为 managed 的 Agent。尚未设置提示词时 Agent 未就绪，框架不会为它回落到默认人格。句柄失效后再调用会抛出异常。
@@ -572,7 +595,7 @@ agent.with_plugins(['workspace', 'skills'])
 
 ## 定时目标与目录列表版本
 
-定时任务 target 枚举为 main/private/group，private/group 必须提供独立 target_id。main 沿用当前主对话路由；private/group 的 notify 及 wake 后最终响应固定投递到指定目标，不改变智能模式的当前来源。所有 wake 使用统一主上下文，网页始终同步。新配置不接受 owner；旧数据仅迁移为 main。旧 private:号码/group:号码 拆分保存。
+定时任务统一进入主会话。通过 send_result_to_source 设置唤醒结果或固定通知是否发送到当前主对话源；网页始终显示。支持一次性时间、固定间隔和指定 IANA 时区的每日时间。旧版明确发往私聊或群聊的任务保留原目标并暂停，需编辑后重新启用。
 
 `self.workspace.list(path)` 的顶层 version 对应当前目录，可用于该目录的 move/remove；items 中的 version 对应各子项。目录条目变化后重新 list 获取版本，避免复用 mkdir 时的旧版本。移动删除保留版本冲突检查；文件局部修改可使用基于内容唯一匹配的 edit/patch，整文件覆盖可提供 base_content。
 
@@ -580,9 +603,9 @@ agent.with_plugins(['workspace', 'skills'])
 
 平台连接、协议消息解析和配置文件由平台插件持有。`self.data_dir` 指向 `data/plugin_data/<plugin_id>`，可通过 `self.runtime.config.atomic(path, content)` 原子保存插件配置；核心 `/api/config` 不包含平台地址、账号或 token。
 
-`prompt_context(invocation)` 支持同步或异步，返回本插件的提示词扩展，仅在插件启用、可用且对该 Agent 可见时注入；每次模型请求刷新。内置工作空间、技能、QQ 均使用这个接口，核心不按插件 ID 拼接专属提示词。
+`prompt_context(invocation)` 支持同步或异步，返回本插件的提示词扩展，仅在插件启用、可用且对该 Agent 可见时注入；每次唤醒时收集一次，并在该轮模型请求中保持稳定。适合能力说明和技能索引；随唤醒变化的内容应使用 `wake_context(invocation)`，以本轮临时上下文放在当前任务附近，不进入历史。内置工作空间、技能、QQ 均使用这个接口，核心不按插件 ID 拼接专属提示词。
 
-`onboarding()` 返回可选的主导览建议列表，条目字段为 key、title、icon、path、completed。path 应引用自己通过 `page()` 声明的页面；建议随插件卸载移除。核心只提供模型、Agent 和激活插件的通用主导览步骤。
+`onboarding()` 返回可选的主导览建议列表，条目字段为 key、title、icon、path、completed。path 应引用自己通过 `page()` 声明的页面；建议随插件卸载移除。主导览只显示模型和主会话；插件建议不作为初始化步骤。
 
 ```python
 async def send_notification(self, packet):
@@ -646,7 +669,7 @@ class Extension(Plugin):
 
 本轮实践、修正和剩余限制：[外部插件开发体验](extension-development-experience.md)。
 
-`prompt_context(invocation)` 支持同步或 async 方法，框架在模型请求前等待结果，适合使用客户端缓存按需取得只读感知信息；不必为了满足同步钩子而全天轮询。钩子只为可见、可用插件执行，异常单独记录；耗时请求应由插件客户端设置超时。
+`prompt_context(invocation)` 支持同步或 async 方法，框架在每次唤醒的首次模型请求前等待结果，同轮保持不变。应只返回相对稳定的能力说明；每轮变化的时间或只读感知信息使用同步或异步 `wake_context(invocation)`，在唤醒时收集一次并作为临时上下文使用。两个钩子只为可见、可用插件执行，异常单独记录；耗时请求应由插件客户端设置超时。
 
 ### 页面图像观察
 
@@ -686,7 +709,7 @@ class Extension(Plugin):
 前后端校验字段类型、必填项、整数范围、select 选项与动态引用、长度和 pattern；HTTP 地址拒绝内嵌凭据、查询参数与片段。secret 不回传原值，留空保留已有值。保存成功更新内存配置与插件状态，不重载插件。表单字段支持 placeholder，解释文字不单独占用页面空间。
 # 主 Agent 单轮结果投递
 
-插件唤醒主 Agent 时可传入 `send_result_to_source=False`，该轮的过程和最终响应仍在网页主对话中可见，但不会自动投递到主对话源。此时本轮会提供 `report_to_owner` 临时函数，调用后该轮后续过程和最终结果恢复投递。默认值为 `True`，每轮独立；QQ 外部消息回应和网页主对话发起的唤醒默认关闭投递。
+插件唤醒主 Agent 时可传入 `send_result_to_source=False`，该轮的过程和最终响应仍在网页主对话中可见，但不会自动投递到响应目标。每轮提供 `report_to_owner` 和 `cancel_report` 临时函数，分别开启和取消本轮后续过程及最终结果的投递，不撤回已发送内容。默认值为 `True`，每轮独立；QQ 外部消息回应和网页主对话发起的唤醒默认关闭投递。
 
 
 ## 长期记忆与语义召回

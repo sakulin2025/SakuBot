@@ -57,12 +57,12 @@ textarea.s-input {
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: #fff;
+  background: var(--palette-bg-ffffff);
   color: var(--ink);
   font: inherit;
   font-size: 13px;
   line-height: 1.45;
-  box-shadow: 0 1px 2px #30294604;
+  box-shadow: 0 1px 2px var(--palette-shadow-30294604);
   outline: none;
   outline-offset: 0;
   caret-color: var(--accent);
@@ -77,16 +77,16 @@ textarea.s-input::placeholder {
   opacity: 0.85;
 }
 textarea.s-input:hover:not(:disabled):not(:focus) {
-  border-color: #c8c2df;
+  border-color: var(--palette-border-c8c2df);
 }
 textarea.s-input:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: var(--s-ring);
-  background: #fff;
+  background: var(--palette-bg-ffffff);
 }
 textarea.s-input:disabled {
-  background: #f3f2f8;
+  background: var(--palette-bg-f3f2f8);
   color: var(--muted);
   cursor: not-allowed;
   box-shadow: none;
@@ -94,7 +94,7 @@ textarea.s-input:disabled {
   -webkit-text-fill-color: var(--muted);
 }
 textarea.s-input[readonly] {
-  background: #f8f7fb;
+  background: var(--palette-bg-f8f7fb);
   color: var(--ink);
   box-shadow: none;
 }
@@ -102,10 +102,10 @@ textarea.s-input:user-invalid {
   border-color: var(--negative);
 }
 textarea.s-input:user-invalid:focus {
-  box-shadow: 0 0 0 3px #c67b8718;
+  box-shadow: 0 0 0 3px var(--palette-shadow-c67b8718);
 }
 textarea.s-input::selection {
-  background: #7162db26;
+  background: var(--palette-bg-7162db26);
 }
 textarea.s-textarea {
   min-height: 104px;
@@ -122,10 +122,10 @@ textarea.s-textarea {
   outline: 0;
   border-color: var(--accent);
   box-shadow: var(--s-ring);
-  background: #fff;
+  background: var(--palette-bg-ffffff);
 }
 .s-input:disabled {
-  background: #f5f5f9;
+  background: var(--palette-bg-f5f5f9);
   color: var(--muted);
   cursor: not-allowed;
 }
@@ -133,4 +133,8 @@ textarea.s-textarea {
   resize: vertical;
   min-height: 88px;
 }
+
+html[data-theme="dark"] textarea.s-textarea, html[data-theme="dark"] textarea.s-textarea:focus, html[data-theme="dark"] textarea.s-textarea[readonly] { background: var(--surface-alt); color: var(--ink); border-color: var(--border); }
+html[data-theme="dark"] textarea.s-textarea:focus { border-color: var(--accent); }
+html[data-theme="dark"] textarea.s-textarea:disabled { background: var(--palette-dark-bg-25222f); color: var(--muted); -webkit-text-fill-color: var(--muted); }
 </style>

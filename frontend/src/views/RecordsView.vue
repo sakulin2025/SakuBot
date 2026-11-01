@@ -41,9 +41,9 @@ watch(
 )
 </script>
 <template>
-  <div class="page-heading">
+  <Teleport to="body"><div class="floating-actions">
     <SButton class="button" @click="load">刷新</SButton>
-  </div>
+  </div></Teleport>
   <div class="page-toolbar">
     <div class="search-field">
       <UiIcon name="search" :size="17" />

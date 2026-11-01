@@ -16,7 +16,7 @@ watch(tab, (value) => sessionStorage.setItem("qq-management-tab", value));
 </script>
 <template>
   <STabs v-model="tab" :items="items" />
-  <div v-show="tab === 'connection'"><Connection /></div>
+  <div v-show="tab === 'connection'"><Connection :active="tab === 'connection'" /></div>
   <div v-show="tab === 'people'"><People /></div>
-  <div v-show="tab === 'external'"><ExternalReplies /></div>
+  <div v-if="tab === 'external'"><ExternalReplies /></div>
 </template>

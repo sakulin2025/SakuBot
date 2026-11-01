@@ -170,11 +170,11 @@ watch(() => store.status?.registry_revision, load)
 </template>
 <style scoped>
 .skill-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(245px,1fr));gap:16px; }
-.skill-card { position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:9px;min-width:0;min-height:180px;padding:20px;text-align:left;border:1px solid var(--border);border-radius:15px;background:#fff;color:var(--ink);font:inherit;cursor:pointer;transition:transform .2s,border-color .2s,box-shadow .2s; }
-.skill-card:hover:not(:disabled) { transform:translateY(-3px);border-color:#d5cdf1;box-shadow:0 10px 26px #493b8610; }
+.skill-card { position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:9px;min-width:0;min-height:180px;padding:20px;text-align:left;border:1px solid var(--border);border-radius:15px;background:var(--palette-bg-ffffff);color:var(--ink);font:inherit;cursor:pointer;transition:transform .2s,border-color .2s,box-shadow .2s; }
+.skill-card:hover:not(:disabled) { transform:translateY(-3px);border-color:var(--palette-border-d5cdf1);box-shadow:0 10px 26px var(--palette-shadow-493b8610); }
 .skill-card:focus-visible { outline:0;box-shadow:var(--s-ring); }
 .skill-card-top { display:flex;align-items:center;justify-content:space-between;width:100%;margin-bottom:3px; }
-.skill-icon { display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:#f0edfc;color:var(--accent); }
+.skill-icon { display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:var(--palette-bg-f0edfc);color:var(--accent); }
 .skill-source-chip { max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:4px 8px;border-radius:7px;background:var(--canvas);color:var(--muted);font-size:11px; }
 .skill-card-name { font-size:14px;overflow-wrap:anywhere; }
 .skill-card-id { font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;max-width:100%;white-space:nowrap; }
@@ -219,7 +219,7 @@ watch(() => store.status?.registry_revision, load)
   padding: 16px;
   border: 1px solid var(--border);
   border-radius: 9px;
-  background: #faf9fd;
+  background: var(--palette-bg-faf9fd);
   margin: 0;
 }
 .skill-file-list {
@@ -234,4 +234,8 @@ watch(() => store.status?.registry_revision, load)
   justify-content: flex-end;
   margin-top: 14px;
 }
+
+ :global(html[data-theme="dark"]) .skill-card { background: var(--surface); border-color: var(--border); }
+:global(html[data-theme="dark"]) .skill-icon { background: var(--palette-dark-bg-37304a); }
+:global(html[data-theme="dark"]) pre { background: var(--surface-alt); color: var(--ink); }
 </style>

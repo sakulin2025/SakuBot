@@ -35,7 +35,7 @@ const error = computed(() => props.error || (props.prop ? form?.errors[props.pro
 .field > label {
   font-size: 11px;
   font-weight: 550;
-  color: #737b8f;
+  color: var(--palette-text-737b8f);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -45,7 +45,7 @@ const error = computed(() => props.error || (props.prop ? form?.errors[props.pro
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  color: #9aaca1;
+  color: var(--palette-text-9aaca1);
   font-size: 9px;
   font-weight: 400;
 }
@@ -73,8 +73,11 @@ const error = computed(() => props.error || (props.prop ? form?.errors[props.pro
 }
 
 .form-error {
-  color: #c99099;
+  color: var(--palette-text-c99099);
   font-size: 11px;
   margin-top: -14px;
 }
+
+html[data-theme="dark"] .field > label { color: var(--palette-dark-text-c3bdcf); }
+html[data-theme="dark"] .field-state { color: var(--muted); }
 </style>

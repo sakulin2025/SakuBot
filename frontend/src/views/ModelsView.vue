@@ -83,6 +83,12 @@ function edit(model?: ModelEntry) {
   }))
   editing.value = true
 }
+function addManualModel() {
+  const provider = discoveryProvider.value
+  discovering.value = false
+  edit()
+  draft.provider_id = provider
+}
 function bodyParameters() {
   const body: Record<string, unknown> = Object.create(null)
   for (const parameter of parameters.value) {
@@ -259,19 +265,17 @@ onMounted(async () => {
 })
 </script>
 <template>
-  <div class="page-heading">
-    <div class="heading-actions">
+  <Teleport to="body"><div class="floating-actions">
       <RouterLink to="/agents" class="button">Agent 管理</RouterLink>
       <SButton class="button" :disabled="!providers.length" @click="edit()">
         <UiIcon name="plus" :size="17" />
-        自定义模型
+        手动添加模型
       </SButton>
       <SButton class="button primary" :disabled="!providers.length" @click="discover()">
         <UiIcon name="model" :size="17" />
         从供应商添加
       </SButton>
-    </div>
-  </div>
+  </div></Teleport>
   <SCard class="surface">
     <div class="table-toolbar">
       <div class="search-field">
@@ -356,7 +360,7 @@ onMounted(async () => {
       </RouterLink>
     </UiEmpty>
   </SCard>
-  <UiModal :open="editing" :title="original ? '模型配置' : '自定义模型'" wide @close="editing = false">
+  <UiModal :open="editing" :title="original ? '模型配置' : '手动添加模型'" wide @close="editing = false">
     <form ref="modelForm" id="model-form" class="form-stack" @submit.prevent="save">
       <div class="form-row">
         <div class="field">
@@ -505,6 +509,10 @@ onMounted(async () => {
       <SButton class="button primary" :disabled="fetching || !discoveryProvider" @click="fetchModels">
         <UiIcon name="refresh" :class="{ spinning: fetching }" :size="16" />
         {{ fetching ? '获取中' : '获取模型' }}
+      </SButton>
+      <SButton class="button" :disabled="!discoveryProvider" @click="addManualModel">
+        <UiIcon name="plus" :size="16" />
+        手动添加模型
       </SButton>
     </div>
     <div class="search-field modal-search">

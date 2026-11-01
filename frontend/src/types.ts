@@ -8,7 +8,7 @@ export interface Configuration {
   max_steps: number
   compression_enabled: boolean
   compression_threshold: number
-  conversation: { mode: 'broadcast' | 'intelligent'; targets: string[]; tool_events: boolean }
+  conversation: { mode: 'broadcast' | 'intelligent'; targets: string[]; tool_events: boolean; wake_insertion: 'queue' | 'next_boundary' }
   context_chars: number
   plugins: string[]
   agent_concurrency: number
@@ -140,8 +140,10 @@ export interface Schedule {
     mode: string
     at?: string
     interval_seconds?: number
-    target: string
-    target_id?: string
+    daily_time?: string
+    timezone?: string
+    legacy_target?: string
+    send_result_to_source?: boolean
     enabled: boolean
     include_context: boolean
   }
@@ -168,6 +170,7 @@ export interface Delivery {
 }
 
 export interface PluginInfo {
+  preinstalled?: boolean
   has_settings?: boolean
   configured?: boolean
   builtin: boolean
@@ -185,6 +188,7 @@ export interface PluginPage {
   plugin_id: string
   id: string
   title: string
+  group_id: string
   group: string
   icon: string
   order: number

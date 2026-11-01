@@ -10,11 +10,11 @@ class Extension(Plugin):
     name = 'messaging'
 
     def setup(self):
-        self.tool('message_sources', '查看框架声明的主对话源、可用状态、支持的消息类型和当前响应路由。网页始终同步；插件对话源按运行设置中的广播或智能模式投递，不假定目标一定是 QQ。', object_schema(), self.sources)
+        self.tool('message_sources', '查看框架声明的主对话源、可用状态、支持的消息类型和当前响应路由。网页始终同步；插件对话源按运行设置中的广播或智能模式投递，不假定对话源的类型。', object_schema(), self.sources)
         part = object_schema({'type': {'type': 'string', 'enum': ['text', 'image', 'video', 'audio', 'file']},
             'text': text('text 类型正文'), 'url': text('媒体 HTTP/HTTPS 地址或框架附件 URL'),
             'path': text('共享工作空间中的本地文件相对路径；与 url 二选一'), 'name': text('可选文件名')}, ('type',))
-        self.tool('message_send', '向当前主对话发送一组文字、图片、视频、音频或文件，使用框架响应路由，网页会同步，QQ 离线也能使用。仅主 Agent 可调用，协作 Agent 把产物交回主 Agent。媒体传 url 或共享工作空间 path，文件会发布为框架附件。返回 submitted 表示已提交，不代表所有对话源送达；不支持的消息类型不影响其他源。普通最终文字直接回答即可，调用此工具后不要重复发送同一内容。',
+        self.tool('message_send', '向当前主对话发送一组文字、图片、视频、音频或文件，使用框架响应路由，网页始终同步。仅主 Agent 可调用，协作 Agent 把产物交回主 Agent。媒体传 url 或共享工作空间 path，文件会发布为框架附件。返回 submitted 表示已提交，不代表所有对话源送达；不支持的消息类型不影响其他源。普通最终文字直接回答即可，调用此工具后不要重复发送同一内容。',
             object_schema({'parts': {'type': 'array', 'items': part, 'minItems': 1, 'maxItems': 10}}, ('parts',)), self.send)
 
     async def sources(self, invocation, args):

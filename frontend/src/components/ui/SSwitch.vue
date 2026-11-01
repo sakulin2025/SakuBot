@@ -40,7 +40,7 @@ function toggle() {
   padding: 3px;
   border: 0;
   border-radius: 99px;
-  background: #d6d8e3;
+  background: var(--palette-bg-d6d8e3);
   vertical-align: middle;
   transition:
     background var(--s-motion),
@@ -52,13 +52,13 @@ function toggle() {
   -webkit-appearance: none;
   opacity: 0.55;
   cursor: not-allowed;
-  background: #d6d8e3;
+  background: var(--palette-bg-d6d8e3);
 }
 .s-switch.is-checked:disabled {
   background: var(--accent);
 }
 .s-switch:disabled .s-switch-thumb {
-  background: #fff;
+  background: var(--palette-bg-ffffff);
 }
 .s-switch.is-checked {
   background: var(--accent);
@@ -69,9 +69,9 @@ function toggle() {
   justify-content: center;
   width: 16px;
   height: 16px;
-  background: #fff;
+  background: var(--palette-bg-ffffff);
   border-radius: 50%;
-  box-shadow: 0 1px 3px #23223f26;
+  box-shadow: 0 1px 3px var(--palette-shadow-23223f26);
   transition: transform var(--s-spring);
 }
 .s-switch.is-checked .s-switch-thumb {
@@ -104,7 +104,7 @@ function toggle() {
   margin: 0;
 }
 .switch > span {
-  background: #dde1e9;
+  background: var(--palette-bg-dde1e9);
   border-radius: 20px;
   position: absolute;
   inset: 0;
@@ -118,9 +118,9 @@ function toggle() {
   top: 3px;
   width: 13px;
   height: 13px;
-  background: #fff;
+  background: var(--palette-bg-ffffff);
   border-radius: 50%;
-  box-shadow: 0 1px 3px #0001;
+  box-shadow: 0 1px 3px var(--palette-shadow-00000011);
   transition: transform 0.2s;
 }
 .switch input:checked + span {
@@ -133,7 +133,9 @@ function toggle() {
   opacity: 0.5;
 }
 .switch input:focus-visible + span {
-  outline: 3px solid #dedfff;
+  outline: 3px solid var(--palette-border-dedfff);
   outline-offset: 2px;
 }
+
+html[data-theme="dark"] .s-switch:not(.is-checked), html[data-theme="dark"] .s-switch:disabled:not(.is-checked) { background: var(--palette-dark-bg-595365); }
 </style>

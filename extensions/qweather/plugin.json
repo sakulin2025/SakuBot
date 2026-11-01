@@ -1,12 +1,12 @@
 {
   "name": "qweather",
-  "label": "天气",
+  "label": "和风天气",
   "version": "1.0.0",
   "settings": {
     "fields": [
       {
         "key": "host",
-        "label": "Host",
+        "label": "和风天气 API 加密地址",
         "type": "string",
         "placeholder": "例如 abc123.re.qweatherapi.com，不含接口路径",
         "required": true,
@@ -15,7 +15,7 @@
       },
       {
         "key": "key",
-        "label": "Key",
+        "label": "应用认证密钥",
         "type": "secret",
         "placeholder": "粘贴 API Key",
         "default": "",

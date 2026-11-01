@@ -4,7 +4,7 @@ import UiIcon from '../components/UiIcon.vue'
 import WorkbenchField from './WorkbenchField.vue'
 import WorkbenchData from './WorkbenchData.vue'
 import { usePluginHost } from './index'
-const props = defineProps<{ filters?: Record<string, { label: string; field: string; value: string }> }>()
+const props = defineProps<{ filters?: Record<string, { label: string; field: string; value: string; exclude?: (row: any, data: Record<string, any>) => boolean }> }>()
 const host = usePluginHost()
 const state = ref<any>({ sections: [], data: {} })
 const tab = ref('')
@@ -24,7 +24,7 @@ const section = computed<any>(() => state.value.sections.find((x: any) => x.id =
 const rows = computed(() =>
   (state.value.data[tab.value] || []).filter((x: any) => {
     const filter = props.filters?.[tab.value]
-    return (!filter || showExcluded.value || x[filter.field] !== filter.value) &&
+    return (!filter || showExcluded.value || (x[filter.field] !== filter.value && !filter.exclude?.(x, state.value.data))) &&
       JSON.stringify(x).toLowerCase().includes(query.value.toLowerCase())
   }),
 )
@@ -160,7 +160,7 @@ onMounted(load)
 </script>
 <template>
   <main class="wb-page">
-    <SPageHeader :title="state.title || '插件管理'">
+    <SPageHeader :title="state.title || '插件管理'" floating>
       <SButton icon="refresh" :loading="loading" :disabled="busy || dialog" @click="load">刷新</SButton>
       <SButton v-if="section.create" variant="primary" icon="plus" :disabled="busy" @click="edit()">
         新增{{ section.label }}
@@ -416,14 +416,14 @@ onMounted(load)
   cursor: pointer;
 }
 .wb-page {
-  --wb-soft: color-mix(in srgb, var(--accent) 7%, white);
+  --wb-soft: color-mix(in srgb, var(--accent) 7%, var(--palette-bg-ffffff));
   padding-bottom: 20px;
 }
 .wb-panel {
   margin-top: 18px;
   overflow: hidden;
   border-radius: 16px;
-  box-shadow: 0 3px 18px #29234405;
+  box-shadow: 0 3px 18px var(--palette-shadow-29234405);
 }
 .wb-toolbar {
   display: flex;
@@ -451,7 +451,7 @@ onMounted(load)
   height: 34px;
   background: var(--wb-soft);
   color: var(--accent);
-  border: 1px solid color-mix(in srgb, var(--accent) 12%, white);
+  border: 1px solid color-mix(in srgb, var(--accent) 12%, var(--palette-border-ffffff));
   border-radius: 10px;
 }
 .wb-count {
@@ -515,7 +515,7 @@ onMounted(load)
 .wb-table-scroll :deep(th) {
   font-size: 11px;
   letter-spacing: 0.03em;
-  background: #fafafe;
+  background: var(--palette-bg-fafafe);
   padding: 12px 20px;
   color: var(--muted);
 }
@@ -529,7 +529,7 @@ onMounted(load)
   transition: background 0.18s ease;
 }
 .wb-table-scroll :deep(tbody tr:hover) {
-  background: #faf9ff;
+  background: var(--palette-bg-faf9ff);
 }
 .wb-cell {
   max-width: 280px;
@@ -576,10 +576,10 @@ onMounted(load)
 .wb-actions-col {
   position: sticky;
   right: 0;
-  background: #fff;
+  background: var(--palette-bg-ffffff);
   border-left: 1px solid var(--border);
   width: 1%;
-  box-shadow: -8px 0 12px #29234403;
+  box-shadow: -8px 0 12px var(--palette-shadow-29234403);
 }
 .wb-row-actions {
   display: flex;
@@ -623,8 +623,8 @@ onMounted(load)
   gap: 18px;
   align-items: flex-start;
   padding: 24px;
-  border: 1px solid color-mix(in srgb, var(--accent) 16%, white);
-  background: linear-gradient(130deg, var(--wb-soft), #fafafe);
+  border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--palette-border-ffffff));
+  background: linear-gradient(130deg, var(--wb-soft), var(--palette-bg-fafafe));
   border-radius: 12px;
   color: var(--accent);
 }
@@ -676,7 +676,7 @@ onMounted(load)
   width: 48px;
   height: 48px;
   border-radius: 14px;
-  background: #fff1f1;
+  background: var(--palette-bg-fff1f1);
   color: var(--negative);
 }
 .wb-remove-target strong {
@@ -688,12 +688,12 @@ onMounted(load)
   padding: 28px;
   border: 1px solid var(--border);
   border-radius: 16px;
-  background: white;
+  background: var(--palette-bg-ffffff);
 }
 .wb-skeleton > div {
   height: 42px;
   border-radius: 10px;
-  background: linear-gradient(90deg, #f5f4fa, #eeecf6, #f5f4fa);
+  background: linear-gradient(90deg, var(--palette-bg-f5f4fa), var(--palette-bg-eeecf6), var(--palette-bg-f5f4fa));
   background-size: 200% 100%;
   animation: wb-shimmer 1.6s ease infinite;
 }
@@ -738,4 +738,10 @@ onMounted(load)
     animation: none;
   }
 }
+
+ :global(html[data-theme="dark"]) .wb-page { --wb-soft: var(--palette-dark-bg-39314b); }
+:global(html[data-theme="dark"]) .wb-section-icon { border-color: var(--border); }
+:global(html[data-theme="dark"]) .wb-table-scroll :deep(th), :global(html[data-theme="dark"]) .wb-actions-col { background: var(--surface-alt); }
+:global(html[data-theme="dark"]) .wb-table-scroll :deep(tbody tr:hover) { background: var(--palette-dark-bg-2f293a); }
+:global(html[data-theme="dark"]) .wb-key { background: var(--surface-alt); border-color: var(--border); }
 </style>

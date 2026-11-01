@@ -184,10 +184,9 @@ async def setup():
     return {
         "completed": {
             "model": settings.model_ready(),
-            "persona": any(item["id"] == runtime.agents.profile("main")["effective_persona_id"] for item in runtime.personas.list()),
-            "plugins": bool(runtime.registry.plugins),
+            "agent": any(item["id"] == runtime.agents.profile("main")["effective_persona_id"] for item in runtime.personas.list()),
         },
-        "optional": ["plugins"],
+        "optional": [],
         "steps": runtime.registry.onboarding(),
         "plugins": runtime.registry.installed_catalog(),
     }
@@ -238,7 +237,8 @@ async def emit_event(request: Request):
     data = await request.json()
     return await runtime.emit(data.get("kind", "context"), "dashboard", data.get("text", ""),
         actor="owner", label="管理页面",
-        target=data.get("target") or runtime.main_target(), include_context=bool(data.get("include_context")),
+        target=runtime.main_target(), include_context=bool(data.get("include_context")),
+        send_result_to_source=data.get("send_result_to_source", True) if data.get("kind", "context") != "context" else True,
         temporary_context=data.get("temporary_context", ""), priority=100)
 
 

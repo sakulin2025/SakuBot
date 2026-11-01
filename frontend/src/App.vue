@@ -4,13 +4,34 @@ import { useConsole } from './stores/console'
 import AppShell from './components/AppShell.vue'
 import UiIcon from './components/UiIcon.vue'
 import SecretInput from './components/SecretInput.vue'
+import { rememberedToken, sessionToken } from './credentials'
 const store = useConsole()
 const token = ref('')
 const loading = ref(true)
 const submitting = ref(false)
 const failed = ref(false)
 let interval: ReturnType<typeof setInterval>
-const unauthorized = () => store.logout()
+let recovering = false
+async function unauthorized(event: Event) {
+  const failedToken = (event as CustomEvent<{ token?: string }>).detail?.token
+  if (recovering || !store.authenticated || (failedToken && failedToken !== sessionToken())) return
+  recovering = true
+  try {
+    const saved = rememberedToken()
+    if (saved) await store.login(saved)
+    else store.logout(false)
+  } catch {
+    store.logout(false)
+  } finally {
+    recovering = false
+  }
+}
+function credentialsChanged(event: StorageEvent) {
+  if (event.key === 'sakubot-token' && event.newValue && event.newValue !== sessionToken() && store.authenticated && !recovering) {
+    recovering = true
+    void store.login(event.newValue).catch(() => store.logout(false)).finally(() => { recovering = false })
+  }
+}
 async function login() {
   submitting.value = true
   failed.value = false
@@ -25,7 +46,8 @@ async function login() {
 }
 onMounted(async () => {
   window.addEventListener('sakubot-unauthorized', unauthorized)
-  const saved = sessionStorage.getItem('sakubot-token')
+  window.addEventListener('storage', credentialsChanged)
+  const saved = sessionToken() || rememberedToken()
   if (saved) {
     try {
       await store.login(saved)
@@ -41,6 +63,7 @@ onMounted(async () => {
 onUnmounted(() => {
   clearInterval(interval)
   window.removeEventListener('sakubot-unauthorized', unauthorized)
+  window.removeEventListener('storage', credentialsChanged)
 })
 </script>
 <template>

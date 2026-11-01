@@ -80,7 +80,8 @@ class Conversation:
         if self.runtime.config.settings.conversation.mode == 'intelligent':
             self.select(key)
         return await self.runtime.emit('wake', owner, content, target='main', actor=actor, label=label,
-            uid=uid, priority=100, meta={**(meta or {}), 'conversation_source': key, 'role': 'user'})
+            uid=uid, priority=100, meta={**(meta or {}), 'conversation_source': key, 'role': 'user'},
+            insertion=self.runtime.config.settings.conversation.wake_insertion)
 
     def publish(self, kind, *, response_id, run_id='', exclude=(), **data):
         packet = {'type': kind, 'response_id': response_id, 'run_id': run_id, **data}
@@ -219,7 +220,7 @@ class Conversation:
             return
         if current and current['id'] == data.get('run_id') and current.get('reply_target'):
             return
-        category = 'stream' if kind.startswith('model.') else 'tool' if kind.startswith('tool.') else 'lifecycle'
+        category = 'stream' if kind.startswith('model.') else 'tool' if kind.startswith(('tool.', 'compression.')) else 'lifecycle'
         self.publish(category, response_id=data.get('request_id') or data.get('run_id', ''),
             event=kind, **data)
 

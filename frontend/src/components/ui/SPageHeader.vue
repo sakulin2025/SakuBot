@@ -1,13 +1,16 @@
 <script setup lang="ts">
-defineProps<{ title: string; count?: number }>()
+defineProps<{ title: string; count?: number; floating?: boolean }>()
 </script>
 <template>
-  <div v-if="$slots.default" class="page-heading s-page-header">
+  <Teleport v-if="$slots.default && floating" to="body"><div class="floating-actions"><slot /></div></Teleport>
+  <div v-else-if="$slots.default" class="page-heading s-page-header">
     <div class="heading-actions"><slot /></div>
   </div>
 </template>
 
 <style>
+.floating-actions { position: fixed; right: 28px; bottom: 24px; z-index: 20; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; max-width: calc(100vw - 32px); padding: 8px; border: 1px solid var(--border); border-radius: 14px; background: var(--palette-bg-ffffffdb); box-shadow: 0 8px 30px var(--palette-shadow-30254b26); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+@media (max-width: 700px) { .floating-actions { right: 12px; bottom: 12px; } }
 .page-heading {
   display: flex;
   align-items: center;
@@ -29,7 +32,7 @@ defineProps<{ title: string; count?: number }>()
   top: 0;
   left: 0;
   font-size: 10px;
-  color: #989faf;
+  color: var(--palette-text-989faf);
   font-weight: 500;
 }
 .heading-count {
@@ -39,9 +42,9 @@ defineProps<{ title: string; count?: number }>()
   justify-content: center;
   min-width: 23px;
   height: 23px;
-  background: #e9ecf2;
-  border: 1px solid #e1e5ed;
-  color: #7b8495;
+  background: var(--palette-bg-e9ecf2);
+  border: 1px solid var(--palette-border-e1e5ed);
+  color: var(--palette-text-7b8495);
   border-radius: 6px;
   margin-top: 2px;
 }
@@ -69,7 +72,7 @@ defineProps<{ title: string; count?: number }>()
 }
 .heading-count {
   border-radius: 8px;
-  background: #eeeaf9;
+  background: var(--palette-bg-eeeaf9);
   color: var(--accent);
 }
 
@@ -90,4 +93,6 @@ defineProps<{ title: string; count?: number }>()
     padding: 7px 10px;
   }
 }
+
+html[data-theme="dark"] .floating-actions { background: var(--palette-dark-bg-292633e8); border-color: var(--border); box-shadow: 0 8px 30px var(--palette-dark-shadow-00000077); }
 </style>

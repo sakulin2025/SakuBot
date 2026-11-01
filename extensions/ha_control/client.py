@@ -6,7 +6,7 @@ import math
 import os
 import re
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, quote, urlencode
 
 import requests
 
@@ -279,6 +279,47 @@ class HomeAssistant:
         elif domains and not result:
             response["note"] = "未匹配到指定 HA 技术类型，不代表不存在这个用途的设备。请清空 domain，按名称、别名或分组查询。"
         return response
+
+    def history(self, entity_id, start='', end='', limit=200, offset=0):
+        item = self.entity(entity_id)
+        def parse(value, fallback):
+            if not value:
+                return fallback
+            if not isinstance(value, str):
+                raise PluginError('时间须为带时区的 ISO 8601 字符串')
+            try:
+                value = dt.datetime.fromisoformat(value.replace('Z', '+00:00'))
+            except ValueError:
+                raise PluginError('时间格式无效，请使用带时区的 ISO 8601 时间') from None
+            if value.tzinfo is None or value.utcoffset() is None:
+                raise PluginError('时间必须包含时区，例如 +08:00 或 Z')
+            return value.astimezone(dt.timezone.utc)
+        now = dt.datetime.now(dt.timezone.utc)
+        end_time = parse(end, now)
+        start_time = parse(start, end_time - dt.timedelta(days=1))
+        if start_time >= end_time:
+            raise PluginError('开始时间必须早于结束时间')
+        if type(limit) is not int or not 1 <= limit <= 1000 or type(offset) is not int or offset < 0:
+            raise PluginError('limit 应在 1 至 1000 之间，offset 应为非负整数')
+        params = urlencode({'filter_entity_id': entity_id, 'end_time': end_time.isoformat(), 'significant_changes_only': '0'})
+        path = '/api/history/period/' + quote(start_time.isoformat(), safe='') + '?' + params
+        response = self.api('GET', path)
+        if not isinstance(response, list) or any(not isinstance(group, list) for group in response):
+            raise PluginError('Home Assistant 返回的历史记录格式无效')
+        records = []
+        for group in response:
+            for state in group:
+                if not isinstance(state, dict) or state.get('entity_id') != entity_id:
+                    continue
+                attrs = state.get('attributes') or {}
+                records.append({'state': state.get('state'), 'last_changed': state.get('last_changed'),
+                                'last_updated': state.get('last_updated'),
+                                'attributes': {key: attrs[key] for key in ('unit_of_measurement', 'device_class', 'brightness', 'temperature', 'current_temperature', 'hvac_mode', 'percentage', 'current_position') if key in attrs}})
+        return {'entity': self.entity_metadata(item), 'start': start_time.isoformat(), 'end': end_time.isoformat(),
+                'records': records[offset:offset + limit], 'total': len(records), 'offset': offset,
+                'truncated': offset + limit < len(records),
+                'next_offset': offset + limit if offset + limit < len(records) else None,
+                'note': '数据来自 Home Assistant 已保留的历史；首条可能是在查询开始时沿用的初始状态，并非该时刻发生的变化。空结果不代表设备没有变化。'}
 
     def plan(self, entity_id, action, params, force=False):
         item = self.entity(entity_id, control=True)

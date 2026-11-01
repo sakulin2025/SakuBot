@@ -29,7 +29,9 @@ class Chat:
     def row(self, row):
         metadata = json.loads(row['meta'])
         role = 'assistant' if metadata.get('role') == 'assistant' else 'user' if metadata.get('role') == 'user' or row['source'] == 'web-chat' else 'event'
-        return {key: row[key] for key in ('id', 'uid', 'at', 'source', 'actor', 'label', 'target', 'text', 'status', 'kind')} | {'role': role, 'meta': metadata}
+        insertion = metadata.get('insertion_mode') == 'next_boundary' or 'insertion_run_id' in metadata
+        stage = ('submitted' if metadata.get('wake_submitted') else 'merged') if row['status'] == 'running' else ('waiting' if insertion else 'queued') if row['status'] == 'pending' else row['status']
+        return {key: row[key] for key in ('id', 'uid', 'at', 'source', 'actor', 'label', 'target', 'text', 'status', 'kind')} | {'role': role, 'meta': metadata, 'wake_stage': stage if row['kind'] == 'wake' else ''}
 
     def event(self, row):
         if self.visible(row):
@@ -42,6 +44,39 @@ class Chat:
         activity = self.runtime.store.rows("SELECT id,at,source,event,run_id,data FROM logs WHERE run_id!='' AND at>? ORDER BY id DESC LIMIT 80", (boundary['at'],))
         for item in activity:
             item['data'] = json.loads(item['data'])
+        processes = []
+        if rows:
+            ids = [row['id'] for row in rows]
+            placeholders = ','.join('?' for _ in ids)
+            runs = self.runtime.store.rows('SELECT id,event_id,status,started FROM runs WHERE event_id IN (' + placeholders + ') ORDER BY started', ids)
+            for run in runs:
+                entries = []
+                for log in self.runtime.store.rows("SELECT at,event,data FROM logs WHERE run_id=? AND event IN ('model.request','model.completed','model.failed','compression.started','compression.failed','context.compressed') ORDER BY id", (run['id'],)):
+                    data = json.loads(log['data'])
+                    if log['event'] == 'model.request':
+                        entries.append({'key': 'model:' + str(data.get('step', 1)), 'kind': 'model', 'at': log['at'], 'step': data.get('step', 1), 'status': 'running'})
+                    elif log['event'] in ('model.completed', 'model.failed'):
+                        previous = next((entry for entry in reversed(entries) if entry['kind'] == 'model' and entry['status'] == 'running'), None)
+                        if previous:
+                            previous['status'] = 'done' if log['event'] == 'model.completed' else 'failed'
+                    elif log['event'] == 'compression.started':
+                        entries.append({'key': 'compression:' + str(data.get('id', log['at'])), 'kind': 'compression', 'at': log['at'], 'status': 'running'})
+                    else:
+                        key = 'compression:' + str(data.get('id', log['at']))
+                        entry = next((item for item in entries if item['key'] == key), None)
+                        if entry:
+                            entry.update(status='failed' if log['event'] == 'compression.failed' else 'done', finished=log['at'], error=data.get('error', ''))
+                        else:
+                            entries.append({'key': key, 'kind': 'compression', 'at': log['at'], 'status': 'failed' if log['event'] == 'compression.failed' else 'done', 'error': data.get('error', '')})
+                for tool in self.runtime.store.rows('SELECT call_id,tool_name,status,arguments,output,error,started,finished FROM tool_calls WHERE run_id=? ORDER BY id', (run['id'],)):
+                    try:
+                        arguments = json.loads(tool['arguments'])
+                    except (ValueError, TypeError):
+                        arguments = tool['arguments']
+                    entries.append({'key': 'tool:' + tool['call_id'], 'kind': 'tool', 'at': tool['started'], 'name': tool['tool_name'],
+                        'status': tool['status'], 'finished': tool['finished'], 'arguments': arguments, 'output': tool['output'][:20000], 'error': tool['error']})
+                entries.sort(key=lambda entry: entry['at'])
+                processes.append({'id': run['id'], 'event_id': run['event_id'], 'status': run['status'], 'entries': entries})
         tools = []
         if self.runtime.current_run:
             for item in self.runtime.store.rows('SELECT * FROM tool_calls WHERE run_id=? ORDER BY id LIMIT 100', (self.runtime.current_run['id'],)):
@@ -49,7 +84,7 @@ class Chat:
                     'arguments': json.loads(item['arguments']), 'output': item['output'], 'error': item['error'], 'agent_id': 'main'})
         return {'context_revision': boundary['revision'], 'context_cutoff': boundary['cutoff'], 'messages': [self.row(row) for row in reversed(rows)], 'before': rows[-1]['id'] if rows else None,
             'has_more': len(rows) == limit, 'live': list(self.runtime.live.models.values()),
-            'tools': tools,
+            'tools': tools, 'processes': processes,
             'activity': list(reversed(activity)), 'running': self.runtime.current_run,
             'enabled': self.runtime.config.settings.enabled, 'sequence': self.runtime.live.sequence}
 
@@ -65,7 +100,8 @@ class Chat:
             raise ValueError('主 Agent 已暂停')
         self.runtime.agents.snapshot('main')
         result = await self.runtime.emit('wake', 'web-chat', text, target='main', actor='owner', label='主人',
-            uid='web-chat:' + client_id, priority=100, meta={'channel': 'web'}, send_result_to_source=False)
+            uid='web-chat:' + client_id, priority=100, meta={'channel': 'web'}, send_result_to_source=False,
+            insertion=self.runtime.config.settings.conversation.wake_insertion)
         row = self.runtime.store.one('SELECT * FROM events WHERE id=?', (result['id'],))
         return {'message': self.row(row), 'duplicate': False}
 
@@ -89,6 +125,11 @@ def register_chat_api(app, authorize, runtime, config):
     async def send(request: Request):
         data = await request.json()
         return await runtime.chat.send(data.get('text'), data.get('client_id'))
+
+    @app.post('/api/chat/stop', dependencies=[Depends(authorize)])
+    async def stop(request: Request):
+        data = await request.json()
+        return await runtime.stop_main_run(data.get('run_id'))
 
     @app.websocket('/api/chat/live')
     async def live(socket: WebSocket):

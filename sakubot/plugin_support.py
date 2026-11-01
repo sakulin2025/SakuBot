@@ -98,7 +98,7 @@ def register_function(plugin, handler, name=None, description=None):
     return handler
 
 
-def management(plugin, title, sections, state, action, *, icon='plugins', order=50):
+def management(plugin, title, sections, state, action, *, icon='plugins', order=50, group_id='extensions'):
     from .components import builtin
     settings = next((s for s in sections if s['id'] == 'config' and s['kind'] == 'form'), None) if not builtin(plugin.id) else None
     if settings:
@@ -139,7 +139,7 @@ def management(plugin, title, sections, state, action, *, icon='plugins', order=
     plugin.api('manage', read)
     plugin.api('manage', write, methods=('POST',))
     directory = Path(inspect.getfile(type(plugin))).parent
-    plugin.page('manage', title, directory / 'web' / 'dist', icon=icon, order=order)
+    plugin.page('manage', title, directory / 'web' / 'dist', icon=icon, order=order, group_id=group_id)
 
 
 def field(key, label, type='string', **options):

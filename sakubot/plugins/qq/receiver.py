@@ -73,6 +73,7 @@ class Receiver:
                 parts.append({"type": "attachment", "text": "[" + str(kind)[:40] + "]"})
         record = {"uid": uid, "at": time.time(), "session_id": session, "message_id": str(mid or ""),
             "sender_id": actor, "sender_name": label, "text": "".join(row["text"] for row in parts)[:100000],
+            "sender_role": sender.get('role') if group and sender.get('role') in ('owner', 'admin', 'member') else '',
             "mentions": mentions, "reply_to": reply_to, "parts": parts, "is_self": False}
         direct = not group and actor == self.plugin.settings.owner_id
         record.update(source=self.plugin.id, is_owner=direct or actor == self.plugin.settings.owner_id,

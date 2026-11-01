@@ -44,7 +44,7 @@ defineExpose({ focus: () => element.value?.focus(), element })
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #858d9e;
+  color: var(--palette-text-858d9e);
   font-size: 11px;
   cursor: pointer;
   min-height: 24px;
@@ -65,9 +65,9 @@ input[type='checkbox'] {
   min-height: 16px !important;
   margin: 0;
   padding: 0 !important;
-  border: 1.5px solid #d6d2e5 !important;
+  border: 1.5px solid var(--palette-border-d6d2e5) !important;
   border-radius: 5px !important;
-  background: #fff;
+  background: var(--palette-bg-ffffff);
   vertical-align: middle;
   cursor: pointer;
   transition:
@@ -87,7 +87,7 @@ input[type='checkbox'] {
   top: 1px;
   width: 4px;
   height: 8px;
-  border: solid #fff;
+  border: solid var(--palette-border-ffffff);
   border-width: 0 1.8px 1.8px 0;
   transform: rotate(45deg);
   animation: s-check-in 0.16s ease;
@@ -99,7 +99,7 @@ input[type='checkbox'] {
   top: 6px;
   width: 7px;
   height: 2px;
-  background: #fff;
+  background: var(--palette-bg-ffffff);
   border-radius: 2px;
 }
 .s-checkbox:focus-visible {
@@ -122,4 +122,7 @@ input[type='checkbox'] {
     transform: rotate(45deg) scale(1);
   }
 }
+
+html[data-theme="dark"] .s-checkbox:not(:checked):not(:indeterminate) { background: var(--surface-alt); border-color: var(--palette-dark-border-645d73); }
+html[data-theme="dark"] .checkbox-field { color: var(--ink); }
 </style>

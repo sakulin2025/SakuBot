@@ -19,7 +19,10 @@ class Extension(Plugin):
             object_schema({'expression': text('例如 (120 + 35) * 0.85 或 sqrt(2)')}, ('expression',)), self.calculate)
 
     def prompt_context(self, invocation):
-        return '当前时间（Asia/Shanghai）：' + datetime.now(ZoneInfo('Asia/Shanghai')).isoformat(timespec='seconds') + '。其他时区和日期计算可用 time_info、time_difference；数值计算使用 calculate。'
+        return '其他时区和日期计算可用 time_info、time_difference；数值计算使用 calculate。'
+
+    def wake_context(self, invocation):
+        return '本轮唤醒时间（Asia/Shanghai）：' + datetime.now(ZoneInfo('Asia/Shanghai')).isoformat(timespec='seconds') + '。需要当前精确时间时使用 time_info。'
 
     @staticmethod
     def zone(name):

@@ -209,38 +209,15 @@ onUnmounted(() => {
 });
 </script>
 <template>
-  <div class="page-heading">
-    <div class="heading-actions">
+  <Teleport to="body"><div class="floating-actions">
       <SButton class="button" @click="host.navigate('/agents')">
         Agent 管理</SButton
       ><SButton class="button primary" @click="edit()">
         <UiIcon name="plus" :size="17" />新增 Agent
       </SButton>
-    </div>
-  </div>
-  <div class="page-toolbar">
-    <SButton
-      class="button"
-      :class="{ primary: tab === 'members' }"
-      @click="tab = 'members'"
-    >
-      团队成员</SButton
-    ><SButton
-      class="button"
-      :class="{ primary: tab === 'tasks' }"
-      @click="tab = 'tasks'"
-    >
-      任务记录
-    </SButton>
-    <SButton
-      class="button"
-      :class="{ primary: tab === 'requests' }"
-      @click="tab = 'requests'"
-    >
-      待确认<span v-if="pendingCount" class="button-count">{{
-        pendingCount
-      }}</span>
-    </SButton>
+  </div></Teleport>
+  <STabs v-model="tab" :items="[{ value: 'members', label: '团队成员' }, { value: 'tasks', label: '任务记录' }, { value: 'requests', label: '待确认', count: pendingCount }]" />
+  <div class="page-toolbar" v-if="tab === 'members'">
     <div v-if="tab === 'members'" class="search-field">
       <UiIcon name="search" :size="17" /><SInput
         v-model="query"

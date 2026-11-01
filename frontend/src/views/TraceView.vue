@@ -100,16 +100,9 @@ const payload = computed(() => {
 })
 </script>
 <template>
-  <div class="page-heading">
-    <div class="topbar-actions">
-      <label class="check-label">
-        <SCheckbox v-model="live" />
-        实时
-      </label>
-      <SButton class="button" :disabled="busy" @click="load()">刷新</SButton>
-    </div>
-  </div>
+  <Teleport to="body"><div class="floating-actions"><SButton :disabled="busy" @click="load()">刷新</SButton></div></Teleport>
   <form class="page-toolbar trace-filters" @submit.prevent="reset">
+    <label class="check-label"><SCheckbox v-model="live" />实时</label>
     <div class="search-field">
       <UiIcon name="search" :size="17" />
       <SInput v-model="filters.query" placeholder="搜索" aria-label="搜索" />

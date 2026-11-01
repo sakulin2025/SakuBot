@@ -42,6 +42,6 @@ const reveal = ref(false)
 .secret-input .icon-button {
   position: absolute;
   right: 5px;
-  color: #b0b6c4;
+  color: var(--palette-text-b0b6c4);
 }
 </style>

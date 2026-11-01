@@ -45,6 +45,13 @@ class Store:
           origin TEXT NOT NULL, arguments TEXT NOT NULL, output TEXT NOT NULL DEFAULT '',
           status TEXT NOT NULL, started REAL NOT NULL, finished REAL, error TEXT NOT NULL DEFAULT '');
         CREATE INDEX IF NOT EXISTS calls_run ON tool_calls(run_id,id);
+        CREATE TABLE IF NOT EXISTS main_context_turns (
+          event_id INTEGER PRIMARY KEY, run_id TEXT NOT NULL, response_id TEXT NOT NULL,
+          messages TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS agent_wake_insertions (
+          id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, run_id TEXT NOT NULL,
+          owner TEXT NOT NULL, payload TEXT NOT NULL, status TEXT NOT NULL, created REAL NOT NULL);
+        CREATE INDEX IF NOT EXISTS agent_wake_insertion_run ON agent_wake_insertions(agent_id,run_id,status,created);
 
         """)
         for table, column in (("events", "authority"), ("tool_calls", "authority")):
@@ -52,10 +59,18 @@ class Store:
                 self.db.execute("ALTER TABLE " + table + " DROP COLUMN " + column)
         self.db.execute("PRAGMA user_version=5")
         # A crash may occur after an external action; do not replay uncertain work.
+        # Safe-point messages not yet submitted to a model have not caused actions.
+        self.db.execute("""UPDATE events SET status='pending', error='', meta=json_remove(meta,'$.absorbed_run_id')
+            WHERE kind='wake' AND target='main' AND status='running'
+              AND (json_extract(meta,'$.insertion_mode')='next_boundary'
+                   OR json_extract(meta,'$.insertion_run_id') IS NOT NULL
+                   OR json_extract(meta,'$.absorbed_run_id') IS NOT NULL)
+              AND coalesce(json_extract(meta,'$.wake_submitted'),0)=0""")
         self.db.execute("UPDATE events SET status='interrupted', error='进程中断，需人工检查后决定是否重新唤醒' WHERE status IN ('running','waiting')")
         self.db.execute("UPDATE runs SET status='interrupted', finished=? WHERE status IN ('running','waiting')", (time.time(),))
         self.db.execute("UPDATE deliveries SET status='uncertain', error='进程中断，远端结果未知，不自动重试' WHERE status='sending'")
         self.db.execute("UPDATE tool_calls SET status='interrupted',finished=?,error='进程中断，结果可能未知' WHERE status IN ('running','waiting')", (time.time(),))
+        self.db.execute("UPDATE agent_wake_insertions SET status='interrupted' WHERE status IN ('pending','running','queued')")
         self.db.commit()
 
     def rows(self, sql, args=()):

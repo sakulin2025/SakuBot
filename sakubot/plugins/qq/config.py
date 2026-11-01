@@ -3,6 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from urllib.parse import urlsplit
+from .prompt_templates import MAIN_DEFAULT, validate_template
 
 
 class Settings(BaseModel):
@@ -15,6 +16,8 @@ class Settings(BaseModel):
     snowluma_token: str = ''
     image_model_id: str = ''
     speech_recognition: str = 'unimplemented'
+    external_prompt: str = Field(MAIN_DEFAULT, max_length=10000)
+    external_prompt_mode: Literal['temporary', 'context'] = 'temporary'
     reply_split_enabled: bool = True
     reply_split_regex: str = '。|'
     reply_remove_regex: str = '。'
@@ -31,6 +34,11 @@ class Settings(BaseModel):
         except re.error:
             raise ValueError('正则表达式无效') from None
         return value
+
+    @field_validator('external_prompt')
+    @classmethod
+    def prompt(cls, value):
+        return validate_template(value)
 
     @model_validator(mode='after')
     def intervals(self):
