@@ -2,6 +2,8 @@ services:
   sakubot:
     image: sakulin/sakubot:latest
     restart: unless-stopped
+    init: true
+    stop_grace_period: 60s
     ports:
       - "6190:6190"
     volumes:

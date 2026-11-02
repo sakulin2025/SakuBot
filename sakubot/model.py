@@ -43,8 +43,8 @@ class Model:
         except (KeyError, TypeError, ValueError, OverflowError):
             raise RuntimeError('向量模型返回格式无效') from None
 
-    async def complete(self, messages, tools=None, lightweight=False, model_id=None, output_tokens=None, on_delta=None, on_request=None):
-        provider, model = self.settings.selected_model(lightweight, model_id=model_id)
+    async def complete(self, messages, tools=None, lightweight=False, model_id=None, output_tokens=None, on_delta=None, on_request=None, settings=None):
+        provider, model = (settings or self.settings).selected_model(lightweight, model_id=model_id)
         if provider is None:
             raise RuntimeError("未选择已启用的文本模型")
         if not model.capabilities.tools:

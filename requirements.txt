@@ -10,3 +10,4 @@ reportlab>=4.4,<5
 pdfplumber>=0.11,<1
 pypdf>=6,<7
 Pillow>=12,<13
+packaging>=24,<27

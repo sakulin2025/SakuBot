@@ -42,7 +42,11 @@ class Extension(Plugin):
               WHERE label IN ('早餐','午餐','晚餐','基础代谢','活动消耗');
             CREATE TABLE IF NOT EXISTS days (day TEXT PRIMARY KEY, confirmed INTEGER NOT NULL, updated REAL NOT NULL);
         ''')
-        self.page('manage', '热量日历', Path(__file__).parent / 'web' / 'dist', icon='activity', group_id='productivity', order=30)
+        for source, title in [('record_changed','热量记录变化'),('confirmation_changed','热量日期确认变化')]:
+            self.trigger_source(source,title,object_schema({'day':{'type':'string','title':'日期 · 留空不限','pattern':r'^$|^\d{4}-\d{2}-\d{2}$'}}),
+                object_schema({'day':{'type':'string'},'action':{'type':'string'},'record_id':{'type':'string'},'summary':{'type':'object'}},('day','action','summary')),
+                match=lambda event,params:not params.get('day') or params['day']==event['day'])
+        self.page('manage', '热量日历' , Path(__file__).parent / 'web' / 'dist', icon='activity', group_id='productivity', order=30)
         self.api('calendar', self.calendar_api)
         self.api('day', self.day_api)
         self.api('entry', self.entry_api, methods=('POST',))
@@ -140,15 +144,20 @@ class Extension(Plugin):
         if type(estimated) is not bool or not isinstance(note, str) or len(note) > 4000 or not isinstance(source, str) or len(source) > 500:
             raise ValueError('记录详情无效')
         now = time.time()
+        saved_id = record_id or uuid.uuid4().hex
         try:
             with self.db:
                 self.db.execute('''INSERT INTO entries VALUES (?,?,?,?,?,?,?,?,?,?)
                     ON CONFLICT(id) DO UPDATE SET day=excluded.day,kind=excluded.kind,label=excluded.label,kcal=excluded.kcal,
                     estimated=excluded.estimated,note=excluded.note,source=excluded.source,updated=excluded.updated''',
-                    (record_id or uuid.uuid4().hex, day, kind, label, round(kcal, 2), int(estimated), note.strip(), source.strip(), previous.get('created', now), now))
+                    (saved_id, day, kind, label, round(kcal, 2), int(estimated), note.strip(), source.strip(), previous.get('created', now), now))
         except sqlite3.IntegrityError:
             raise ValueError('该日期已有此特殊标签，请修改已有记录') from None
-        return self.day(day)
+        result = self.day(day)
+        self.publish_trigger('record_changed', {'day':day,'action':'update' if old else 'add','record_id':saved_id,'summary':result})
+        if previous.get('day') and previous['day'] != day:
+            self.publish_trigger('record_changed', {'day':previous['day'],'action':'move','record_id':saved_id,'summary':self.day(previous['day'])})
+        return result
 
     def delete_entry(self, identifier):
         row = self.db.execute('SELECT day FROM entries WHERE id=?', (identifier,)).fetchone()
@@ -157,7 +166,9 @@ class Extension(Plugin):
         day = row['day']
         with self.db:
             self.db.execute('DELETE FROM entries WHERE id=?', (identifier,))
-        return self.day(day)
+        result=self.day(day)
+        self.publish_trigger('record_changed', {'day':day,'action':'delete','record_id':identifier,'summary':result})
+        return result
 
     def confirm(self, day, confirmed):
         day = day_value(day or today())
@@ -165,9 +176,13 @@ class Extension(Plugin):
             raise ValueError('确认状态必须为布尔值')
         if confirmed and not self.db.execute('SELECT 1 FROM entries WHERE day=? LIMIT 1', (day,)).fetchone():
             raise ValueError('当天没有记录')
+        previous=self.day(day)['confirmed']
         with self.db:
             self.db.execute('INSERT INTO days VALUES (?,?,?) ON CONFLICT(day) DO UPDATE SET confirmed=excluded.confirmed,updated=excluded.updated', (day, int(confirmed), time.time()))
-        return self.day(day)
+        result=self.day(day)
+        if previous != confirmed:
+            self.publish_trigger('confirmation_changed', {'day':day,'action':'confirm' if confirmed else 'unconfirm','summary':result})
+        return result
 
     async def calendar_api(self, request):
         return self.calendar(request.query_params.get('month') or today()[:7])

@@ -16,13 +16,13 @@ class Compression:
         return len(json.dumps({"messages": messages, "tools": tools}, ensure_ascii=False).encode())
 
     async def compact(self, messages, inv, tools):
-        settings = self.runtime.config.settings
+        settings = inv.metadata.get("_model_settings", self.runtime.config.settings)
         if not settings.compression_enabled:
             return
-        _, model = self.runtime.config.settings.selected_model(model_id=inv.model_id)
+        _, model = settings.selected_model(model_id=inv.model_id)
         if not model:
             return
-        window = model.effective_window() or self.runtime.config.settings.context_chars
+        window = model.effective_window() or settings.context_chars
         reserve = model.extra_body.get("max_tokens", model.extra_body.get("max_completion_tokens", 4096))
         limit = min(int(window * settings.compression_threshold), window - reserve - 1000)
         limit = max(1000, limit)
@@ -114,7 +114,7 @@ class Compression:
                             result, usage = await self.runtime.model.complete([
                                 {"role": "system", "content": prompt},
                                 {"role": "user", "content": "已有摘要：" + summary + "\n后续记录片段：\n" + encoded[offset:offset + chunk_size].decode(errors="replace")}],
-                                model_id=inv.model_id, output_tokens=budget, on_request=capture)
+                                model_id=inv.model_id, output_tokens=budget, on_request=capture, settings=settings)
                             attempt.update(response=result, usage=usage, finished=time.time())
                             candidate = (result.get('content') or '').strip()
                             reason = result.get('_finish_reason')

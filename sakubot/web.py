@@ -25,7 +25,7 @@ from .store import Store
 config = Config()
 store = Store(config.root)
 runtime = Runtime(config, store)
-config_lock = asyncio.Lock()
+config_lock = runtime.control.lock
 STATIC = Path(__file__).parent / "static"
 
 
@@ -56,7 +56,7 @@ async def headers(request, call_next):
     response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'"
     if request.url.path.startswith("/extensions/"):
         response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'self'"
-    if request.url.path.startswith("/api/"):
+    if request.url.path.startswith(("/api/", "/hooks/")):
         response.headers["Cache-Control"] = "no-store"
     return response
 
@@ -121,30 +121,7 @@ async def put_config(request: Request):
 
 
 async def apply_config(draft):
-    if not isinstance(draft, dict):
-        raise ValueError("配置必须为对象")
-    for provider in draft.get("providers", []):
-        old = next((item for item in config.settings.providers if item.id == provider.get("id")), None)
-        if old and not provider.get("api_key"):
-            provider["api_key"] = old.api_key
-    try:
-        settings = Settings.model_validate(draft)
-    except ValidationError:
-        # Pydantic errors can contain secret input values; do not echo them.
-        raise ValueError("配置格式不正确，请检查地址、模式、数值范围及插件名称") from None
-    runtime.personas.get(settings.main_persona_id)
-    async with config_lock:
-        previous = config.settings
-        await runtime.stop()
-        try:
-            config.save(settings)
-            await runtime.start(strict=True)
-        except Exception:
-            await runtime.stop()
-            config.save(previous)
-            await runtime.start()
-            raise ValueError("配置或插件无法加载，已恢复原配置；请检查本地插件代码") from None
-    return {"ok": True, "config": config.public()}
+    return await runtime.control.configuration.apply(draft)
 
 
 @app.patch("/api/config", dependencies=[Depends(authorize)])

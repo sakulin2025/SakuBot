@@ -21,6 +21,8 @@ from .live import Live
 from .chat import Chat
 from .conversation import Conversation
 from .delivery import Deliveries
+from .automation.service import Scripts
+from .control import Control
 
 
 SYSTEM = """你是 SakuBot 的主 Agent，主上下文为 main。
@@ -48,6 +50,7 @@ class Runtime:
         self.store.on_log = lambda row: self.live.publish('activity', activity=row) if row['run_id'] else None
         self.workspace = Workspace(config.root / 'workspace', store)
         self.skills = Skills(self)
+        self.scripts = Scripts(self)
         self.agents = Agents(self)
         self.compression = Compression(self)
         self.personas.in_use = self.agents.persona_in_use
@@ -63,6 +66,7 @@ class Runtime:
         self.error = ""
         self.changed = asyncio.Event()
         self.resource_locks = {}
+        self.control = Control(self)
 
     async def start(self, strict=False):
         self.agents.reset()
@@ -75,6 +79,7 @@ class Runtime:
             await self.registry.load(self)
             await self.registry.start()
             self.sources_started = True
+            self.scripts.start()
             from .artifacts import cleanup_loop
             self.jobs = [asyncio.create_task(self.deliveries.worker(), name="notifications"), asyncio.create_task(cleanup_loop(self.config.root), name="artifact-cleanup")]
             await self.sync_main_worker()
@@ -86,6 +91,7 @@ class Runtime:
             self.store.log("error", "runtime", "runtime.failed", data={"error": type(exc).__name__})
             if strict:
                 raise
+        self.control.start()
 
     async def sync_main_worker(self):
         if self.main_stopping:
@@ -153,6 +159,7 @@ class Runtime:
         return {'ok': True}
 
     async def stop(self):
+        await self.control.stop()
         if self.main_job is not None:
             self.main_job.cancel()
             await asyncio.gather(self.main_job, return_exceptions=True)
@@ -162,6 +169,7 @@ class Runtime:
             task.cancel()
         await asyncio.gather(*self.jobs, return_exceptions=True)
         self.jobs = []
+        await self.scripts.stop()
         await self.conversation.stop()
         await self.registry.stop()
         await self.workspace.shell_runner.stop()
@@ -250,6 +258,7 @@ class Runtime:
         if "agent_profile" not in inv.metadata:
             profile = self.agents.snapshot(inv.agent_id)
             inv.metadata["agent_profile"] = profile
+            inv.metadata["_model_settings"] = self.config.settings.model_copy(deep=True)
             inv.persona_id = profile["effective_persona_id"]
             inv.model_id = profile["effective_model_id"]
         return inv.metadata["agent_profile"]
@@ -499,7 +508,7 @@ class Runtime:
             if inv.instance:
                 inv.instance.ensure_active()
             await self.prepare_wake_batch(messages, inv)
-            provider, selected = self.model.settings.selected_model(model_id=inv.model_id)
+            provider, selected = inv.metadata["_model_settings"].selected_model(model_id=inv.model_id)
             available = self.registry.available(inv) if selected and selected.capabilities.tools else []
             tools = [tool.schema() for tool in available]
             await self.refresh_capabilities(messages, inv)
@@ -549,7 +558,7 @@ class Runtime:
                 self.save_trace(inv, messages, usage)
             try:
                 message, used = await self.model.complete(request_messages, tools, model_id=inv.model_id,
-                    on_delta=delta if inv.agent_id == 'main' else None, on_request=capture_request)
+                    on_delta=delta if inv.agent_id == 'main' else None, on_request=capture_request, settings=inv.metadata["_model_settings"])
                 inv.metadata['_model_responses'] = inv.metadata.get('_model_responses', 0) + 1
                 if inv.agent_id == 'main':
                     self.conversation.process('model.completed', request_id=request_id, run_id=inv.run_id, agent_id=inv.agent_id)
@@ -600,6 +609,9 @@ class Runtime:
 
     async def worker(self):
         while True:
+            if not self.config.settings.ready() or self.control.quiescing():
+                await asyncio.sleep(.25)
+                continue
             event = self.store.claim()
             if not event:
                 self.changed.clear()
@@ -614,6 +626,7 @@ class Runtime:
             self.store.execute("INSERT INTO runs VALUES (?,?,?,NULL,'running','{}','')", (run_id, event["id"], time.time()))
             inv = Invocation(run_id, event["target"], event["actor"], instance=self.agents.get("main"))
             inv.metadata['_main_event_id'] = event['id']
+            inv.metadata['script_chain'] = event_meta.get('script_chain', [])
             inv.metadata['wake_events'] = [copy.deepcopy(event)]
             self.store.execute("UPDATE events SET meta=json_set(meta,'$.wake_run_id',?) WHERE id=?", (run_id, event['id']))
             self.chat.event(self.store.one('SELECT * FROM events WHERE id=?', (event['id'],)))

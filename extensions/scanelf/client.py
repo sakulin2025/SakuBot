@@ -1,12 +1,15 @@
-"""Read-only client for ScanElf's native Bearer HTTP API."""
+"""Read-only Bearer client for ScanElf HTTP queries and WebSocket state streams."""
 
 import asyncio
+import json
 import re
 import time
 from datetime import datetime, timezone
 from urllib.parse import quote, urlsplit, urlunsplit
 
 import aiohttp
+from websockets.asyncio.client import connect
+from websockets.exceptions import InvalidStatus, WebSocketException
 
 
 class PluginError(ValueError):
@@ -54,6 +57,41 @@ class ScanElf:
         if not token:
             raise PluginError("请先在 ScanElf 插件配置页填写 API token。")
         return base, token
+
+    async def stream(self):
+        """Authenticated snapshots and heartbeats; no background HTTP polling."""
+        connection = self.connection()
+        base, token = connection
+        parts = urlsplit(base)
+        url = urlunsplit(('wss' if parts.scheme == 'https' else 'ws', parts.netloc,
+                         parts.path.rstrip('/') + '/api/v1/ws', '', ''))
+        try:
+            async with connect(url, additional_headers={'Authorization': 'Bearer ' + token},
+                               proxy=None, open_timeout=15, close_timeout=5,
+                               ping_interval=20, ping_timeout=20, max_size=4 * 1024 * 1024) as ws:
+                while True:
+                    packet = json.loads(await asyncio.wait_for(ws.recv(), timeout=45))
+                    if connection != self.connection():
+                        raise PluginError('ScanElf 连接配置已变化，正在重新连接。')
+                    if not isinstance(packet, dict) or packet.get('type') not in ('snapshot', 'heartbeat'):
+                        raise PluginError('ScanElf WebSocket 返回的数据格式无效。')
+                    if packet['type'] == 'snapshot':
+                        self._rows(packet, 'items')
+                        total = packet.get('total')
+                        if type(total) is not int or total < len(packet['items']):
+                            raise PluginError('ScanElf WebSocket 设备总数无效。')
+                    yield packet
+        except InvalidStatus as exc:
+            status = exc.response.status_code
+            if status in (401, 403):
+                raise PluginError('ScanElf WebSocket 认证失败，请检查 API token。') from None
+            if status == 404:
+                raise PluginError('ScanElf 未提供 /api/v1/ws，请更新服务端或检查反向代理路径。') from None
+            raise PluginError(f'ScanElf WebSocket 握手失败（HTTP {status}）。') from None
+        except (WebSocketException, OSError, TimeoutError, ValueError) as exc:
+            if isinstance(exc, PluginError):
+                raise
+            raise PluginError('ScanElf WebSocket 连接中断、超时或数据格式错误。') from None
 
     async def close(self):
         if self.session is not None:

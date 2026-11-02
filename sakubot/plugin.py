@@ -69,6 +69,7 @@ class Tool:
     parameters: dict
     handler: object
     plugin_id: str = ""
+    audience: str = "all"
 
     def schema(self):
         return {"type": "function", "function": {
@@ -156,6 +157,16 @@ class Plugin:
         task.add_done_callback(finished)
         return task
 
+    def trigger_source(self, identifier, name, parameters, event_schema, *, subscribe=None, options=None, match=None, validate=None):
+        return self.runtime.scripts.sources.declare(self.id, identifier, name, parameters, event_schema,
+            subscribe=subscribe, options=options, match=match, validate=validate)
+
+    async def emit_trigger(self, identifier, payload, *, uid=None):
+        return await self.runtime.scripts.sources.emit(self.id, identifier, payload, uid=uid)
+
+    def publish_trigger(self, identifier, payload, *, uid=None):
+        return self.runtime.scripts.spawn(self.emit_trigger(identifier, payload, uid=uid))
+
     def event_status(self, uid):
         return self.runtime.store.one('SELECT id,uid,kind,status,target,error FROM events WHERE uid=?', (uid,))
 
@@ -175,15 +186,17 @@ class Plugin:
         return await self.runtime.conversation.receive(self.id, identifier, content, **kwargs)
 
     async def respond_main(self, parts, *, invocation=None, response_id=None):
-        if invocation and invocation.agent_id != 'main':
+        if invocation and invocation.agent_id != 'main' and invocation.origin != 'script':
             raise ValueError('仅主 Agent 可输出主对话响应')
         return await self.runtime.conversation.respond(parts,
             delivery_target=invocation.metadata.get('reply_target', '') if invocation else '',
             send_to_source=invocation.send_result_to_source if invocation else True,
             run_id=invocation.run_id if invocation else '', response_id=response_id)
 
-    def tool(self, name, description, parameters, handler):
-        self.runtime.registry.add(Tool(name, description, parameters, handler, plugin_id=self.id))
+    def tool(self, name, description, parameters, handler, *, audience="all"):
+        if audience not in ("all", "main"):
+            raise ValueError("函数使用范围无效")
+        self.runtime.registry.add(Tool(name, description, parameters, handler, plugin_id=self.id, audience=audience))
 
     def get_agent(self, identifier):
         full_id = identifier if identifier == "main" or ":" in identifier else self.id + ":" + identifier
@@ -213,6 +226,10 @@ class Plugin:
 
     def api(self, path, handler, methods=("GET",)):
         self.runtime.registry.add_api(self.id, path, handler, methods)
+
+    def webhook(self, path, handler, methods=("POST",)):
+        """Public ingress; handler must verify its own service-specific credential."""
+        self.runtime.registry.add_api(self.id, path, handler, methods, webhook=True)
 
     @property
     def data_dir(self):
@@ -292,20 +309,20 @@ class Registry:
         return [{key: value for key, value in page.items() if key != "directory"}
             for page in self.pages.values() if self.loaded(page["plugin_id"])]
 
-    def add_api(self, plugin, path, handler, methods):
+    def add_api(self, plugin, path, handler, methods, webhook=False):
         path = "/" + path.strip("/")
-        if any(row["plugin_id"] == plugin and row["path"] == path and row["methods"] & set(methods) for row in self.apis):
+        if any(row["plugin_id"] == plugin and row["path"] == path and row.get("webhook", False) == webhook and row["methods"] & set(methods) for row in self.apis):
             raise ValueError("插件 API 路径重复")
         regex, _, converters = compile_path(path)
         self.apis.append({"plugin_id": plugin, "path": path, "regex": regex,
-            "converters": converters, "methods": set(methods), "handler": handler})
+            "converters": converters, "methods": set(methods), "handler": handler, "webhook": webhook})
 
-    async def dispatch(self, plugin, path, request):
+    async def dispatch(self, plugin, path, request, webhook=False):
         from fastapi import HTTPException
         if not self.loaded(plugin):
             raise HTTPException(404, "插件未启用")
         for api in self.apis:
-            if api["plugin_id"] == plugin and request.method in api["methods"]:
+            if api["plugin_id"] == plugin and api.get("webhook", False) == webhook and request.method in api["methods"]:
                 match = api["regex"].fullmatch("/" + path.strip("/"))
                 if match:
                     request.path_params.update({key: api["converters"][key].convert(value) for key, value in match.groupdict().items()})
@@ -319,11 +336,12 @@ class Registry:
         self.tools[tool.name] = tool
 
     def visible_plugin_ids(self, inv):
-        if inv.origin == "dashboard":
+        if inv.origin in ("dashboard", "script"):
             return {plugin.id for plugin in self.plugins if self.availability(plugin.id)["available"]}
         profile = inv.metadata.get("agent_profile")
         selected = profile["_visible_plugins"] if profile else self.runtime.agents.visible_plugins(inv.agent_id)
-        return {plugin.id for plugin in self.plugins if (required(plugin.id) or selected is None or plugin.id in selected) and self.availability(plugin.id)["available"]}
+        grants = {tool.plugin_id for tool in self.tools.values() if tool.audience == 'main'} if inv.agent_id == 'main' and inv.origin == 'agent' else set()
+        return {plugin.id for plugin in self.plugins if (required(plugin.id) or selected is None or plugin.id in selected or plugin.id in grants) and self.availability(plugin.id)["available"]}
 
     def available(self, inv):
         if inv.instance:
@@ -337,7 +355,9 @@ class Registry:
                 if name in tools:
                     raise ValueError("Agent 临时函数与插件函数重名：" + name)
                 tools[name] = tool
-        available = [tool for tool in tools.values() if tool.plugin_id in visible]
+        available = [tool for tool in tools.values()
+                     if tool.plugin_id in visible
+                     and (tool.audience != 'main' or (inv.agent_id == 'main' and inv.origin == 'agent'))]
         for name, tool in inv.temporary_tools.items():
             if name in tools:
                 raise ValueError('本轮临时函数与其他函数重名：' + name)
@@ -406,6 +426,7 @@ class Registry:
                     raise RuntimeError('系统基础能力加载失败：' + name) from exc
 
     def remove_entries(self, identifier):
+        self.runtime.scripts.sources.remove_owner(identifier)
         self.runtime.deliveries.remove_owner(identifier)
         self.runtime.conversation.remove_owner(identifier)
         self.runtime.skills.remove_owner(identifier)
@@ -481,8 +502,19 @@ class Registry:
     async def reload(self, identifier):
         await self.disable(identifier, internal=True)
         module_name = ("sakubot.system." if required(identifier) else "sakubot.plugins.") + identifier
-        if module_name in sys.modules:
-            importlib.reload(sys.modules[module_name])
+        for key in list(sys.modules):
+            if key == module_name or key.startswith(module_name + '.'):
+                del sys.modules[key]
+        # Avoid timestamp-based stale bytecode after a same-second edit.
+        from shutil import rmtree
+        root = BUILTIN_ROOT / identifier
+        if not root.is_dir():
+            root = self.runtime.config.root / 'plugins' / identifier
+        if root.is_dir():
+            for cache in root.rglob('__pycache__'):
+                if cache.is_dir() and not cache.is_symlink():
+                    rmtree(cache)
+        importlib.invalidate_caches()
         await self.enable(identifier, start=self.runtime.sources_started)
 
     def installed_catalog(self):

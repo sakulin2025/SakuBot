@@ -5,7 +5,6 @@ import io
 import json
 import mimetypes
 import os
-import random
 import re
 import time
 from pathlib import Path
@@ -18,7 +17,7 @@ from websockets.asyncio.client import connect
 
 from sakubot.plugin import Plugin
 from .config import Settings
-from .reply_split import split_reply
+from .sending import Sender
 from .tools import MattermostTools
 
 MAX_FILE = 20 * 1024 * 1024
@@ -30,6 +29,11 @@ class Extension(MattermostTools, Plugin):
 
     def setup(self):
         self.config = self.configure(Settings().model_dump(), secrets=('token',))
+        normalized = Settings.model_validate(dict(self.config)).model_dump()
+        if normalized != dict(self.config):
+            self.config.clear()
+            self.config.update(normalized)
+            self.config.save()
         self.online = False
         self.error = '尚未连接'
         self.channel = ''
@@ -39,6 +43,11 @@ class Extension(MattermostTools, Plugin):
         self.http = None
         self.retry_at = 0
         self.config_lock = asyncio.Lock()
+        self.sender = Sender(self)
+        from .commands import Commands
+        self.commands = Commands(self)
+        self.commands.register()
+        self.api('command-teams', self.command_teams)
         self.page('manage', 'Mattermost', Path(__file__).parent / 'web' / 'dist', icon='connection', group_id='conversation', order=16)
         self.api('config', self.page_config)
         self.api('config', self.save_config, methods=('POST',))
@@ -46,6 +55,8 @@ class Extension(MattermostTools, Plugin):
         self.api('logs', self.page_logs)
         self.api('reconnect', self.reconnect, methods=('POST',))
         self.api('image-models', self.image_models)
+        from .triggers import register
+        register(self)
         self.register_tools()
         self.conversation_source('owner', 'Mattermost 主人私聊',
             handlers={**{kind: self.deliver for kind in ('text', 'image', 'video', 'audio', 'file')},
@@ -54,8 +65,14 @@ class Extension(MattermostTools, Plugin):
     def availability(self):
         return {'available': self.online, 'reason': '' if self.online else self.error}
 
+    def script_references(self, identifier):
+        return any(row.get('script_id') == identifier for row in self.commands.records().values())
+
+    async def command_teams(self, request):
+        return await self.lookup(None, {'action': 'teams'})
+
     async def page_config(self, request):
-        data = Settings.model_validate(dict(self.config)).model_dump()
+        data = Settings.model_validate(dict(self.config)).model_dump(exclude={'slash_enabled', 'slash_base_url'})
         data['token_configured'] = bool(data.pop('token'))
         return data
 
@@ -94,7 +111,8 @@ class Extension(MattermostTools, Plugin):
 
     async def save_config(self, request):
         data = await request.json()
-        if not isinstance(data, dict) or set(data) - set(Settings.model_fields):
+        fields = set(Settings.model_fields) - {'slash_enabled', 'slash_base_url'}
+        if not isinstance(data, dict) or set(data) - fields:
             raise ValueError('配置格式无效')
         if not all(isinstance(data.get(k, ''), str) for k in ('base_url', 'token', 'owner')):
             raise ValueError('配置字段格式无效')
@@ -122,6 +140,9 @@ class Extension(MattermostTools, Plugin):
             if not model or not model.enabled or not model.capabilities.text or not model.capabilities.image:
                 raise ValueError('请选择支持图片的已启用模型')
         async with self.config_lock:
+            # These have a separate form and can change while connection settings are edited.
+            settings.slash_enabled = self.config.get('slash_enabled', False)
+            settings.slash_base_url = self.config.get('slash_base_url', '')
             connection_changed = any(settings.model_dump()[key] != self.config.get(key) for key in ('base_url', 'owner', 'token'))
             try:
                 if connection_changed or not all(self.config.get(k) for k in ('base_url', 'token', 'owner')):
@@ -382,15 +403,7 @@ class Extension(MattermostTools, Plugin):
         if not self.online or not self.http:
             raise RuntimeError('Mattermost 未连接')
         if packet['type'] == 'text':
-            text = packet.get('text', '')
-            settings = Settings.model_validate(dict(self.config))
-            parts = [piece[offset:offset + 12000] for piece in split_reply(text, settings) for offset in range(0, len(piece), 12000)]
-            for index, part in enumerate(parts):
-                if index:
-                    await asyncio.sleep(random.uniform(settings.reply_interval_min, settings.reply_interval_max))
-                if not self.online or not self.http:
-                    raise RuntimeError('Mattermost 已断线，剩余分段未发送')
-                await self.mattermost_api('POST', 'api/v4/posts', json={'channel_id': self.channel, 'message': part})
+            await self.sender.send(self.channel, packet.get('text', ''))
             return
         content, name = await self.bytes_for_part(packet)
         uploaded = await self.mattermost_api('POST', 'api/v4/files', data={'channel_id': self.channel},

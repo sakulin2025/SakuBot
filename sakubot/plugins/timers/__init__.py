@@ -31,18 +31,28 @@ class Extension(Plugin):
             data.pop('target_id', None)
             data.setdefault('send_result_to_source', True)
             self.runtime.store.execute('UPDATE schedules SET data=? WHERE id=?', (encode(data), row['id']))
+        from .triggers import register
+        register(self)
         self.page("manage", "定时任务", Path(__file__).parent / "web" / "dist", icon="clock", order=10, aliases=("/schedules",), group_id='system')
         self.api("schedules", self.page_list)
+        self.api("script-options", self.script_options)
         self.api("schedules", self.page_manage, methods=("POST",))
-        self.tool("schedule_manage", "管理主会话定时任务。mode=wake 唤醒主智能体，context 加入上下文，notify 显示固定通知。时间可选带时区的 at、interval_seconds 间隔或 daily_time 每天当地时间，三选一。send_result_to_source 控制唤醒结果或通知是否发送到当前主对话源；网页始终显示。每天任务指定 IANA timezone，默认 Asia/Shanghai；停机期间重复任务只触发一次。",
+        self.tool("schedule_manage", "管理主会话定时任务。mode=wake 唤醒主智能体，context 加入上下文，notify 显示固定通知，script 执行脚本而不调用模型。script 模式提供 script_id 和 script_params，无需 content。时间可选带时区的 at、interval_seconds 间隔或 daily_time 每天当地时间，三选一。send_result_to_source 控制唤醒结果或通知是否发送到当前主对话源；网页始终显示。每天任务指定 IANA timezone，默认 Asia/Shanghai；停机期间重复任务只触发一次。",
             object_schema({"action": {"type": "string", "enum": ["list", "save", "delete"]},
                            "id": text("更新或删除的任务 ID"), "name": text(), "content": text(),
-                           "mode": {"type": "string", "enum": ["context", "wake", "notify"]},
+                           "script_id": text("script 模式的脚本 ID"), "script_params": {"type":"object"},
+                           "mode": {"type": "string", "enum": ["context", "wake", "notify", "script"]},
                            "at": text("一次性时间，需带时区，例如 2026-10-26T09:00:00+08:00"),
                            "interval_seconds": {"type": "integer", "minimum": 0, "maximum": 31536000},
                            "daily_time": text("每日时间，格式 HH:MM"), "timezone": text("IANA 时区，例如 Asia/Shanghai"),
                            "send_result_to_source": {"type": "boolean", "description": "是否发送结果或通知到主对话源，默认 true"},
                            "enabled": {"type": "boolean"}, "include_context": {"type": "boolean"}}, ("action",)), self.manage)
+
+    def script_references(self, identifier):
+        return bool(self.runtime.store.one("SELECT id FROM schedules WHERE json_extract(data,'$.mode')='script' AND json_extract(data,'$.script_id')=? LIMIT 1", (identifier,)))
+
+    async def script_options(self, request):
+        return self.runtime.scripts.repo.list("scripts")
 
     async def page_list(self, request):
         return self.runtime.store.list_records("schedules")
@@ -83,7 +93,7 @@ class Extension(Plugin):
             store.execute("DELETE FROM schedules WHERE id=?", (identifier,))
             return {"deleted": identifier}
         data = {**(json.loads(old["data"]) if old else {}), **{k: v for k, v in args.items() if k not in ("id", "action")}}
-        if not data.get("name") or not data.get("content"):
+        if not data.get("name") or (data.get("mode", "wake") != "script" and not data.get("content")):
             raise ValueError("请提供任务名称和内容")
         data.setdefault("enabled", True)
         data.setdefault("mode", "wake")
@@ -96,8 +106,12 @@ class Extension(Plugin):
         data.setdefault('send_result_to_source', True)
         if not isinstance(data['send_result_to_source'], bool):
             raise ValueError('是否发送到主对话源须为布尔值')
-        if data['mode'] not in ('wake', 'context', 'notify'):
+        if data['mode'] not in ('wake', 'context', 'notify', 'script'):
             raise ValueError('事件类型无效')
+        if data['mode'] == 'script':
+            import jsonschema
+            script = self.runtime.scripts.repo.get(data.get('script_id'))
+            jsonschema.validate(data.get('script_params', {}), script['parameters'])
         interval = int(data.get('interval_seconds') or 0)
         daily = data.get('daily_time') or ''
         if interval < 0 or interval > 31536000 or (interval and interval < 30):
@@ -132,11 +146,16 @@ class Extension(Plugin):
                     continue
                 try:
                     # Deterministic ID bridges a crash between enqueue and schedule advance.
-                    await self.emit(data.get('mode', 'wake'), data['content'],
-                        target='main', priority=10,
-                        meta={'schedule_id': row['id'], 'name': data['name'], 'scheduled_at': row['next_at']},
-                        uid=f"schedule:{row['id']}:{row['next_at']}", include_context=data.get('include_context', False),
-                        send_result_to_source=data.get('send_result_to_source', True) if data.get('mode', 'wake') != 'context' else True)
+                    if data.get('mode') == 'script':
+                        self.runtime.scripts.enqueue(data['script_id'], params=data.get('script_params', {}),
+                            event={'source':'timers.schedule','id':row['id'],'at':now,'data':{'scheduled_at':row['next_at']}},
+                            uid=f"timer-script:{row['id']}:{row['next_at']}")
+                    else:
+                        await self.emit(data.get('mode', 'wake'), data['content'],
+                            target='main', priority=10,
+                            meta={'schedule_id': row['id'], 'name': data['name'], 'scheduled_at': row['next_at']},
+                            uid=f"schedule:{row['id']}:{row['next_at']}", include_context=data.get('include_context', False),
+                            send_result_to_source=data.get('send_result_to_source', True) if data.get('mode', 'wake') != 'context' else True)
                     interval = data.get('interval_seconds', 0)
                     if interval:
                         self.runtime.store.execute('UPDATE schedules SET next_at=? WHERE id=?', (now + interval, row['id']))

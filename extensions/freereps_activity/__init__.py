@@ -17,6 +17,13 @@ class Extension(Polling, Plugin):
         self.client = Client(self.config)
         self.report_workouts = []
         self.setup_polling()
+        from sakubot.plugin import object_schema
+        self.trigger_source('workout_completed','训练完成',object_schema({'workout_type':{'type':'string','title':'训练名称关键词'}}),
+            object_schema({'workout':{'type':'object'},'observed_at':{'type':'number'}},('workout','observed_at')),
+            match=lambda event,params:not params.get('workout_type') or params['workout_type'].casefold() in str(event['workout'].get('name','')).casefold())
+        self.trigger_source('sync_completed','活动同步完成',object_schema(),
+            object_schema({'count':{'type':'integer'},'observed_at':{'type':'number'}},('count','observed_at')))
+
         for name, method in [('freereps_workouts', self.workouts), ('freereps_workout_detail', self.detail),
                 ('freereps_activity', self.activity), ('freereps_metrics', self.metrics),
                 ('freereps_sleep', self.sleep), ('freereps_status', self.status),

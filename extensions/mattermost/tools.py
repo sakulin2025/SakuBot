@@ -36,7 +36,7 @@ class MattermostTools:
             object_schema({'action': {'type': 'string', 'enum': ['list', 'get', 'thread', 'search']},
                 'channel_id': text('list 使用的频道 ID'), 'post_id': text('get 或 thread 使用的消息 ID'),
                 'team_id': text('search 使用的团队 ID'), 'query': text('search 搜索词'), 'page': page, 'per_page': per_page}, ('action',)), self.read_posts)
-        self.tool('mattermost_send', '向指定 Mattermost 频道或指定用户私聊发送消息和工作空间文件；不指定目标时发送给主人私聊。使用 root_id 回复话题；返回真实消息 ID。',
+        self.tool('mattermost_send', '向指定 Mattermost 频道或指定用户私聊发送消息和工作空间文件；不指定目标时发送给主人私聊。message 自动应用插件的回应分段、移除、裁剪、换行合并和随机间隔配置，不必手动拆分。附件只随首段发送；所有分段使用同一 root_id 回复话题。返回首段 id 和全部 post_ids；部分失败时不要整条重发，先查询已发送消息。',
             object_schema({'channel_id': text('频道 ID'), 'user_id': text('私聊目标用户 ID，与 channel_id 二选一'),
                 'message': text('消息正文'), 'root_id': text('可选的父消息 ID'),
                 'files': {'type': 'array', 'items': text('工作空间相对路径'), 'maxItems': 5}}, ()), self.send_message)
@@ -52,7 +52,7 @@ class MattermostTools:
                 'query': {'type': 'object', 'additionalProperties': True},
                 'body': {'type': ['object', 'array', 'null']}}, ('method', 'path')), self.raw_request)
 
-    async def request_json(self, method, path, *, query=None, body=None):
+    async def request_json(self, method, path, *, query=None, body=None, truncate=True):
         if not self.online or not self.http:
             raise RuntimeError('Mattermost 未连接')
         try:
@@ -75,7 +75,9 @@ class MattermostTools:
                     value = json.loads(raw)
                 except (ValueError, UnicodeDecodeError):
                     raise ValueError('接口未返回 JSON；二进制文件请使用 mattermost_file') from None
-                return bounded(value)
+                from .commands import redact
+                value = redact(value)
+                return bounded(value) if truncate else value
         except httpx.HTTPError as exc:
             raise RuntimeError('Mattermost 连接中断或超时；操作结果可能未知，未自动重试') from exc
 
@@ -139,13 +141,11 @@ class MattermostTools:
         for file in files:
             uploaded = await self.upload_file(channel, file)
             ids.append(uploaded['id'])
-        data = {'channel_id': channel, 'message': message, 'file_ids': ids}
-        if root:
-            data['root_id'] = root
-        result = await self.request_json('POST', 'api/v4/posts', body=data)
+        posts = await self.sender.send(channel, message, root_id=root, file_ids=ids)
         if channel == self.channel and message:
             inv.metadata.setdefault('sent_source_texts', {}).setdefault(self.id + '.owner', []).append(message)
-        return result
+        return {**posts[0], 'split': len(posts) > 1, 'part_count': len(posts),
+                'post_ids': [post['id'] for post in posts]}
 
     async def post_action(self, inv, args):
         action, post = args['action'], identifier(args['post_id'], '消息 ID')

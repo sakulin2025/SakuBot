@@ -20,6 +20,8 @@ class Extension(Plugin):
         self.fields = [field('base_url','URL',required=True),field('token','Token','secret')]
         for name, method in [('scanelf_devices',self.query_devices),('scanelf_device_memory',self.device_memory),('scanelf_device_timeline',self.device_timeline)]: self.function(method,name=name)
         self.management('ScanElf',[collection('devices','设备',[field('mac','MAC',readonly=True),field('name','名称',readonly=True),field('alias','别名'),field('description','描述','text')],key='mac',columns=[field('mac','MAC'),field('name','名称'),field('alias','别名'),field('description','描述'),field('online','在线','boolean'),field('last_activity_text','最近活动')],create=False,remove=False,commands=[{'id':'refresh','label':'刷新设备'}],row_commands=[{'id':'timeline','label':'时间线'}]),collection('timeline','时间线',[field('id','ID'),field('at','时间'),field('display_name','设备'),field('event_text','事件')],create=False,edit=False,remove=False,commands=[{'id':'next','label':'下一页'}]),settings_section(self.fields)],self.view,self.manage,group_id='network')
+        from .triggers import register
+        register(self)
     def availability(self):
         ok = bool(self.config.get('base_url') and self.config.get('token'))
         return {'available':ok,'reason':'' if ok else '尚未配置 ScanElf 连接'}
@@ -41,7 +43,10 @@ class Extension(Plugin):
         for mac, memory in memories.items(): rows.setdefault(mac,{'mac':mac});rows[mac].update(memory)
         return {'data':{'config':self.config.public(['base_url','token']),'devices':list(rows.values()),'timeline':self.timeline_page.get('items',[])}}
     async def manage(self, data):
-        if data['section']=='config': self.config.patch(data['value'],fields_schema(self.fields));return {'saved':True}
+        if data['section']=='config':
+            self.config.patch(data['value'],fields_schema(self.fields))
+            await self.settings_saved()
+            return {'saved':True}
         if data['action']=='command':
             if data['command']=='refresh':return await self.refresh()
             if data['command']=='timeline':self.timeline_page=await self.get_timeline(data['key'])
@@ -194,5 +199,6 @@ class Extension(Plugin):
         self.state.set(key, updated)
         return updated
 
-    def settings_saved(self):
+    async def settings_saved(self):
         self.client.cache.clear()
+        await self.device_watcher.reconnect()

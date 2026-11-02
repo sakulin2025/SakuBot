@@ -17,6 +17,8 @@ class Extension(Plugin):
         for name, method in [('ha_initialize',self.initialize_tool),('ha_query',self.query),('ha_history',self.history),('ha_control',self.control),('ha_manual',self.operation_manual)]:self.function(method,name=name)
         policies=[{'value':x,'label':y} for x,y in [('controllable','可控制'),('readonly','只读'),('ignore','忽略')]]
         self.management('Home Assistant',[collection('entities','实体',[field('entity_id','实体 ID',readonly=True),field('name','名称',readonly=True),field('area','房间',readonly=True),field('alias','别名'),field('group','分组'),field('policy','策略','select',options=policies)],key='entity_id',create=False,remove=False),collection('rooms','房间',[field('area','ID',readonly=True),field('name','名称',readonly=True),field('enabled','启用','boolean')],key='area',create=False,remove=False),settings_section([field('content','用户要求与操作手册','text')],label='操作手册',id='manual'),settings_section(self.fields)],self.view,self.manage,group_id='smart_home')
+        from .triggers import register
+        register(self)
     def availability(self):
         ok=bool(self.config.get('base_url') and self.config.get('token'))
         return {'available':ok,'reason':'' if ok else '尚未配置 HA 连接'}

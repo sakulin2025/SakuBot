@@ -109,6 +109,7 @@ class Polling:
                         'last_seen': now, 'completed': ended is not None and ended <= now}
                 if not baseline or ended is None or ended > now or now - ended > int(self.config.get('max_age_hours', 24)) * 3600:
                     continue
+                self.publish_trigger('workout_completed', {'workout':row_summary(row),'observed_at':now},uid='workout:'+group)
                 for rule in rules.values():
                     if not rule.get('enabled'):
                         continue
@@ -125,6 +126,7 @@ class Polling:
             snapshot['seen'] = {key: value for key, value in seen.items() if now - value.get('last_seen', now) <= max(31, lookback * 2) * 86400}
             self.state.set('monitor', snapshot)
             self.poll_error = ''
+            self.publish_trigger('sync_completed', {'count':len(records),'observed_at':now},uid='sync:'+str(now))
             await self.deliver_pending(snapshot)
 
     async def deliver_pending(self, snapshot):

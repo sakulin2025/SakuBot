@@ -140,6 +140,8 @@ export interface Schedule {
     mode: string
     at?: string
     interval_seconds?: number
+    script_id?: string
+    script_params?: Record<string, unknown>
     daily_time?: string
     timezone?: string
     legacy_target?: string

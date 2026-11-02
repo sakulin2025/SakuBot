@@ -218,8 +218,19 @@ class Polling:
                 record = current_records.get(snapshot['id'])
                 if not record or StatusClient.key(record) != StatusClient.key(snapshot):
                     continue
-                observation = self.observation(observations.get(record['id'], {}), record, result, settings['offline_confirmations'])
+                previous = observations.get(record['id'], {})
+                observation = self.observation(previous, record, result, settings['offline_confirmations'])
                 observations[record['id']] = observation
+                if previous.get('signature') != observation.get('signature'):
+                    previous = {}
+                changes = []
+                if previous and previous.get('stable') != observation.get('stable'):
+                    changes.append('status')
+                if previous and previous.get('players') != observation.get('players'):
+                    changes.append('players')
+                self.publish_trigger('observation', {'server_id':record['id'],'server':self.public(record),
+                    'previous':previous,'current':observation,'changes':changes},
+                    uid=record['id']+':'+str(observation['checked_at']))
                 for rule in data['rules'].values():
                     if not rule['enabled'] or rule['server_id'] != record['id']:
                         continue

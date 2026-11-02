@@ -715,3 +715,13 @@ class Extension(Plugin):
 ## 长期记忆与语义召回
 
 先在模型管理中配置支持 OpenAI 兼容 `/embeddings` 接口的 Embedding 模型，再在记忆设置中选择。保存启用的 Embedding 模型时会检查接口并记录维度。未配置时语义记忆不可用，已有记忆保留；配置或更换模型后插件后台为已有记录建立对应索引。模型可使用 `memory_write` 保存事实、`memory_search` 语义检索；唤醒时插件将相关结果作为当前轮临时上下文注入，其他轮不会继承。主人网页或 QQ 主对话完成后，后台使用文本模型提取明确、稳定的事实，不采集密码等凭据。可关闭自动记忆。上传的 UTF-8 TXT、Markdown、可提取文字的 PDF 和 DOCX 会分块索引；扫描版 PDF 不含 OCR。
+
+## 脚本自动化与触发源
+
+公共 API `trigger_source`、`emit_trigger`、`publish_trigger` 供插件声明来源与发布业务事件。订阅随插件生命周期撤销，绑定与执行由框架持久保存。详见 [脚本与触发源开发文档](scripts.md)。
+
+## 框架管理与开发发布
+
+可选内置插件“系统管理”提供主智能体管理工具；框架持久队列、增量配置、监督重启、插件开发目录、Vue 构建 SDK 和程序回滚见 [系统管理](system-control.md)。
+
+工具声明新增 `self.tool(name, description, parameters, handler, audience="main")`，仅主智能体模型调用可见并可执行。默认 `audience="all"` 保持现有行为。显式启用的主智能体工具不受普通人格插件列表屏蔽，但仍受插件可用性和 `with_tools(False)` 控制；协作智能体、脚本和页面 `call_tool()` 不能使用。

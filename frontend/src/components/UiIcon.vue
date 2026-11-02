@@ -2,6 +2,8 @@
 import { computed } from 'vue'
 import {
   LayoutDashboard,
+  Terminal,
+  Play,
   Radio,
   ListTodo,
   Cpu,
@@ -56,6 +58,8 @@ const props = withDefaults(defineProps<{ name: string; size?: number; strokeWidt
 })
 const icons = {
   sun: Sun,
+  code: Terminal,
+  play: Play,
   moon: Moon,
   monitor: Monitor,
   chat: MessagesSquare,

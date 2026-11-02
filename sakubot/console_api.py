@@ -12,6 +12,10 @@ from fastapi.responses import FileResponse, RedirectResponse
 def register_console_api(app, authorize, config, store, runtime, config_lock):
     auth = [Depends(authorize)]
 
+    @app.api_route('/hooks/{plugin}/{path:path}', methods=['POST'])
+    async def plugin_webhook(plugin: str, path: str, request: Request):
+        return await runtime.registry.dispatch(plugin, path, request, webhook=True)
+
     @app.get("/api/plugin-registry", dependencies=auth)
     async def plugin_registry():
         from .plugin import PAGE_GROUPS
@@ -21,34 +25,30 @@ def register_console_api(app, authorize, config, store, runtime, config_lock):
 
     @app.patch("/api/plugins/{identifier}", dependencies=auth)
     async def toggle_plugin(identifier: str, request: Request):
-        identifier = canonical(identifier)
         data = await request.json()
-        enabled = data.get("enabled")
-        if type(enabled) is not bool:
-            raise ValueError("插件状态无效")
-        if required(identifier) and not enabled:
-            raise ValueError('基础能力不能停用')
-        async with config_lock:
-            settings = config.settings.model_copy(deep=True)
-            present = runtime.registry.loaded(identifier)
-            try:
-                if enabled:
-                    await runtime.registry.enable(identifier, start=runtime.sources_started)
-                    if identifier not in settings.plugins:
-                        settings.plugins.append(identifier)
-                else:
-                    await runtime.registry.disable(identifier)
-                    settings.plugins = [name for name in settings.plugins if name != identifier]
-                config.save(settings)
-                runtime.model.settings = settings
-            except Exception as exc:
-                if enabled and not present:
-                    await runtime.registry.disable(identifier)
-                elif not enabled and present:
-                    await runtime.registry.enable(identifier, start=runtime.sources_started)
-                store.log("error", identifier, "plugin.toggle.failed", data={"error": type(exc).__name__})
-                raise ValueError("插件切换失败") from None
+        await runtime.control.plugins.toggle(identifier, data.get('enabled'))
         return await plugin_registry()
+
+    @app.get('/api/system-control', dependencies=auth)
+    async def system_control():
+        return runtime.control.status()
+
+    @app.get('/api/system-operations', dependencies=auth)
+    async def system_operations():
+        return runtime.control.operations.list()
+
+    @app.get('/api/system-operations/{identifier}', dependencies=auth)
+    async def system_operation(identifier: str):
+        return runtime.control.operations.get(identifier)
+
+    @app.post('/api/system-operations', dependencies=auth)
+    async def submit_operation(request: Request):
+        data = await request.json()
+        return runtime.control.submit(data.get('action'), data.get('payload', {}))
+
+    @app.delete('/api/system-operations/{identifier}', dependencies=auth)
+    async def cancel_operation(identifier: str):
+        return runtime.control.operations.cancel(identifier)
 
     @app.get('/api/plugins/{identifier}/settings', dependencies=auth)
     async def plugin_settings(identifier: str):
@@ -64,57 +64,12 @@ def register_console_api(app, authorize, config, store, runtime, config_lock):
 
     @app.post("/api/plugins/{identifier}/reload", dependencies=auth)
     async def reload_plugin(identifier: str):
-        identifier = canonical(identifier)
-        if required(identifier):
-            raise ValueError('基础能力由系统管理')
-        async with config_lock:
-            if not runtime.registry.loaded(identifier):
-                raise ValueError("插件未启用")
-            await runtime.registry.reload(identifier)
+        await runtime.control.plugins.reload(identifier)
         return await plugin_registry()
 
     @app.delete("/api/plugins/{identifier}", dependencies=auth)
     async def delete_plugin(identifier: str, purge: bool = Query(False), confirm: bool = Query(False)):
-        import shutil
-        if not confirm:
-            raise ValueError('请确认删除插件')
-        async with config_lock:
-            item = next((row for row in runtime.registry.installed_catalog() if row["name"] == identifier), None)
-            if not item or item["builtin"]:
-                raise ValueError("仅可删除外部插件")
-            await runtime.registry.disable(identifier)
-            program_path(config.root, identifier)
-            root = (config.root / "plugins").resolve()
-            package = (root / identifier).resolve()
-            file = (root / (identifier + ".py")).resolve()
-            if not package.is_relative_to(root) or not file.is_relative_to(root):
-                raise ValueError("插件路径无效")
-            if package.is_dir():
-                shutil.rmtree(package)
-            else:
-                file.unlink(missing_ok=True)
-                file.with_suffix(".json").unlink(missing_ok=True)
-            preinstalled = store.kv_get('preinstalled:state', {})
-            if identifier in preinstalled.get('ids', []):
-                preinstalled['ids'] = [name for name in preinstalled['ids'] if name != identifier]
-                store.kv_set('preinstalled:state', preinstalled)
-            if purge:
-                data_dir = config.root / 'plugin_data' / identifier
-                if data_dir.is_symlink():
-                    data_dir.unlink()
-                elif data_dir.exists():
-                    shutil.rmtree(data_dir)
-                store.execute('DELETE FROM kv WHERE substr(key,1,?)=? OR substr(key,1,?)=? OR substr(key,1,?)=?',
-                    (len(identifier)+1, identifier+':', len('agent:history:'+identifier+':'), 'agent:history:'+identifier+':',
-                     len('agent:pending:'+identifier+':'), 'agent:pending:'+identifier+':'))
-            store.execute("UPDATE events SET status='cancelled',meta=json_set(meta,'$.exclude_context',json('true')) WHERE source=? AND status='pending' AND kind='wake'", (identifier,))
-            settings = config.settings.model_copy(deep=True)
-            settings.plugins = [name for name in settings.plugins if name != identifier]
-            config.save(settings)
-            runtime.model.settings = settings
-            runtime.registry.revision = uuid.uuid4().hex
-            runtime.registry.errors.pop(identifier, None)
-            store.log('warning', identifier, 'plugin.deleted', data={'purge': purge})
+        await runtime.control.plugins.delete(identifier, purge=purge, confirm=confirm)
         return await plugin_registry()
 
     @app.post('/api/plugin-packages/import', dependencies=auth)
@@ -132,8 +87,7 @@ def register_console_api(app, authorize, config, store, runtime, config_lock):
 
     @app.get('/api/plugins/{identifier}/export', dependencies=auth)
     async def download_plugin(identifier: str, include_data: bool = Query(False)):
-        async with config_lock:
-            path = export_package(config, store, identifier, include_data)
+        path = await runtime.control.plugins.export_archive(identifier, include_data)
         return FileResponse(path, filename=identifier+'.zip', media_type='application/zip',
             background=BackgroundTask(path.unlink, missing_ok=True))
 

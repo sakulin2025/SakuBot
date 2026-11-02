@@ -30,6 +30,7 @@ const labels: Record<string, string> = {
   context: '上下文',
   wake: '唤醒 Agent',
   notify: '直接通知',
+  script: '执行脚本',
   sending: '发送中',
 }
 const tone = computed(() =>

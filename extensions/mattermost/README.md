@@ -6,4 +6,12 @@
 
 WebSocket 和文件服务由 Mattermost 提供，Token 使用 Bearer 认证。连接状态和错误可从插件状态查看。
 
+回应分段配置同时适用于主对话自动投递和 `mattermost_send` 的 message：共用正则分割、移除、裁剪、换行合并和随机间隔；首段立即发送，后续各段随机等待。同一频道的完整消息不会相互穿插，附件只在首段出现，各段保留相同 root_id。工具结果返回首段 id 和全部 post_ids；部分失败不自动重试，需先核实已发送消息。
+
 Agent 工具包含用户、团队、频道和消息查询，发送消息与附件、消息编辑删除、表情、置顶、文件上传下载，以及 `mattermost_request` 官方 JSON API 入口。工具仅在插件可用且对该 Agent 可见时提供，权限取决于 Mattermost 机器人账号。附带 `mattermost` Skill。
+
+「斜杠命令」页集中展示接收设置、请求方向、Mattermost 配置步骤及已声明命令表格。只需填写 Mattermost 能访问的 SakuBot 基础地址，例如容器内的 `http://sakubot:6190/` 或外部访问的 `https://sakubot.example.com/`。插件自动拼接 `hooks/mattermost/slash` 并显示完整请求地址。它指向 SakuBot，连接页的服务器地址则指向 Mattermost。修改后对已有命令点击“同步 / 修复”更新远端地址。旧版完整请求地址会自动转换为基础地址。
+
+页面与 `mattermost_command` 工具支持创建、修改、启停、修复、重置令牌及删除自己管理的指令。先保存脚本，选择团队和命令名称即可自动创建远端命令、私下登记验证令牌并绑定脚本。无需去 Mattermost 手动建命令，令牌由插件管理，不提供手动登记入口。每条命令的请求地址统一取接收设置，无需重复填写。
+
+服务端需要开启自定义 Slash 指令，机器人账号需具备目标团队的 `manage_slash_commands` 权限。内部地址需要在 Mattermost 的 `ServiceSettings.AllowedUntrustedInternalConnections` 中允许对应主机名。停用只阻止本地接收；删除同时移除远端命令及自己的绑定，不删除脚本或执行记录。远端操作超时会保留待修复登记，不盲目重复创建。收到命令只排队执行脚本，不自动唤醒主 Agent；脚本可主动发送结果或按条件唤醒。升级会删除旧的手动令牌配置，只接受本插件创建并管理的命令；已托管命令的令牌保留。
