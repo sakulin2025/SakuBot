@@ -1,15 +1,50 @@
 {
   "name": "freereps_activity",
   "label": "FreeReps 活动数据同步",
-  "version": "1.0.0",
+  "version": "1.1.1",
   "settings": {
-    "connection": {"kind": "http", "url_field": "base_url", "path": "/api/v1/version", "required_paths": ["version"]},
+    "connection": {
+      "kind": "http",
+      "url_field": "base_url",
+      "path": "/api/v1/version",
+      "required_paths": [
+        "version"
+      ]
+    },
     "fields": [
-      {"key":"base_url","label":"FreeReps 地址","type":"string","required":true,"format":"http-url","default":"http://freereps:8080","placeholder":"http://freereps:8080"},
-      {"key":"poll_enabled","label":"轮询","type":"boolean","default":false},
-      {"key":"poll_interval_minutes","label":"轮询间隔 · 分钟","type":"number","min":1,"max":1440,"required":true,"default":5},
-      {"key":"lookback_days","label":"回看范围 · 天","type":"number","min":1,"max":90,"required":true,"default":7},
-      {"key":"max_age_hours","label":"训练结束有效期 · 小时","type":"number","min":1,"max":2160,"required":true,"default":24}
+      {
+        "key": "base_url",
+        "label": "FreeReps 地址",
+        "type": "string",
+        "required": true,
+        "format": "http-url",
+        "default": "http://freereps:8080",
+        "placeholder": "http://freereps:8080"
+      },
+      {
+        "key": "poll_enabled",
+        "label": "轮询",
+        "type": "boolean",
+        "default": false
+      },
+      {
+        "key": "poll_interval_minutes",
+        "label": "轮询间隔 · 分钟",
+        "type": "number",
+        "min": 1,
+        "max": 1440,
+        "required": true,
+        "default": 5
+      },
+      {
+        "key": "lookback_days",
+        "label": "回看范围 · 天",
+        "type": "number",
+        "min": 1,
+        "max": 90,
+        "required": true,
+        "default": 7
+      }
     ]
   }
 }

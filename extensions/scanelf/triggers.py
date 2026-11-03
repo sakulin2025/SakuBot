@@ -25,7 +25,10 @@ def register(plugin):
         return {'mac': [{'value': mac, 'label': (row.get('alias') or row.get('name') or mac) + ' · ' + mac}
                         for mac, row in devices.items()]}
 
-    plugin.trigger_source('device_state_changed','设备上下线',
-        object_schema({'mac':{'type':'string','title':'设备 MAC'},'state':{'type':'string','title':'状态','enum':['any','online','offline'],'default':'any'}}),
-        object_schema({'mac':{'type':'string'},'online':{'type':'boolean'},'previous_online':{'type':'boolean'},'device':{'type':'object'},'at':{'type':'number'}},('mac','online')),
-        subscribe=plugin.device_watcher.subscribe,match=match,options=options,validate=validate)
+    for family, title in [('device_state_changed', '设备上下线'), ('device_online', '设备上线'),
+                          ('device_offline', '设备下线'), ('device_discovered', '发现新设备')]:
+        plugin.trigger_source(family + '.*', title,
+            object_schema({'mac':{'type':'string','title':'设备 MAC · 留空全部'},'state':{'type':'string','title':'状态','enum':['any','online','offline'],'default':'any'}}),
+            object_schema({'mac':{'type':'string'},'online':{'type':'boolean'},'previous_online':{'type':['boolean','null']},'device':{'type':'object'},'at':{'type':'number'}},('mac','online')),
+            subscribe=plugin.device_watcher.subscribe,match=match,options=options,validate=validate,
+            legacy_ids=(family,) if family == 'device_state_changed' else ())

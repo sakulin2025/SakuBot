@@ -84,6 +84,16 @@ async def status():
     return {"version": __version__, **runtime.status()}
 
 
+@app.post('/api/chat/compress-context', dependencies=[Depends(authorize)])
+async def compress_main_context(request: Request):
+    data = await request.json()
+    if not isinstance(data, dict) or data.get('confirmation') != '压缩':
+        raise ValueError('请确认压缩主对话上下文')
+    from .manual_compression import begin
+    async with config_lock:
+        return begin(runtime)
+
+
 @app.post('/api/chat/clear-context', dependencies=[Depends(authorize)])
 async def clear_main_context(request: Request):
     data = await request.json()

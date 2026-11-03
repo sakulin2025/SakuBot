@@ -725,3 +725,5 @@ class Extension(Plugin):
 可选内置插件“系统管理”提供主智能体管理工具；框架持久队列、增量配置、监督重启、插件开发目录、Vue 构建 SDK 和程序回滚见 [系统管理](system-control.md)。
 
 工具声明新增 `self.tool(name, description, parameters, handler, audience="main")`，仅主智能体模型调用可见并可执行。默认 `audience="all"` 保持现有行为。显式启用的主智能体工具不受普通人格插件列表屏蔽，但仍受插件可用性和 `with_tools(False)` 控制；协作智能体、脚本和页面 `call_tool()` 不能使用。
+
+触发源推荐按 `family.*` 声明，按 `family.<对象ID>` 发布。通过 `legacy_ids=("old_family",)` 将旧绑定迁到新声明，保留动作和参数。泛事件可多次绑定，具名 ID 只能一个动作。详见 [事件与脚本](scripts.md)。

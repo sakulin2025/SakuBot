@@ -20,7 +20,7 @@ class Sources:
         self.retry = {}
         self.lock = asyncio.Lock()
 
-    def declare(self, owner, key, name, parameters, event_schema, *, subscribe=None, options=None, match=None, validate=None):
+    def declare(self, owner, key, name, parameters, event_schema, *, subscribe=None, options=None, match=None, validate=None, legacy_ids=()):
         if not isinstance(key,str) or not re.fullmatch(r'[A-Za-z0-9_.*:-]{1,128}',key):
             raise ValueError('触发源名称无效')
         full = owner + '.' + key
@@ -28,6 +28,14 @@ class Sources:
             raise ValueError('触发源 ID 已存在')
         self.sources[full] = {'id':full,'plugin_id':owner,'name':name,'parameters':schema(parameters),
             'event_schema':schema(event_schema),'subscribe':subscribe,'options':options,'match':match,'validate':validate,'generation':uuid.uuid4().hex}
+        # A declaration upgrade preserves binding IDs, actions and parameter filters.
+        for binding in self.scripts.repo.list('bindings'):
+            if binding['source'] in {owner + '.' + value for value in legacy_ids}:
+                try:
+                    self.scripts.save_binding({**binding, 'source': full})
+                except (ValueError, jsonschema.ValidationError) as exc:
+                    self.scripts.runtime.store.log('warning', owner, 'trigger.binding.migration_failed',
+                        data={'binding_id': binding['id'], 'error': str(exc)[:300]})
         return full
 
     def resolve(self, key):
@@ -88,12 +96,13 @@ class Sources:
             source = self.resolve(binding['source'])
             if not binding.get('enabled') or not binding.get('available') or not source or not self.scripts.runtime.registry.availability(source['plugin_id'])['available']:
                 continue
-            try:
-                script = self.scripts.repo.get(binding['script_id'])
-            except ValueError:
-                continue
-            if not script['enabled']:
-                continue
+            if binding.get('target_kind', 'script') == 'script':
+                try:
+                    script = self.scripts.repo.get(binding['script_id'])
+                except ValueError:
+                    continue
+                if not script['enabled']:
+                    continue
             key = source['id'] + ':' + encode(binding['source_params'])
             desired[key] = (source, binding['source_params'])
         for key in list(self.active):
@@ -127,7 +136,7 @@ class Sources:
             item['task'] = self.scripts.spawn(start())
 
     async def emit(self, owner, key, payload, *, uid=None, subscription=None):
-        if not isinstance(key,str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{1,128}',key):
+        if not isinstance(key,str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{1,512}',key):
             raise ValueError('实际事件名称无效，不能带通配符')
         full = owner + '.' + key
         source = self.resolve(full)
@@ -154,8 +163,7 @@ class Sources:
                     continue
                 if not matcher and subscription is None and any(value not in ('',None,[]) and payload.get(field) != value for field,value in params.items()):
                     continue
-                queued.append(self.scripts.enqueue(binding['script_id'], params=binding['params'], event=event,
-                    binding=binding, uid=execution_uid))
+                queued.append(self.scripts.enqueue_binding(binding, event, execution_uid))
             except Exception as exc:
                 error = str(exc)[:300] if isinstance(exc,(ValueError,RuntimeError)) else type(exc).__name__
                 self.scripts.trigger_failure(binding,event,execution_uid,error)

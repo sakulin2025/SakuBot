@@ -1,15 +1,20 @@
 import json
+from pathlib import Path
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 import httpx
 from sakubot.plugin import Plugin
 from sakubot.plugin_support import field, collection
+from .polling import BalancePolling
 
 
-class Extension(Plugin):
+class Extension(BalancePolling, Plugin):
     name = 'deepseek_balance'
 
     def setup(self):
+        self.config = self.configure({'poll_enabled': True, 'poll_interval_minutes': 120, 'warning_threshold': '10', 'poll_provider_id': ''})
+        self.fields = json.loads((Path(__file__).parent / 'plugin.json').read_text())['settings']['fields']
+        self.setup_polling()
         self.function(self.balance, name='deepseek_balance')
         self.management('DeepSeek 余额查询',[collection('providers','供应商',[field('id','ID'),field('name','名称'),field('last_balance','最近余额')],create=False,edit=False,remove=False,row_commands=[{'id':'query','label':'查询余额'}])],self.view,self.manage,group_id='productivity')
 
@@ -25,7 +30,7 @@ class Extension(Plugin):
     async def manage(self,data):return await self.balance(provider_id=data['key'])
 
     async def balance(self, invocation=None, provider_id:str=''):
-        """主动查询 DeepSeek 官方供应商的余额。用户问“你还有多少钱”“多少大白饭”“饭钱”“伙食费”“余额/额度”且指 AI 的调用经费时使用；不要回答自己不吃饭，不猜余额。返回账户金额与实际币种，不换算为 token、顿数或聊天次数。仅主动查询，不轮询；复用框架供应商 Key，不返回密钥。
+        """主动查询 DeepSeek 官方供应商的余额。用户问“你还有多少钱”“多少大白饭”“饭钱”“伙食费”“余额/额度”且指 AI 的调用经费时使用；不要回答自己不吃饭，不猜余额。返回账户金额与实际币种，不换算为 token、顿数或聊天次数。此工具只主动查询；后台轮询由插件设置控制。复用框架供应商 Key，不返回密钥。
 
         Args:
             provider_id(string): 可选供应商 ID，留空使用当前 Agent 的模型供应商。

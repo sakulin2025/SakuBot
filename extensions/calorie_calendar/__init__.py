@@ -43,9 +43,9 @@ class Extension(Plugin):
             CREATE TABLE IF NOT EXISTS days (day TEXT PRIMARY KEY, confirmed INTEGER NOT NULL, updated REAL NOT NULL);
         ''')
         for source, title in [('record_changed','热量记录变化'),('confirmation_changed','热量日期确认变化')]:
-            self.trigger_source(source,title,object_schema({'day':{'type':'string','title':'日期 · 留空不限','pattern':r'^$|^\d{4}-\d{2}-\d{2}$'}}),
+            self.trigger_source(source + '.*',title,object_schema({'day':{'type':'string','title':'日期 · 留空不限','pattern':r'^$|^\d{4}-\d{2}-\d{2}$'}}),
                 object_schema({'day':{'type':'string'},'action':{'type':'string'},'record_id':{'type':'string'},'summary':{'type':'object'}},('day','action','summary')),
-                match=lambda event,params:not params.get('day') or params['day']==event['day'])
+                match=lambda event,params:not params.get('day') or params['day']==event['day'],legacy_ids=(source,))
         self.page('manage', '热量日历' , Path(__file__).parent / 'web' / 'dist', icon='activity', group_id='productivity', order=30)
         self.api('calendar', self.calendar_api)
         self.api('day', self.day_api)
@@ -154,9 +154,9 @@ class Extension(Plugin):
         except sqlite3.IntegrityError:
             raise ValueError('该日期已有此特殊标签，请修改已有记录') from None
         result = self.day(day)
-        self.publish_trigger('record_changed', {'day':day,'action':'update' if old else 'add','record_id':saved_id,'summary':result})
+        self.publish_trigger('record_changed.' + day, {'day':day,'action':'update' if old else 'add','record_id':saved_id,'summary':result})
         if previous.get('day') and previous['day'] != day:
-            self.publish_trigger('record_changed', {'day':previous['day'],'action':'move','record_id':saved_id,'summary':self.day(previous['day'])})
+            self.publish_trigger('record_changed.' + previous['day'], {'day':previous['day'],'action':'move','record_id':saved_id,'summary':self.day(previous['day'])})
         return result
 
     def delete_entry(self, identifier):
@@ -167,7 +167,7 @@ class Extension(Plugin):
         with self.db:
             self.db.execute('DELETE FROM entries WHERE id=?', (identifier,))
         result=self.day(day)
-        self.publish_trigger('record_changed', {'day':day,'action':'delete','record_id':identifier,'summary':result})
+        self.publish_trigger('record_changed.' + day, {'day':day,'action':'delete','record_id':identifier,'summary':result})
         return result
 
     def confirm(self, day, confirmed):
@@ -181,7 +181,7 @@ class Extension(Plugin):
             self.db.execute('INSERT INTO days VALUES (?,?,?) ON CONFLICT(day) DO UPDATE SET confirmed=excluded.confirmed,updated=excluded.updated', (day, int(confirmed), time.time()))
         result=self.day(day)
         if previous != confirmed:
-            self.publish_trigger('confirmation_changed', {'day':day,'action':'confirm' if confirmed else 'unconfirm','summary':result})
+            self.publish_trigger('confirmation_changed.' + day, {'day':day,'action':'confirm' if confirmed else 'unconfirm','summary':result})
         return result
 
     async def calendar_api(self, request):

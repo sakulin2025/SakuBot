@@ -66,7 +66,7 @@ class Extension(MattermostTools, Plugin):
         return {'available': self.online, 'reason': '' if self.online else self.error}
 
     def script_references(self, identifier):
-        return any(row.get('script_id') == identifier for row in self.commands.records().values())
+        return self.commands.script_references(identifier)
 
     async def command_teams(self, request):
         return await self.lookup(None, {'action': 'teams'})

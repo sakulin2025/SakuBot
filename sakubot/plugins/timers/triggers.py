@@ -42,7 +42,7 @@ def register(plugin):
             plugin.runtime.store.kv_set(state_key,{'next_at':due})
             while True:
                 await asyncio.sleep(max(0,due-time.time()))
-                await emit({'scheduled_at':due,'observed_at':time.time()},uid=state_key+':'+str(due))
+                await emit({'scheduled_at':due,'observed_at':time.time()},uid=state_key+':'+str(due),topic='schedule.'+params['timing'])
                 if params['timing']=='once':
                     plugin.runtime.store.kv_set(state_key,{'done':True})
                     await asyncio.Event().wait()
@@ -54,6 +54,6 @@ def register(plugin):
             await asyncio.gather(task,return_exceptions=True)
         return close
 
-    plugin.trigger_source('schedule','定时触发',parameters,
+    plugin.trigger_source('schedule.*','定时触发',parameters,
         object_schema({'scheduled_at':{'type':'number'},'observed_at':{'type':'number'}},('scheduled_at','observed_at')),
-        subscribe=subscribe,validate=lambda params:calculate(params,time.time()))
+        subscribe=subscribe,validate=lambda params:calculate(params,time.time()),legacy_ids=('schedule',))

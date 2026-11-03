@@ -1,7 +1,7 @@
 {
   "name": "ha_control",
   "label": "Home Assistant",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "settings": {
     "fields": [
       {

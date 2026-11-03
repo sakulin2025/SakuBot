@@ -1,9 +1,9 @@
 import asyncio
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 from sakubot.plugin import Plugin
 from sakubot.plugin_support import field, collection, settings_section
-from .client import Client, date_range, workout_id, validate_url, LOCAL_ZONE, local_times
+from .client import Client, date_range, workout_id, validate_url, LOCAL_ZONE
 from .polling import Polling
 from .report import make_report
 
@@ -13,16 +13,14 @@ class Extension(Polling, Plugin):
 
     def setup(self):
         self.config = self.configure({'base_url': 'http://freereps:8080', 'poll_enabled': False,
-            'poll_interval_minutes': 5, 'lookback_days': 7, 'max_age_hours': 24})
+            'poll_interval_minutes': 5, 'lookback_days': 7})
         self.client = Client(self.config)
         self.report_workouts = []
         self.setup_polling()
         from sakubot.plugin import object_schema
-        self.trigger_source('workout_completed','训练完成',object_schema({'workout_type':{'type':'string','title':'训练名称关键词'}}),
+        self.trigger_source('workout_added.*','新增训练记录',object_schema({'workout_type':{'type':'string','title':'训练名称关键词'}}),
             object_schema({'workout':{'type':'object'},'observed_at':{'type':'number'}},('workout','observed_at')),
-            match=lambda event,params:not params.get('workout_type') or params['workout_type'].casefold() in str(event['workout'].get('name','')).casefold())
-        self.trigger_source('sync_completed','活动同步完成',object_schema(),
-            object_schema({'count':{'type':'integer'},'observed_at':{'type':'number'}},('count','observed_at')))
+            match=lambda event,params:not params.get('workout_type') or params['workout_type'].casefold() in str(event['workout'].get('name','')).casefold(),legacy_ids=('workout_added',))
 
         for name, method in [('freereps_workouts', self.workouts), ('freereps_workout_detail', self.detail),
                 ('freereps_activity', self.activity), ('freereps_metrics', self.metrics),
@@ -32,32 +30,14 @@ class Extension(Polling, Plugin):
         self.fields = [field('base_url', 'FreeReps 地址', required=True, format='http-url', default='http://freereps:8080'),
             field('poll_enabled', '轮询', 'boolean', default=False),
             field('poll_interval_minutes', '轮询间隔 · 分钟', 'number', min=1, max=1440, required=True, default=5),
-            field('lookback_days', '回看范围 · 天', 'number', min=1, max=90, required=True, default=7),
-            field('max_age_hours', '训练结束有效期 · 小时', 'number', min=1, max=2160, required=True, default=24)]
-        rule_fields = [field('name', '规则名称', required=True, placeholder='例如：训练完成后提醒我'),
-            field('enabled', '启用', 'boolean', default=False),
-            field('workout_type', '训练类型筛选', placeholder='例如：跑步；留空匹配所有训练'),
-            field('mode', '事件类型', 'select', required=True, default='wake', placeholder='选择事件处理方式', options=[
-                {'value': 'wake', 'label': '唤醒智能体'}, {'value': 'context', 'label': '上下文'}, {'value': 'notify', 'label': '直接通知'}]),
-            field('delay_minutes', '等待数据补全 · 分钟', 'number', min=0, max=1440, required=True, default=0,
-                placeholder='例如：5；填 0 立即提交'),
-            field('prompt', '给智能体的处理要求', 'text',
-                placeholder='仅在选择「唤醒智能体」时使用。例如：查看本次训练，简要告诉我训练情况；数据不足时不要猜测。留空则不添加额外要求。'),
-            field('notify_text', '直接发送的通知文字', 'text',
-                placeholder='仅在选择「直接通知」时使用，按原文发送。例如：你的训练记录已同步。留空则发送默认通知。'),
-            field('include_context', '通知加入上下文', 'boolean', default=False)]
+            field('lookback_days', '回看范围 · 天', 'number', min=1, max=90, required=True, default=7)]
         self.management('FreeReps 活动数据同步', [
             collection('workouts', '训练报告', [field('name', '训练类型'), field('start_time', '开始时间'),
                 field('duration_sec', '时长 · 秒'), field('distance', '距离'), field('distance_units', '距离单位')],
                 create=False, edit=False, remove=False, commands=[{'id': 'refresh', 'label': '获取训练'}],
                 row_commands=[{'id': 'report', 'label': '生成报告'}]),
             collection('monitor', '轮询状态', [field('enabled', '轮询', 'boolean'), field('baseline', '基线', 'boolean'),
-                field('last_poll', '最近轮询'), field('pending', '待提交'), field('error', '错误')], create=False, edit=False, remove=False),
-            collection('rules', '事件规则', rule_fields, columns=[field('name', '名称'), field('enabled', '启用', 'boolean'),
-                field('workout_type', '训练类型'), field('mode', '事件类型'), field('delay_minutes', '等待 · 分钟')]),
-            collection('history', '事件记录', [field('name', '训练类型'), field('ended_at', '结束时间'),
-                field('at_text', '提交时间'), field('mode', '事件类型'), field('status', '状态')],
-                create=False, edit=False, remove=False),
+                field('last_poll', '最近轮询'), field('pending', '待发布事件'), field('error', '错误')], create=False, edit=False, remove=False),
             settings_section(self.fields)], self.view, self.manage, group_id='productivity')
 
     def availability(self):
@@ -68,6 +48,8 @@ class Extension(Polling, Plugin):
             return {'available': False, 'reason': '待配置 FreeReps 地址'}
 
     async def start(self):
+        from .migration import migrate_events
+        migrate_events(self)
         self.background(self.poll_loop())
 
     async def stop(self):
@@ -76,12 +58,11 @@ class Extension(Polling, Plugin):
 
     def view(self):
         data = self.state.get('monitor', {})
-        history = [{**local_times(row), 'at_text': datetime.fromtimestamp(row['at'], LOCAL_ZONE).isoformat()} for row in data.get('history', [])]
         last = data.get('last_poll_at')
         status = {'id': 'monitor', 'enabled': self.config.get('poll_enabled', False), 'baseline': data.get('baseline', False),
             'last_poll': datetime.fromtimestamp(last, LOCAL_ZONE).isoformat() if last else '',
-            'pending': len(data.get('pending', {})), 'error': self.poll_error}
-        return {'data': {'workouts': self.report_workouts, 'monitor': [status], 'rules': list(self.state.get('rules', {}).values()), 'history': history,
+            'pending': len(data.get('trigger_pending', {})), 'error': self.poll_error}
+        return {'data': {'workouts': self.report_workouts, 'monitor': [status],
             'config': self.config.public([f['key'] for f in self.fields])}}
 
     async def manage(self, data):
@@ -94,34 +75,7 @@ class Extension(Polling, Plugin):
                 return {'image': self.artifact(self.workspace.path(result['path'], allow_root=False)),
                     'path': result['path']}
             raise ValueError('操作无效')
-        if data['section'] != 'rules':
-            raise ValueError('操作无效')
-        rules = self.state.get('rules', {})
-        identifier = str(data.get('key') or '')
-        if data['action'] == 'remove':
-            if identifier not in rules:
-                raise ValueError('规则不存在')
-            rules.pop(identifier)
-        elif data['action'] == 'save':
-            if identifier and identifier not in rules:
-                raise ValueError('规则不存在')
-            identifier = identifier or uuid.uuid4().hex[:12]
-            value = data['value']
-            name = str(value.get('name', '')).strip()
-            if not name:
-                raise ValueError('规则名称不能为空')
-            mode = value.get('mode', 'wake')
-            if mode not in ('wake', 'context', 'notify'):
-                raise ValueError('事件类型无效')
-            rules[identifier] = {'id': identifier, 'name': name, 'enabled': value.get('enabled', False),
-                'workout_type': value.get('workout_type', '').strip(), 'mode': mode,
-                'delay_minutes': value.get('delay_minutes', 0), 'prompt': value.get('prompt', '').strip(),
-                'notify_text': value.get('notify_text', '').strip(), 'include_context': value.get('include_context', False)}
-        else:
-            raise ValueError('操作无效')
-        self.state.set('rules', rules)
-        self.poll_wakeup.set()
-        return {'saved': True}
+        raise ValueError('操作无效')
 
     async def workouts(self, start: str='', end: str='', workout_type: str='', limit: int=30, offset: int=0):
         """按时间和训练类型查询 FreeReps 训练记录。新记录的到达时间不等于训练结束时间。返回分页与训练 ID；类型筛选需使用 FreeReps 实际类型名称。
@@ -199,7 +153,7 @@ class Extension(Polling, Plugin):
         state = self.state.get('monitor', {})
         result = {'version': version, 'poll_enabled': self.config.get('poll_enabled', False),
             'baseline_ready': state.get('baseline', False), 'last_poll_at': datetime.fromtimestamp(state['last_poll_at'], LOCAL_ZONE).isoformat() if state.get('last_poll_at') else None,
-            'next_poll_at': datetime.fromtimestamp(self.next_poll, LOCAL_ZONE).isoformat() if self.next_poll else None, 'timezone': 'Asia/Shanghai', 'pending_events': len(state.get('pending', {})), 'poll_error': self.poll_error}
+            'next_poll_at': datetime.fromtimestamp(self.next_poll, LOCAL_ZONE).isoformat() if self.next_poll else None, 'timezone': 'Asia/Shanghai', 'pending_events': len(state.get('trigger_pending', {})), 'poll_error': self.poll_error}
         if include_sources:
             sources = {}
             for name in ('oura', 'withings', 'hevy'):

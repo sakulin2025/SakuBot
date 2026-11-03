@@ -125,11 +125,11 @@ onUnmounted(() => clearInterval(timer))
     <template #actions><STag :label="`${rows.length} 条`" /></template>
     <div class="command-table">
       <STable :rows="rows" :columns="[{key:'trigger',label:'命令'},{key:'hint',label:'补全参数'},{key:'team_id',label:'团队'},
-        {key:'script_id',label:'脚本'},{key:'status',label:'状态'},{key:'updated',label:'更新于'},{key:'actions',label:'操作'}]">
+        {key:'script_id',label:'动作'},{key:'status',label:'状态'},{key:'updated',label:'更新于'},{key:'actions',label:'操作'}]">
         <template #cell-trigger="{row}"><strong>/{{ row.trigger }}</strong><span v-if="row.display_name" class="command-name">{{row.display_name}}</span><span class="command-desc">{{ row.description }}</span></template>
         <template #cell-hint="{row}"><code>{{row.hint || '—'}}</code></template>
         <template #cell-team_id="{row}"><span class="mono">{{ row.team_id }}</span></template>
-        <template #cell-script_id="{row}">{{ scripts.find(s => s.id === row.script_id)?.name || row.script_id }}</template>
+        <template #cell-script_id="{row}">{{ row.binding?.target_kind === 'wake' ? '唤醒主智能体' : scripts.find(s => s.id === row.script_id)?.name || row.script_id || '未绑定' }}</template>
         <template #cell-status="{row}">
           <STag :status="row.callback_outdated ? 'unavailable' : row.active ? 'enabled' : row.status === 'ready' ? 'disabled' : 'unavailable'"
             :label="statusNames[row.status] || (row.callback_outdated ? '请求地址待同步' : row.active ? '已启用' : row.enabled ? '不可用' : '已停用')" :title="row.error || row.binding?.reason" />
@@ -167,10 +167,10 @@ onUnmounted(() => clearInterval(timer))
       <SFormItem label="显示名称"><SInput v-model="form.display_name" placeholder="例如 今日热量" maxlength="64" /></SFormItem>
       <SFormItem label="自动补全描述"><SInput v-model="form.description" placeholder="例如 查询当日热量统计" maxlength="256" /></SFormItem>
       <SFormItem label="参数提示"><SInput v-model="form.hint" placeholder="例如 [日期]" maxlength="128" /></SFormItem>
-      <SFormItem label="脚本"><SSelect v-model="form.script_id" required><option value="" disabled>选择脚本</option>
+      <SFormItem label="脚本"><SSelect v-model="form.script_id"><option value="">保留事件动作</option>
         <option v-for="script in scripts" :key="script.id" :value="script.id">{{script.name}}</option>
       </SSelect></SFormItem>
-      <SFormItem label="脚本固定参数"><STextarea v-model="params" rows="3" placeholder='例如 {"days": 1}' /></SFormItem>
+      <SFormItem v-if="form.script_id" label="脚本固定参数"><STextarea v-model="params" rows="3" placeholder='例如 {"days": 1}' /></SFormItem>
       <SFormItem label="限定用户 ID"><SInput v-model="form.user_id" placeholder="留空不限用户" pattern="[a-z0-9]{26}" /></SFormItem>
       <SFormItem label="限定频道 ID"><SInput v-model="form.channel_id" placeholder="留空不限频道" pattern="[a-z0-9]{26}" /></SFormItem>
       <SFormItem label="启用"><SSwitch v-model="form.enabled" /></SFormItem>

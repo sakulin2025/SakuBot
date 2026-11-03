@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import { api } from '../api'
 import { useConsole } from '../stores/console'
 import UiIcon from '../components/UiIcon.vue'
 import UiBadge from '../components/UiBadge.vue'
@@ -18,6 +19,29 @@ const next = computed(() =>
 )
 const complete = (key: string) =>
   store.setup?.completed[key] || false
+const compressDialog = ref(false)
+const compressBusy = ref(false)
+const compressError = ref('')
+const compressionRunning = computed(() => (store.status?.running as any)?.kind === 'compression')
+async function compressContext() {
+  if (compressBusy.value) return
+  compressBusy.value = true
+  compressError.value = ''
+  try {
+    await api('chat/compress-context', { body: { confirmation: '压缩' } })
+    compressDialog.value = false
+    await store.refreshStatus()
+    store.toast('已开始压缩')
+  } catch (error) {
+    compressError.value = error instanceof Error ? error.message : '压缩失败'
+  } finally {
+    compressBusy.value = false
+  }
+}
+function openCompression() {
+  compressError.value = ''
+  compressDialog.value = true
+}
 </script>
 <template>
   <div class="overview">
@@ -81,7 +105,7 @@ const complete = (key: string) =>
         <span>上下文占用</span>
         <strong class="mono">{{ store.status?.main_context_usage ? `${store.status.main_context_usage.estimated ? '约 ' : ''}${store.status.main_context_usage.percent}%` : '—' }}</strong>
       </div>
-      <UiIcon name="shield" class="faded" :size="16" />
+      <SButton class="compact" :loading="compressionRunning" :disabled="!!store.status?.running" @click="openCompression">压缩</SButton>
     </div>
     <div class="metric">
       <span class="metric-icon amber"><UiIcon name="events" /></span>
@@ -104,6 +128,13 @@ const complete = (key: string) =>
       <span>github.com/sakulin2025/SakuBot</span>
     </a>
   </footer>
+  <SDialog :open="compressDialog" title="确认压缩主对话上下文" @close="!compressBusy && (compressDialog = false)">
+    <span v-if="compressError" class="form-error">{{ compressError }}</span>
+    <template #footer>
+      <SButton :disabled="compressBusy" @click="compressDialog = false">取消</SButton>
+      <SButton variant="primary" :loading="compressBusy" @click="compressContext">确认压缩</SButton>
+    </template>
+  </SDialog>
   </div>
 </template>
 

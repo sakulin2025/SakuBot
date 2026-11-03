@@ -8,7 +8,7 @@ class Extension(Plugin):
     name = 'scripts'
 
     def setup(self):
-        self.page('manage','脚本',Path(__file__).parent/'web'/'dist',icon='code',order=35,group_id='system')
+        self.page('manage','事件与脚本',Path(__file__).parent/'web'/'dist',icon='code',order=35,group_id='system')
         self.api('catalog',self.catalog_api)
         self.api('manage',self.manage_api,methods=('POST',))
         self.tool('script_manage','管理持久 Python 脚本：list/get/save/delete/revisions。保存仅做语法与参数校验，不运行。脚本须定义 main(ctx)，更新须提供 expected_version；删除须 confirm=true 且先解除绑定。',
@@ -22,9 +22,9 @@ class Extension(Plugin):
             object_schema({'id':text('脚本 ID'),'params':{'type':'object'}},('id',)),self.run_tool)
         self.tool('script_execution','查看脚本执行、日志、返回值与工具调用；或停止运行。action=list/get/stop。',
             object_schema({'action':{'type':'string','enum':['list','get','stop']},'id':text('执行 ID'),'script_id':text()},('action',)),self.execution_tool)
-        self.tool('script_binding','管理软触发绑定；source 可填尚未声明的 ID 或 * 通配模式，例如 mattermost.slash.*，不存在时仍可保存。sources 列出已声明的参数与事件定义；options 获取动态实体/设备选项；save 校验参数，不执行脚本。失败策略 none/wake/notify，支持连续失败阈值与冷却。',
+        self.tool('script_binding','管理软触发绑定；具名 source 只能保存一个动作（停用绑定也占用），应编辑原绑定而非重复创建；泛事件 source 可多次绑定。source 可填尚未声明的 ID 或 * 通配模式，例如 mattermost.slash.*，不存在时仍可保存。sources 列出已声明的参数与事件定义；options 获取动态实体/设备选项；save 校验参数，不执行。target_kind=script 绑定脚本；target_kind=wake 直接唤醒主智能体，须提供 prompt 提示词，无需 script_id。事件观测数据只注入本轮临时上下文。失败策略 none/wake/notify，支持连续失败阈值与冷却。',
             object_schema({'action':{'type':'string','enum':['sources','options','list','save','delete']},'id':text(),'source':text(),
-                'script_id':text(),'name':text(),'source_params':{'type':'object'},'params':{'type':'object'},'enabled':{'type':'boolean'},
+                'target_kind':{'type':'string','enum':['script','wake']},'prompt':text('唤醒主智能体的提示词'),'script_id':text(),'name':text(),'source_params':{'type':'object'},'params':{'type':'object'},'enabled':{'type':'boolean'},
                 'on_failure':{'type':'string','enum':['none','wake','notify']},'failure_threshold':{'type':'integer','minimum':1,'maximum':100},
                 'cooldown_seconds':{'type':'integer','minimum':30},'send_result_to_source':{'type':'boolean'},'confirm':{'type':'boolean'}},('action',)),self.binding_tool)
         self.tool('script_tools','查询脚本可以调用的插件工具及参数定义。按 plugin 或关键词筛选；只列出当前可用插件，不调用工具。',

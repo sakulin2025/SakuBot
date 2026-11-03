@@ -11,6 +11,8 @@ import {
   formatDate,
 } from "@sakubot/ui";
 import Parameters from "./Parameters.vue";
+import EventBindings from "./EventBindings.vue";
+import { matches } from "./event-catalog";
 const host = usePluginHost();
 const tab = ref("programs"),
   loading = ref(false),
@@ -48,6 +50,8 @@ const script = reactive({
   send_result_to_source: true,
 });
 const binding = reactive({
+  target_kind: "script",
+  prompt: "",
   id: "",
   name: "",
   script_id: "",
@@ -61,13 +65,6 @@ const binding = reactive({
   send_result_to_source: true,
 });
 const manual = reactive({ id: "", params: {} as any });
-function matches(pattern: string, value: string) {
-  const escaped = pattern
-    .split("*")
-    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-    .join(".*");
-  return new RegExp("^" + escaped + "$").test(value);
-}
 const source = computed(
   () =>
     catalog.value.sources.find((s: any) => s.id === binding.source) ||
@@ -86,7 +83,6 @@ const rows = computed(() =>
     (
       ({
         programs: catalog.value.scripts,
-        bindings: catalog.value.bindings,
         runs: catalog.value.runs,
       }) as Record<string, any[]>
     )[tab.value] || []
@@ -204,13 +200,15 @@ async function toggle(row: any, value: boolean) {
     host.toast(failure(e), true);
   }
 }
-async function editBinding(row?: any) {
+async function editBinding(row?: any, sourceId?: string) {
   error.value = "";
   Object.assign(binding, {
+    target_kind: row?.target_kind || "wake",
+    prompt: row?.prompt || "",
     id: row?.id || "",
     name: row?.name || "",
     script_id: row?.script_id || catalog.value.scripts[0]?.id || "",
-    source: row?.source || catalog.value.sources[0]?.id || "",
+    source: row?.source || sourceId || catalog.value.sources.find((s: any) => s.id.includes("*") || !catalog.value.bindings.some((b: any) => b.source === s.id))?.id || "",
     source_params: row ? { ...row.source_params } : {},
     params: row ? { ...row.params } : {},
     enabled: row?.enabled ?? true,
@@ -327,7 +325,7 @@ let timer: ReturnType<typeof setInterval> | undefined;
 onMounted(() => {
   void load();
   timer = setInterval(() => {
-    if (tab.value === "runs" && !busy.value) {
+    if (["runs", "bindings"].includes(tab.value) && !busy.value && !bindingOpen.value) {
       void load();
       if (detailOpen.value && detail.value?.status === "running")
         void inspect(detail.value);
@@ -348,7 +346,7 @@ onUnmounted(() => clearInterval(timer));
     />
     <SCard
       ><div class="table-toolbar">
-        <SInput v-model="query" placeholder="搜索脚本、绑定或执行" /><SButton
+        <SInput v-model="query" :placeholder="tab === 'bindings' ? '搜索事件、插件或动作' : '搜索脚本或执行'" /><SButton
           class="icon-button"
           aria-label="刷新"
           :disabled="loading"
@@ -356,7 +354,10 @@ onUnmounted(() => clearInterval(timer));
           ><UiIcon name="refresh" :size="17"
         /></SButton>
       </div>
-      <div class="table-scroll">
+      <EventBindings v-if="tab === 'bindings'" :catalog="catalog" :query="query"
+        @edit="editBinding($event)" @create="editBinding(undefined, $event)"
+        @remove="removing = {kind: 'binding', id: $event.id, name: $event.name}" />
+      <div v-else class="table-scroll">
         <STable
           ><thead>
             <tr v-if="tab === 'programs'">
@@ -366,15 +367,8 @@ onUnmounted(() => clearInterval(timer));
               <th>启用</th>
               <th>操作</th>
             </tr>
-            <tr v-else-if="tab === 'bindings'">
-              <th>绑定</th>
-              <th>脚本</th>
-              <th>触发源</th>
-              <th>状态</th>
-              <th>操作</th>
-            </tr>
             <tr v-else>
-              <th>脚本</th>
+              <th>目标</th>
               <th>时间</th>
               <th>状态</th>
               <th>操作</th>
@@ -424,58 +418,12 @@ onUnmounted(() => clearInterval(timer));
                     /></SButton>
                   </div></td
               ></template>
-              <template v-else-if="tab === 'bindings'"
-                ><td>{{ row.name }}</td>
-                <td>
-                  {{
-                    catalog.scripts.find((s: any) => s.id === row.script_id)
-                      ?.name || row.script_id
-                  }}
-                </td>
-                <td>
-                  {{
-                    catalog.sources.find((s: any) => s.id === row.source)
-                      ?.name || row.source
-                  }}
-                </td>
-                <td>
-                  <STag
-                    :label="row.enabled && !row.declared ? '未声明' : undefined"
-                    :status="
-                      !row.enabled
-                        ? 'disabled'
-                        : row.available
-                          ? 'enabled'
-                          : 'unavailable'
-                    "
-                  />
-                </td>
-                <td>
-                  <div class="row-actions">
-                    <SButton
-                      class="icon-button"
-                      aria-label="编辑"
-                      @click="editBinding(row)"
-                      ><UiIcon name="edit" :size="16" /></SButton
-                    ><SButton
-                      class="icon-button"
-                      aria-label="删除"
-                      @click="
-                        removing = {
-                          kind: 'binding',
-                          id: row.id,
-                          name: row.name,
-                        }
-                      "
-                      ><UiIcon name="trash" :size="16"
-                    /></SButton>
-                  </div></td
-              ></template>
               <template v-else
                 ><td>
                   {{
-                    catalog.scripts.find((s: any) => s.id === row.script_id)
-                      ?.name || row.script_id
+                    row.target_kind === 'wake' || row.script_id?.startsWith('wake:')
+                      ? '唤醒主智能体'
+                      : catalog.scripts.find((s: any) => s.id === row.script_id)?.name || row.script_id
                   }}
                 </td>
                 <td>{{ formatDate(row.started || row.queued) }}</td>
@@ -516,7 +464,6 @@ onUnmounted(() => clearInterval(timer));
         ><SButton
           v-if="tab === 'bindings'"
           variant="primary"
-          :disabled="!catalog.scripts.length"
           @click="editBinding()"
           ><UiIcon name="plus" :size="16" />新增绑定</SButton
         >
@@ -649,6 +596,17 @@ onUnmounted(() => clearInterval(timer));
           ><SInput v-model="binding.name" required placeholder="绑定名称" />
         </div>
         <div class="field">
+          <label>目标</label>
+          <SSelect v-model="binding.target_kind">
+            <option value="wake">唤醒主智能体</option>
+            <option value="script">运行脚本</option>
+          </SSelect>
+        </div>
+        <div v-if="binding.target_kind === 'wake'" class="field">
+          <label>唤醒提示词</label>
+          <STextarea v-model="binding.prompt" required maxlength="50000" rows="6" placeholder="触发后需要主智能体处理的事项" />
+        </div>
+        <div v-if="binding.target_kind === 'script'" class="field">
           <label>脚本</label
           ><SSelect
             :model-value="binding.script_id"
@@ -686,10 +644,11 @@ onUnmounted(() => clearInterval(timer));
           v-model="binding.source_params"
           :options="options"
         /><Parameters
+          v-if="binding.target_kind === 'script'"
           :schema="bindingScript?.parameters"
           v-model="binding.params"
         />
-        <div class="field">
+        <div v-if="binding.target_kind === 'script'" class="field">
           <label>失败处理</label
           ><SSelect v-model="binding.on_failure"
             ><option value="none">仅记录</option>
@@ -697,7 +656,7 @@ onUnmounted(() => clearInterval(timer));
             <option value="notify">直接通知</option></SSelect
           >
         </div>
-        <div v-if="binding.on_failure !== 'none'" class="form-row">
+        <div v-if="binding.target_kind === 'script' && binding.on_failure !== 'none'" class="form-row">
           <div class="field">
             <label>连续失败次数</label
             ><SInput
@@ -716,7 +675,7 @@ onUnmounted(() => clearInterval(timer));
             />
           </div>
         </div>
-        <label v-if="binding.on_failure !== 'none'" class="checkbox-field"
+        <label v-if="binding.target_kind === 'wake' || binding.on_failure !== 'none'" class="checkbox-field"
           ><SCheckbox
             v-model="binding.send_result_to_source"
           />发送到主对话源</label

@@ -1,4 +1,4 @@
-"""Read-only Bearer client for ScanElf HTTP queries and WebSocket state streams."""
+"""Bearer client for ScanElf device management, queries and WebSocket state streams."""
 
 import asyncio
 import json
@@ -98,35 +98,66 @@ class ScanElf:
             await self.session.close()
 
     async def _get(self, connection, path, params=None):
+        return await self._request(connection, 'GET', path, params=params)
+
+    async def _request(self, connection, method, path, *, params=None, body=None):
         base, token = connection
         if self.session is None or self.session.closed:
-            self.session = aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=10), trust_env=False,
-            )
+            self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10), trust_env=False)
         try:
-            async with self.session.get(
-                base + "/api/v1/" + path, params=params,
-                headers={"Authorization": "Bearer " + token}, allow_redirects=False,
-            ) as response:
-                if response.status in (401, 403):
-                    raise PluginError("ScanElf 认证失败，请检查 API token 是否正确或已被撤销。")
-                if response.status != 200:
-                    raise PluginError(f"ScanElf 请求失败（HTTP {response.status}）。")
+            async with self.session.request(method, base + '/api/v1/' + path, params=params, json=body,
+                    headers={'Authorization': 'Bearer ' + token}, allow_redirects=False) as response:
+                if response.status == 401:
+                    raise PluginError('ScanElf 认证失败，请检查 API token 是否正确或已被撤销。')
+                if response.status == 403:
+                    raise PluginError('ScanElf 拒绝管理操作，请检查 token 权限。')
+                if response.status not in (200, 201):
+                    if response.status == 409: raise PluginError('这个 MAC 的设备已存在，请修改原设备。')
+                    if response.status == 404: raise PluginError('设备或管理接口不存在，请刷新列表并确认 ScanElf 已更新。')
+                    if response.status == 400: raise PluginError('ScanElf 拒绝设备字段，请检查名称、标签和开关格式。')
+                    raise PluginError(f'ScanElf 请求失败（HTTP {response.status}）。')
                 data = await response.json()
+        except PluginError:
+            raise
         except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
-            raise PluginError("ScanElf 连接失败、超时或响应格式错误，请检查 URL、网络和服务状态。") from None
-        if not isinstance(data, dict):
-            raise PluginError("ScanElf 返回的数据格式无效。")
+            message = 'ScanElf 管理请求中断，操作结果未知；请先查询设备，不要直接重复新增。' if method != 'GET' else 'ScanElf 连接失败、超时或响应格式错误，请检查 URL 和网络。'
+            raise PluginError(message) from None
+        if not isinstance(data, dict): raise PluginError('ScanElf 返回的数据格式无效。')
         return data
 
+    async def management_devices(self):
+        rows = {}
+        for ignored in (False, True):
+            offset = 0
+            while True:
+                page = await self._get(self.connection(), 'devices', {'ignored': str(ignored).lower(), 'limit': 100, 'offset': offset})
+                items = self._rows(page, 'items', include_ignored=True)
+                for row in items: rows[normalize_mac(row['mac'])] = row
+                count, total = len(items), page.get('total')
+                if type(total) is not int or total < 0: raise PluginError('ScanElf 设备总数格式无效。')
+                offset += count
+                if not count or offset >= total: break
+        return list(rows.values())
+
+    async def device(self, mac):
+        return await self._get(self.connection(), 'devices/' + quote(mac, safe=''))
+
+    async def save_device(self, mac, details, *, create=False):
+        path = 'devices' if create else 'devices/' + quote(mac, safe='')
+        result = await self._request(self.connection(), 'POST' if create else 'PATCH', path,
+            body={'mac': mac, **details} if create else details)
+        if normalize_mac(result.get('mac')) != mac: raise PluginError('ScanElf 返回的设备 MAC 不匹配。')
+        self.cache.clear()
+        return result
+
     @staticmethod
-    def _rows(data, field):
+    def _rows(data, field, include_ignored=False):
         rows = data.get(field)
         if not isinstance(rows, list) or any(
             not isinstance(row, dict) or not normalize_mac(row.get("mac", "")) for row in rows
         ):
             raise PluginError("ScanElf 返回的设备列表格式无效。")
-        return [row for row in rows if not row.get("ignored", False)]
+        return [row for row in rows if include_ignored or not row.get("ignored", False)]
 
     async def _cached(self, kind, refresh=False):
         connection = self.connection()

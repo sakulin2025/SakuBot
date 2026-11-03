@@ -1,5 +1,39 @@
 {
   "name": "deepseek_balance",
   "label": "DeepSeek 余额查询",
-  "version": "1.0.0"
+  "version": "1.1.1",
+  "settings": {
+    "fields": [
+      {
+        "key": "poll_enabled",
+        "label": "余额轮询",
+        "type": "boolean",
+        "default": true
+      },
+      {
+        "key": "poll_interval_minutes",
+        "label": "轮询间隔 · 分钟",
+        "type": "number",
+        "default": 120,
+        "min": 1,
+        "max": 43200
+      },
+      {
+        "key": "warning_threshold",
+        "label": "余额预警值",
+        "type": "string",
+        "default": "10",
+        "required": true,
+        "placeholder": "例如 10 或 10.50",
+        "pattern": "^\\d+(\\.\\d+)?$"
+      },
+      {
+        "key": "poll_provider_id",
+        "label": "供应商 ID",
+        "type": "string",
+        "default": "",
+        "placeholder": "留空查询全部 DeepSeek 官方供应商"
+      }
+    ]
+  }
 }

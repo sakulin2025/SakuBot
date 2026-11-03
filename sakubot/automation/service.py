@@ -13,6 +13,7 @@ from .sources import Sources
 
 from .context import current_chain
 from .execution import Executor
+from . import wake
 
 
 class Scripts:
@@ -69,23 +70,32 @@ class Scripts:
 
     def bindings(self):
         result = []
+        named = set()
         for row in self.repo.list('bindings'):
             source = self.sources.resolve(row['source'])
             available = bool(source and self.runtime.registry.availability(source['plugin_id'])['available'])
             reason = '' if available else '触发源未声明' if not source else '触发源暂不可用'
             eligible = True
             try:
-                script = self.repo.get(row['script_id'])
-                jsonschema.validate(row['params'], script['parameters'])
+                script = None
+                if row.get('target_kind', 'script') == 'wake':
+                    wake.validate(row)
+                else:
+                    script = self.repo.get(row['script_id'])
+                    jsonschema.validate(row['params'], script['parameters'])
                 if source:
                     jsonschema.validate(row['source_params'], source['parameters'])
                     if source.get('validate'):
                         source['validate'](row['source_params'])
-                eligible = script['enabled']
+                eligible = script['enabled'] if script else True
                 if not eligible:
                     reason = '脚本触发已停用'
             except Exception:
                 eligible, reason = False, '参数或脚本已变化，请重新保存绑定'
+            if '*' not in row['source']:
+                if row['source'] in named:
+                    eligible, reason = False, '事件已绑定其他动作，请删除重复绑定'
+                named.add(row['source'])
             result.append({**row,'available':available and eligible,'eligible':eligible,'declared':bool(source),'reason':reason})
         return result
 
@@ -96,11 +106,23 @@ class Scripts:
         old = self.runtime.store.one('SELECT data FROM automation_bindings WHERE id=?', (key,))
         old = json.loads(old['data']) if old else {}
         value = {**old, **data, 'id':key}
-        script = self.repo.get(value.get('script_id'))
-        if not isinstance(value.get('source'),str) or not re.fullmatch(r'[A-Za-z0-9_.*:-]{1,192}',value['source']):
+        value.setdefault('target_kind', 'script')
+        if value['target_kind'] not in ('script', 'wake'):
+            raise ValueError('绑定目标仅支持 script / wake')
+        script = self.repo.get(value.get('script_id')) if value['target_kind'] == 'script' else None
+        if script is None:
+            wake.validate(value)
+            value['script_id'] = ''
+            value['params'] = {}
+        if not isinstance(value.get('source'),str) or not re.fullmatch(r'[A-Za-z0-9_.*:-]{1,512}',value['source']):
             raise ValueError('来源 ID 无效')
+        if '*' not in value['source'] and any(
+            row['id'] != key and row['source'] == value['source']
+            for row in self.repo.list('bindings')
+        ):
+            raise ValueError('此事件已绑定动作，请编辑原绑定或先删除原绑定')
         source = self.sources.resolve(value['source'])
-        value.setdefault('name', script['name'] + ' · ' + (source['name'] if source else value['source']))
+        value.setdefault('name', (script['name'] if script else '唤醒主智能体') + ' · ' + (source['name'] if source else value['source']))
         value.setdefault('enabled', True)
         value.setdefault('source_params', {})
         value.setdefault('params', {})
@@ -112,7 +134,8 @@ class Scripts:
             raise ValueError('来源参数须为不超过 50000 字符的对象')
         if source:
             jsonschema.validate(value['source_params'], source['parameters'])
-        jsonschema.validate(value['params'], script['parameters'])
+        if script:
+            jsonschema.validate(value['params'], script['parameters'])
         if not isinstance(value['name'],str) or not value['name'].strip() or len(value['name'])>100:
             raise ValueError('绑定名称为 1～100 字')
         if value['on_failure'] not in ('none','wake','notify') or type(value['enabled']) is not bool or type(value['send_result_to_source']) is not bool:
@@ -136,7 +159,7 @@ class Scripts:
             self.repo.get(key)
             if self.runtime.store.one("SELECT id FROM automation_runs WHERE script_id=? AND status IN ('running','queued')", (key,)):
                 raise ValueError('脚本有运行或排队任务，请先停止')
-            if any(row['script_id'] == key for row in self.repo.list('bindings')):
+            if any(row.get('target_kind', 'script') == 'script' and row.get('script_id') == key for row in self.repo.list('bindings')):
                 raise ValueError('请先删除脚本的触发绑定')
             for plugin in self.runtime.registry.plugins:
                 references = getattr(plugin, 'script_references', None)
@@ -151,6 +174,11 @@ class Scripts:
         else:
             raise ValueError('删除类型无效')
         return {'deleted':key}
+
+    def enqueue_binding(self, binding, event, uid):
+        if binding.get('target_kind', 'script') == 'wake':
+            return wake.enqueue(self, binding, event, uid)
+        return self.enqueue(binding['script_id'], params=binding['params'], event=event, binding=binding, uid=uid)
 
     def enqueue(self, key, *, params=None, event=None, binding=None, uid=None):
         script = self.repo.get(key)
@@ -199,6 +227,9 @@ class Scripts:
 
     def trigger_failure(self, binding, event, uid, error):
         if self.runtime.store.one('SELECT id FROM automation_runs WHERE uid=?', (uid,)):
+            return
+        if binding.get('target_kind', 'script') == 'wake':
+            self.runtime.store.log('error', 'scripts', 'binding.wake.failed', data={'binding_id': binding['id'], 'error': error[:2000]})
             return
         script = self.repo.get(binding['script_id'])
         run_id = 'script:' + uuid.uuid4().hex

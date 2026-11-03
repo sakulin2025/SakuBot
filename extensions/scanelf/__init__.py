@@ -5,9 +5,10 @@ from sakubot.plugin import Plugin
 from sakubot.plugin_support import field, collection, settings_section, fields_schema
 from datetime import datetime, timezone
 from .client import ScanElf, PluginError, normalize_mac
+from .management import Management
 
 
-class Extension(Plugin):
+class Extension(Management, Plugin):
     name = 'scanelf'
 
     def setup(self):
@@ -15,34 +16,46 @@ class Extension(Plugin):
         self.client = ScanElf(self.config)
         self.memory_lock = asyncio.Lock()
         self.last_devices = []
+        self.managed_devices = []
         self.last_info = {}
         self.timeline_page = {}
         self.fields = [field('base_url','URL',required=True),field('token','Token','secret')]
-        for name, method in [('scanelf_devices',self.query_devices),('scanelf_device_memory',self.device_memory),('scanelf_device_timeline',self.device_timeline)]: self.function(method,name=name)
-        self.management('ScanElf',[collection('devices','设备',[field('mac','MAC',readonly=True),field('name','名称',readonly=True),field('alias','别名'),field('description','描述','text')],key='mac',columns=[field('mac','MAC'),field('name','名称'),field('alias','别名'),field('description','描述'),field('online','在线','boolean'),field('last_activity_text','最近活动')],create=False,remove=False,commands=[{'id':'refresh','label':'刷新设备'}],row_commands=[{'id':'timeline','label':'时间线'}]),collection('timeline','时间线',[field('id','ID'),field('at','时间'),field('display_name','设备'),field('event_text','事件')],create=False,edit=False,remove=False,commands=[{'id':'next','label':'下一页'}]),settings_section(self.fields)],self.view,self.manage,group_id='network')
+        for name, method in [('scanelf_devices',self.query_devices),('scanelf_device_memory',self.device_memory),('scanelf_device_timeline',self.device_timeline),('scanelf_device_manage',self.device_manage)]: self.function(method,name=name)
+        self.management('ScanElf',[collection('upstream','设备管理',[
+            field('mac','MAC',required=True,immutable=True,placeholder='AA:BB:CC:DD:EE:FF'),
+            field('name','ScanElf 名称',max_length=80,placeholder='例如：书房电脑'),
+            field('tags_text','标签',placeholder='逗号分隔，例如：电脑,办公'),
+            field('favorite','收藏','boolean',default=False),field('resident','常驻','boolean',default=False),
+            field('ignored','忽略','boolean',default=False)],key='mac',
+            columns=[field('mac','MAC'),field('name','ScanElf 名称'),field('tags_text','标签'),
+                     field('favorite','收藏','boolean'),field('resident','常驻','boolean'),field('ignored','忽略','boolean'),field('online','在线','boolean')],
+            remove=False,commands=[{'id':'refresh','label':'刷新设备'}]),collection('devices','本地记忆',[field('mac','MAC',readonly=True),field('name','名称',readonly=True),field('alias','别名'),field('description','描述','text')],key='mac',columns=[field('mac','MAC'),field('name','名称'),field('alias','别名'),field('description','描述'),field('online','在线','boolean'),field('last_activity_text','最近活动')],create=False,remove=False,commands=[{'id':'refresh','label':'刷新设备'}],row_commands=[{'id':'timeline','label':'时间线'}]),collection('timeline','时间线',[field('id','ID'),field('at','时间'),field('display_name','设备'),field('event_text','事件')],create=False,edit=False,remove=False,commands=[{'id':'next','label':'下一页'}]),settings_section(self.fields)],self.view,self.manage,group_id='network')
         from .triggers import register
         register(self)
     def availability(self):
         ok = bool(self.config.get('base_url') and self.config.get('token'))
         return {'available':ok,'reason':'' if ok else '尚未配置 ScanElf 连接'}
     def prompt_context(self, invocation):
-        return '网络设备及时间线需要时调用 scanelf_devices、scanelf_device_timeline 查询。观测不等于人员在场，缺少IP不能猜测；观测失败时状态未知，不把旧缓存当成当前在线。设备返回值自动匹配别名和描述；时间线按has_more分页。'
+        return '网络设备及时间线需要时调用 scanelf_devices、scanelf_device_timeline 查询。ScanElf 上游名称、标签、收藏、常驻和忽略使用 scanelf_device_manage；SakuBot 本地别名和描述使用 scanelf_device_memory，两者不同。观测不等于人员在场，缺少IP不能猜测；观测失败时状态未知，不把旧缓存当成当前在线。设备返回值自动匹配别名和描述；时间线按has_more分页。'
     async def refresh(self, refresh=True):
         status = await self.client.status(refresh)
-        rows = await self.client.devices(refresh)
-        _, memories = await self.memories()
-        self.last_devices = [self.enrich(row,memories) for row in rows]
+        await self.refresh_managed()
         self.last_info = self.client.status_info(status)
         return self.last_devices
     async def stop(self):
         await super().stop(); await self.client.close()
     async def view(self):
+        if not self.managed_devices:
+            try: await self.refresh_managed()
+            except PluginError: pass
         try: _,memories=await self.memories()
         except PluginError: memories={}
         rows={row['mac']:row for row in self.last_devices}
         for mac, memory in memories.items(): rows.setdefault(mac,{'mac':mac});rows[mac].update(memory)
-        return {'data':{'config':self.config.public(['base_url','token']),'devices':list(rows.values()),'timeline':self.timeline_page.get('items',[])}}
+        return {'data':{'config':self.config.public(['base_url','token']),'upstream':self.managed_devices,'devices':list(rows.values()),'timeline':self.timeline_page.get('items',[])}}
     async def manage(self, data):
+        if data['section']=='upstream':
+            return await self.manage_remote(data)
         if data['section']=='config':
             self.config.patch(data['value'],fields_schema(self.fields))
             await self.settings_saved()
@@ -201,4 +214,6 @@ class Extension(Plugin):
 
     async def settings_saved(self):
         self.client.cache.clear()
+        self.last_devices, self.managed_devices = [], []
+        self.last_info, self.timeline_page = {}, {}
         await self.device_watcher.reconnect()

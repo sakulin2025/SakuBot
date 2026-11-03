@@ -66,13 +66,15 @@ class DeviceWatcher:
         base = hashlib.sha256(self.plugin.client.base_url().encode()).hexdigest()[:12]
         for mac, row in current.items():
             before = previous.get(mac)
-            if before is None or before['online'] == row['online']:
+            if before is not None and before['online'] == row['online']:
                 continue
-            await self.plugin.emit_trigger('device_state_changed', {
-                'mac': mac, 'online': row['online'], 'previous_online': before['online'],
-                'device': self.plugin.enrich(row, memories), 'at': time.time(),
-            }, uid='scanelf-ws:' + base + ':' + mac + ':' + str(row['online']) + ':' +
-                   str(packet.get('sent_at') or uuid.uuid4().hex))
+            payload = {'mac': mac, 'online': row['online'],
+                'previous_online': before['online'] if before else None,
+                'device': self.plugin.enrich(row, memories), 'at': time.time()}
+            families = ['device_discovered'] if before is None else ['device_state_changed', 'device_online' if row['online'] else 'device_offline']
+            uid = 'scanelf-ws:' + base + ':' + mac + ':' + str(row['online']) + ':' + str(packet.get('sent_at') or uuid.uuid4().hex)
+            for family in families:
+                await self.plugin.emit_trigger(family + '.' + mac, payload, uid=family + ':' + uid)
 
     async def run(self):
         delay = 5

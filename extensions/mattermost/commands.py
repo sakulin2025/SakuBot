@@ -19,7 +19,7 @@ TRIGGER = re.compile(r'^[A-Za-z0-9_-]{1,64}$')
 REMOTE_ID = re.compile(r'^[a-z0-9]{26}$')
 PUBLIC_FIELDS = ('id', 'command_id', 'team_id', 'trigger', 'display_name', 'description',
                  'hint', 'script_id', 'params', 'user_id', 'channel_id', 'enabled',
-                 'callback_url', 'status', 'error', 'updated')
+                 'callback_url', 'status', 'error', 'updated', 'synced_at')
 
 
 def redact(value):
@@ -46,10 +46,10 @@ class Commands:
 
     def register(self):
         self.plugin.tool('mattermost_command',
-            '管理由 SakuBot 创建的 Mattermost Slash 指令。save 创建或修改并自动登记令牌、绑定脚本；'
+            '管理由 SakuBot 创建的 Mattermost Slash 指令。save 创建或修改并自动登记令牌；可选 script_id 初始化脚本动作；'
             'list/get 查看；enable/disable 启停；repair 查询远端并修复未完成操作；rotate_token 重置令牌；'
             'delete 删除远端指令和自己的绑定，需 confirm=true。id 为本工具返回的本地 ID。'
-            "先创建脚本，再传 team_id、trigger（不带 /）、script_id；文本参数在 ctx.event['data']['text']。"
+            "传 team_id、trigger（不带 /）创建事件入口；可不传 script_id，再用 script_binding 绑定 wake 与 prompt。传 script_id 可绑定脚本；文本参数在事件 data.text。"
             '请求地址统一从 Mattermost 管理页的斜杠命令设置读取，无需提供令牌或请求地址。'
             '不自动执行指令或脚本，不返回令牌。未知结果先 repair，不重复创建。',
             object_schema({
@@ -57,7 +57,7 @@ class Commands:
                 'id': text('本地指令 ID；新建时不填'), 'team_id': text('创建指令的 Mattermost 团队 ID'),
                 'trigger': text('指令名称，不带 /，字母、数字、下划线或连字符'),
                 'display_name': text('显示名称，最多 64 字'), 'description': text('自动补全描述，最多 256 字'),
-                'hint': text('自动补全参数提示，最多 128 字'), 'script_id': text('已保存的脚本 ID'),
+                'hint': text('自动补全参数提示，最多 128 字'), 'script_id': text('可选，设置脚本动作；留空保留框架现有动作'),
                 'params': {'type': 'object', 'description': '传给脚本的固定参数；Slash 参数来自事件 text'},
                 'user_id': text('可选，仅接受此用户；留空不限'),
                 'channel_id': text('可选，仅接受此频道；留空不限'),
@@ -97,15 +97,13 @@ class Commands:
         data['callback_outdated'] = row.get('callback_url') != self.callback_url
         if not data['current_account']:
             data['status'] = 'account_changed'
-        binding = next((item for item in self.plugin.runtime.scripts.bindings()
-                        if item['id'] == self.binding_id(row)), None)
+        binding = self.current_binding(row)
         data['binding'] = binding
-        expected = self.binding(row)
-        matching = bool(binding and all(binding.get(key) == expected[key]
-                                         for key in ('source', 'script_id', 'source_params', 'params')))
+        data['script_id'] = binding.get('script_id', '') if binding and binding.get('target_kind', 'script') == 'script' else ''
+        data['params'] = binding.get('params', {}) if data['script_id'] else {}
+        # Command availability is an ingress property, independent of its downstream action.
         data['active'] = bool(row.get('status') == 'ready' and row.get('enabled') and
-                              data['current_account'] and matching and binding['enabled'] and
-                              binding['eligible'] and self.plugin.config.get('slash_enabled'))
+                              data['current_account'] and self.plugin.config.get('slash_enabled'))
         return data
 
     def get(self, key):
@@ -167,16 +165,47 @@ class Commands:
     def suspend(self, row):
         self.plugin.runtime.scripts.delete('binding', self.binding_id(row), confirm=True)
 
-    def binding(self, row):
-        return {'id': self.binding_id(row), 'name': '/' + row['trigger'],
-                'source': self.plugin.id + '.slash.' + row['trigger'], 'script_id': row['script_id'],
-                'source_params': {key: row[key] for key in ('team_id', 'user_id', 'channel_id') if row.get(key)},
-                'params': row['params'], 'enabled': row['enabled']}
+    def current_binding(self, row):
+        source = self.plugin.id + '.slash.' + row['trigger']
+        return next((item for item in self.plugin.runtime.scripts.bindings()
+                     if item['source'] == source), None)
+
+    def script_references(self, identifier):
+        # Current bindings are checked by the framework; only unfinished remote mutations
+        # may still need a script which is not registered as a binding yet.
+        return any(row.get('pending_binding', {}).get('target_kind', 'script') == 'script' and
+                   row.get('pending_binding', {}).get('script_id') == identifier
+                   for row in self.records().values() if row.get('pending_binding'))
+
+    def prepare_binding(self, row, args, old):
+        current = self.current_binding(old or row)
+        fields = ('id', 'name', 'target_kind', 'script_id', 'source_params', 'params', 'enabled',
+                  'prompt', 'on_failure', 'failure_threshold', 'cooldown_seconds', 'send_result_to_source')
+        desired = {key: current[key] for key in fields if key in current} if current else None
+        if args.get('script_id'):
+            desired = {**(desired or {}), 'target_kind': 'script', 'script_id': args['script_id'],
+                       'params': args.get('params', {}), 'enabled': current.get('enabled', True) if current else True}
+        if desired is not None and desired.get('target_kind', 'script') == 'script' and 'params' in args:
+            desired['params'] = args['params']
+            script = self.plugin.runtime.scripts.repo.get(desired['script_id'])
+            jsonschema.validate(desired['params'], script['parameters'])
+        if desired is not None:
+            desired.setdefault('id', self.binding_id(row))
+            desired['name'] = '/' + row['trigger']
+            desired['source'] = self.plugin.id + '.slash.' + row['trigger']
+            desired['source_params'] = {key: row[key] for key in ('team_id', 'user_id', 'channel_id') if row.get(key)}
+        # Journal the action snapshot before remote changes; repair never rebuilds a stale script reference.
+        if desired is not None:
+            row['pending_binding'] = desired
+            row['pending_binding_revision'] = current.get('updated') if current else None
+        else:
+            row.pop('pending_binding', None)
+            row.pop('pending_binding_revision', None)
 
     def validate(self, args, old=None):
         old = old or {}
         row = {**old, **{key: value for key, value in args.items()
-                        if key in PUBLIC_FIELDS and key not in ('id', 'status', 'error', 'updated', 'command_id', 'callback_url')}}
+                        if key in PUBLIC_FIELDS and key not in ('id', 'status', 'error', 'updated', 'command_id', 'callback_url', 'synced_at')}}
         row['id'] = old.get('id') or uuid.uuid4().hex[:12]
         row.setdefault('enabled', True)
         row.setdefault('params', {})
@@ -195,8 +224,9 @@ class Commands:
             raise ValueError('不能更换已有指令的团队，请新建指令')
         if type(row['enabled']) is not bool or not isinstance(row['params'], dict):
             raise ValueError('开关或脚本参数无效')
-        script = self.plugin.runtime.scripts.repo.get(row.get('script_id'))
-        jsonschema.validate(row['params'], script['parameters'])
+        if args.get('script_id'):
+            script = self.plugin.runtime.scripts.repo.get(args['script_id'])
+            jsonschema.validate(row['params'], script['parameters'])
         if len(json.dumps(row['params'], ensure_ascii=False)) > 50000:
             raise ValueError('脚本参数过大')
         row['callback_url'] = self.callback_url
@@ -224,14 +254,27 @@ class Commands:
         if remote.get('token'):
             row['token'] = remote['token']
         self.put(row)
-        if not isinstance(row.get('token'), str) or not row['token']:
-            raise RuntimeError('远端未返回指令令牌，请修复登记')
+        from .command_sync import readback
+        await readback(self, row)
+        self.put(row)
         # All mutations hold config_lock, including the remote part of the operation.
         self.plugin.config['slash_enabled'] = True
         self.plugin.config.save()
-        self.plugin.runtime.scripts.save_binding(self.binding(row))
+        pending = row.get('pending_binding')
+        if pending:
+            current = next((item for item in self.plugin.runtime.scripts.repo.list('bindings') if item['id'] == pending['id']), None)
+            revision = current.get('updated') if current else None
+            if 'pending_binding_revision' not in row or revision == row['pending_binding_revision']:
+                self.plugin.runtime.scripts.save_binding(pending)
+            else:
+                self.plugin.runtime.store.log('warning', self.plugin.id, 'mattermost.command.binding_changed',
+                    data={'id': row['id'], 'reason': '事件动作已另行修改，保留框架当前配置'})
+            row.pop('pending_binding', None)
+            row.pop('pending_binding_revision', None)
         row.update(status='ready', error='')
         self.put(row)
+        self.plugin.runtime.store.log('info', self.plugin.id, 'mattermost.command.synced',
+            data={'id': row['id'], 'trigger': row['trigger']})
         return self.public(row)
 
     async def repair(self, row):
@@ -301,7 +344,9 @@ class Commands:
                 raise ValueError('上次操作尚未完成，请先修复登记')
             if action == 'save':
                 creating = row is None
-                row = self.validate(args, row)
+                old = row
+                row = self.validate(args, old)
+                self.prepare_binding(row, args, old)
                 row.setdefault('server', self.server)
                 row.setdefault('account', self.account)
                 if creating:
@@ -313,16 +358,12 @@ class Commands:
                         raise ValueError('远端已有同名指令，请使用其他名称')
                 row.update(status='creating' if creating else 'updating', error='')
                 self.put(row)
-                self.suspend(row)
             elif action in ('enable', 'disable'):
                 row['enabled'] = action == 'enable'
                 if row['enabled']:
-                    self.validate(row, row)
-                    self.plugin.runtime.scripts.save_binding(self.binding(row))
+                    self.validate({}, row)
                     self.plugin.config['slash_enabled'] = True
                     self.plugin.config.save()
-                else:
-                    self.suspend(row)
                 self.put(row)
                 return self.public(row)
             else:
@@ -332,7 +373,6 @@ class Commands:
                 elif row.get('status') != 'deleting':
                     row['status'] = 'repairing'
                 self.put(row)
-                self.suspend(row)
             try:
                 if action == 'save':
                     body = self.remote_body(row)
@@ -380,14 +420,9 @@ class Commands:
                 return {'complete': False, 'command': self.public(row), 'error': row['error'],
                         'next_action': 'repair'}
 
+    def authentication_error(self, token, data):
+        from .command_auth import rejection
+        return rejection(self, token, data)
+
     def authenticate(self, token, data):
-        import hmac
-        for row in self.records().values():
-            secret = row.get('token')
-            if not secret or not hmac.compare_digest(token.encode(), secret.encode()):
-                continue
-            if not self.public(row)['active']:
-                return False
-            return (data.get('team_id') == row['team_id'] and data.get('command') == '/' + row['trigger']
-                    and all(not row.get(key) or row[key] == data.get(key) for key in ('user_id', 'channel_id')))
-        return None
+        return not self.authentication_error(token, data)

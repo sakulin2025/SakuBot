@@ -32,6 +32,10 @@ class Executor:
         process = None
         stderr_task = None
         try:
+            if payload.get('target_kind') == 'wake':
+                from .wake import execute
+                await execute(self.service, row, payload)
+                return
             script = self.repo.read(row['script_id'],row['version'])
             directory = self.repo.data_root / row['script_id']
             directory.mkdir(parents=True,exist_ok=True)

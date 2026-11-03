@@ -228,9 +228,8 @@ class Polling:
                     changes.append('status')
                 if previous and previous.get('players') != observation.get('players'):
                     changes.append('players')
-                self.publish_trigger('observation', {'server_id':record['id'],'server':self.public(record),
-                    'previous':previous,'current':observation,'changes':changes},
-                    uid=record['id']+':'+str(observation['checked_at']))
+                from .triggers import publish
+                publish(self, record, previous, observation, changes)
                 for rule in data['rules'].values():
                     if not rule['enabled'] or rule['server_id'] != record['id']:
                         continue

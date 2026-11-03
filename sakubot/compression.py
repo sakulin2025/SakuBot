@@ -10,14 +10,15 @@ from .store import encode
 class Compression:
     def __init__(self, runtime):
         self.runtime = runtime
+        self.manual_job = None
 
     @staticmethod
     def estimate(messages, tools=None):
         return len(json.dumps({"messages": messages, "tools": tools}, ensure_ascii=False).encode())
 
-    async def compact(self, messages, inv, tools):
+    async def compact(self, messages, inv, tools, *, force=False):
         settings = inv.metadata.get("_model_settings", self.runtime.config.settings)
-        if not settings.compression_enabled:
+        if not force and not settings.compression_enabled:
             return
         _, model = settings.selected_model(model_id=inv.model_id)
         if not model:
@@ -26,12 +27,12 @@ class Compression:
         reserve = model.extra_body.get("max_tokens", model.extra_body.get("max_completion_tokens", 4096))
         limit = min(int(window * settings.compression_threshold), window - reserve - 1000)
         limit = max(1000, limit)
-        if self.estimate(messages, tools) < limit:
+        if not force and self.estimate(messages, tools) < limit:
             return
         prefix = 0
         while prefix < len(messages) and messages[prefix].get("role") == "system":
             prefix += 1
-        active = next((i for i, row in enumerate(messages) if row.get('_active_event') or row.get('_active_task')), None)
+        active = len(messages) if force else next((i for i, row in enumerate(messages) if row.get('_active_event') or row.get('_active_task')), None)
         if active is None:
             active = max((i for i, row in enumerate(messages) if row.get("role") == "user"), default=prefix)
         start, end = prefix, active

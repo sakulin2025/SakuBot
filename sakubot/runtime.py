@@ -118,6 +118,12 @@ class Runtime:
         self.store.log("info", "agents", "main.enabled" if enabled else "main.disabled")
 
     async def stop_main_run(self, run_id):
+        if self.current_run and self.current_run['id'] == run_id and self.current_run.get('kind') == 'compression':
+            task = self.compression.manual_job
+            if task and not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+            return {'stopped': True, 'run_id': run_id}
         if not isinstance(run_id, str) or not run_id:
             raise ValueError('运行 ID 无效')
         if self.main_stopping or not self.current_run or self.current_run['id'] != run_id:
@@ -381,10 +387,7 @@ class Runtime:
             finally:
                 inv.metadata.pop('_recall_event_ids', None)
 
-    def prompt(self, event, inv):
-        profile = self.prepare_agent(inv)
-        settings = self.config.settings
-        system = SYSTEM
+    def main_history(self, exclude_event_id=0):
         cutoff = self.store.one("SELECT max(id) AS id FROM events")["id"] or 0
         memo = self.store.kv_get("agent:main-summary", {"cutoff": 0, "text": ""})
         events = self.store.rows("SELECT * FROM events WHERE id>? AND id<=? ORDER BY id DESC", (memo["cutoff"], cutoff))
@@ -394,9 +397,9 @@ class Runtime:
         response_ids = {row['response_id'] for row in self.store.rows('SELECT response_id FROM main_context_turns WHERE response_id!=\'\'')}
         candidates = []
         for row in reversed(events):
-            if row["id"] == event["id"]:
+            if row["id"] == exclude_event_id:
                 continue
-            if row["kind"] == "wake" and row["status"] in ("pending", "running") and row["id"] != event["id"]:
+            if row["kind"] == "wake" and row["status"] in ("pending", "running") and row["id"] != exclude_event_id:
                 continue  # Future queued instructions are handled once, in their own turn.
             metadata = json.loads(row["meta"])
             if metadata.get("exclude_context") or metadata.get("exclude_main"):
@@ -416,6 +419,13 @@ class Runtime:
             else:
                 candidates.append(self.main_event_message(row))
             candidates.extend({**message, '_event_id': row['id']} for message in saved.get('after', []))
+        return memo, candidates
+
+    def prompt(self, event, inv):
+        profile = self.prepare_agent(inv)
+        settings = self.config.settings
+        system = SYSTEM
+        memo, candidates = self.main_history(event['id'])
         contributions = []
         visible_plugins = self.registry.visible_plugin_ids(inv)
         for plugin in self.registry.plugins:
@@ -609,7 +619,7 @@ class Runtime:
 
     async def worker(self):
         while True:
-            if not self.config.settings.ready() or self.control.quiescing():
+            if not self.config.settings.ready() or self.control.quiescing() or (self.current_run and self.current_run.get('kind') == 'compression'):
                 await asyncio.sleep(.25)
                 continue
             event = self.store.claim()
@@ -726,6 +736,8 @@ class Runtime:
             trace = json.loads(row['trace'])
             if trace.get('model_id') != model.id:
                 return None
+            if trace.get('manual_compression') and trace.get('context_after') is not None:
+                return {'percent': round(trace['context_after'] * 100 / model.effective_window(), 1), 'estimated': True}
             requests = trace.get('api_requests') or []
             usages = trace.get('usage') or []
             used = usages[-1].get('prompt_tokens') if usages and (not requests or len(usages) >= len(requests)) else None

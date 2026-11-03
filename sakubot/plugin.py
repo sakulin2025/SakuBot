@@ -157,9 +157,9 @@ class Plugin:
         task.add_done_callback(finished)
         return task
 
-    def trigger_source(self, identifier, name, parameters, event_schema, *, subscribe=None, options=None, match=None, validate=None):
+    def trigger_source(self, identifier, name, parameters, event_schema, *, subscribe=None, options=None, match=None, validate=None, legacy_ids=()):
         return self.runtime.scripts.sources.declare(self.id, identifier, name, parameters, event_schema,
-            subscribe=subscribe, options=options, match=match, validate=validate)
+            subscribe=subscribe, options=options, match=match, validate=validate, legacy_ids=legacy_ids)
 
     async def emit_trigger(self, identifier, payload, *, uid=None):
         return await self.runtime.scripts.sources.emit(self.id, identifier, payload, uid=uid)

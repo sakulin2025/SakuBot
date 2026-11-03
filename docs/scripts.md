@@ -1,4 +1,4 @@
-# 脚本自动化
+# 事件与脚本自动化
 
 入口：系统功能 → 脚本。系统运行器随框架启动，无需插件开关，不依赖主 Agent 是否启用。
 
@@ -64,14 +64,13 @@ await self.emit_trigger("sample_changed", {"device_id": "abc", "value": 42}, uid
 
 | 来源 | 参数 | 依赖 |
 |---|---|---|
-| timers.schedule | interval/daily/once、时间与时区 | 定时任务插件启用 |
-| ha_control.entity_state_changed | entity_id、可选目标状态 | 已配置 HA，房间与实体允许读取 |
-| minecraft_status.observation | server_id、观测/状态/人数 | 原插件轮询开启 |
-| freereps_activity.workout_completed | 训练名称关键词 | 原插件轮询开启，首次只建立基线 |
-| freereps_activity.sync_completed | 无 | 原插件轮询开启 |
-| calorie_calendar.record_changed | 可选日期 | 记录实际增删改后触发 |
-| calorie_calendar.confirmation_changed | 可选日期 | 确认状态实际改变 |
-| scanelf.device_state_changed | 可选 MAC、上线/下线 | 存在绑定才共享订阅 /api/v1/ws，过期快照不判定变化 |
+| timers.schedule.* | interval/daily/once、时间与时区 | 定时任务插件启用 |
+| ha_control.entity_state_changed.* | entity_id、可选目标状态 | 已配置 HA，房间与实体允许读取 |
+| minecraft_status.observation.* | server_id、观测/状态/人数 | 原插件轮询开启 |
+| freereps_activity.workout_added.* | 训练名称关键词 | 原插件轮询开启，首次只建立基线；仅新增去重后的训练记录触发 |
+| calorie_calendar.record_changed.* | 可选日期 | 记录实际增删改后触发 |
+| calorie_calendar.confirmation_changed.* | 可选日期 | 确认状态实际改变 |
+| scanelf.device_state_changed.* | 可选 MAC、上线/下线 | 存在绑定才共享订阅 /api/v1/ws，过期快照不判定变化 |
 
 Agent 工具：script_manage、script_run、script_execution、script_binding、script_tools。附带 script-automation 技能。查看工具和源定义无需执行代码；所有普通执行结果留在脚本记录，不自动污染主上下文。
 
@@ -100,3 +99,41 @@ Mattermost 的「斜杠命令」标签集中提供接收设置、请求方向、
 公共插件 Webhook 接口为 `self.webhook(path, handler, methods=('POST',))`，路径位于 `/hooks/<plugin>/<path>`。此入口独立于管理 API，插件 handler 必须校验自己的服务凭据；停用插件后入口失效。
 
 脚本运行器不自动请求模型，但脚本主动调用的插件工具可能包含图片理解、团队委派等模型操作，这些调用仍按工具本身消耗额度。
+
+## 直接唤醒主智能体
+
+触发绑定支持 `target_kind=script`（默认，兼容旧绑定）或 `target_kind=wake`。选择唤醒时填写 `prompt`，无需创建脚本；`send_result_to_source` 控制是否向主对话源投递结果，网页仍同步。
+
+触发后进入持久队列，通过事件 UID 去重，执行记录保存提交结果和 wake 事件 ID。“完成”表示已提交唤醒，智能体执行结果在唤醒详情中查看。提示词作为当前任务；触发源、时间和观测数据仅注入本轮临时上下文。提示词为普通文本，不执行模板或代码。
+
+AI 可通过 `script_binding` 保存：
+
+```json
+{"action":"save","target_kind":"wake","name":"余额预警","source":"deepseek_balance.balance_low.*","source_params":{},"prompt":"DeepSeek 余额已跌至预警值，请检查本轮观测数据并提醒主人。","send_result_to_source":true}
+```
+
+软声明、通配符、参数校验及订阅清理对两种目标一致。保存不触发执行。
+
+## 事件目录与唯一绑定
+
+触发绑定页展示插件声明的事件，通配事件展开为树，已绑定动作排在前面。绑定到暂未声明事件的记录仍保留并显示。具名来源 ID（不含 `*`）最多保存一个动作，包括停用中的绑定；修改须编辑原绑定，切换动作须修改或删除后重建。通配来源允许多个绑定；通配绑定与具体事件绑定独立匹配。旧的重复具名绑定不会删除，除第一个外标记为冲突并禁止执行，可手动清理。
+
+### Mattermost 动作归属
+
+Slash 指令登记负责远端资源、令牌和接收状态；事件动作以框架绑定为准。创建时 script_id 可选，不传可再绑定 wake；不再要求为直接唤醒创建脚本。改为 wake 后，登记中的历史脚本字段不构成引用，允许删除旧脚本。启停只控制入口，保留动作；修复不覆盖框架已更新的动作。页面动作列展示实际绑定。
+
+## 对象泛事件
+
+| 插件 | 泛事件族 | 具体事件后缀 |
+|---|---|---|
+| Home Assistant | entity_state_changed、entity_turned_on、entity_turned_off、entity_unavailable、entity_available、entity_attribute_changed | HA 实体 ID，如 switch.lamp |
+| ScanElf | device_state_changed、device_online、device_offline、device_discovered | 标准大写 MAC，保留冒号 |
+| 我的世界 | observation、status_changed、server_online、server_offline、players_changed、players_increased、players_decreased、players_joined、players_reached、players_below | 保存的服务器 ID |
+| DeepSeek | balance_low | 供应商 ID.币种，例如 provider.CNY |
+| FreeReps | workout_added | 训练记录 ID |
+| 热量日历 | record_changed、confirmation_changed | 日期 YYYY-MM-DD |
+| 定时任务 | schedule | interval、daily、once |
+
+以上事件族均加 `. *`（去掉中间空格）注册，例如 `ha_control.entity_state_changed.*`；可绑定全体、多组筛选或具体来源 `ha_control.entity_state_changed.switch.lamp`。具名来源仍一个动作，泛来源可以保存多个动作。通配符按大小写匹配；MAC 使用 ScanElf 返回的标准大写格式。HA 仍只观察已配置的房间与实体，实体筛选留空表示全部允许实体。人数阈值事件在参数 threshold 中设置，只有跨过阈值才命中；开关服沿用连续失败确认，首次基线不触发变化提醒。
+
+`Plugin.trigger_source(..., legacy_ids=('old_event',))` 可将该插件旧事件绑定迁至新声明，保留绑定 ID、动作、开关与参数；迁移不执行动作。参数不兼容时原绑定保留并记日志。通用订阅可共享物理连接，按实际对象发布 `emit_trigger('family.' + object_id, data, uid=...)`；不要直接发布带星号的事件名称。

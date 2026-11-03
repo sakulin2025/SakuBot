@@ -32,3 +32,9 @@ ctx.call 通过统一注册表调用当前可用插件的工具，参数验证�
 用 script_run 主动运行，返回 ID 后用 script_execution get 查询结果/日志/工具调用；停止运行也通过 script_execution。中断的外部操作可能已执行，不能自动重放。重启保留未启动队列，已开始执行的标为中断。删除需 confirm=true，先停止任务并删除绑定。删除注册保留版本与私有数据供审计。
 
 触发源是软声明：未声明的 source 也可以绑定，允许 `*` 通配。比如 `mattermost.slash.*` 匹配所有指令，`mattermost.slash.weather` 仅匹配 /weather。未知 source 不代表出错或禁止绑定；若没有事件生产者则不会运行。声明出现后按 Schema 校验参数，有变化时再编辑绑定。Mattermost Slash 需用户配置服务自己的验证令牌，不能使用管理令牌，不自动唤醒 Agent。
+
+仅需收到事件后让主智能体处理时，不必写中间脚本：使用 script_binding 保存 target_kind="wake"、prompt（必填）和 send_result_to_source。事件观测数据自动作为本轮临时信息提供；提示词是普通文本。省略 target_kind 仍按原脚本绑定处理。
+
+具名事件来源（不含 `*`）只能绑定一个动作，停用也占用；先 list 查找已有绑定并使用其 id 更新。泛事件允许多个绑定。
+
+优先用对象泛事件声明：HA entity_state_changed.* / entity_turned_on.* / entity_turned_off.*；ScanElf device_state_changed.* / device_online.* / device_offline.* / device_discovered.*；Minecraft observation.*、server_online.*、server_offline.*、players_reached.*、players_below.* 等。先 sources 查看完整清单与参数。可在同一泛事件上创建多个不同对象或阈值的绑定，不要把全体对象绑定到无后缀的旧具名来源。具体后缀分别为实体 ID、标准大写 MAC、服务器 ID；也能用泛来源加参数筛选。
