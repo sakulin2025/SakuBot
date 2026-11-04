@@ -1,8 +1,8 @@
-<script setup lang="ts">
+<script setup lang="ts" generic="T extends Record<string, any> = Record<string, unknown>">
 import { computed, ref } from 'vue'
 const props = withDefaults(
   defineProps<{
-    rows?: Record<string, unknown>[]
+    rows?: T[]
     columns?: { key: string; label: string; sortable?: boolean }[]
     rowKey?: string
     loading?: boolean
