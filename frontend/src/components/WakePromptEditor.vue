@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
 import { api } from '../api'
-const props = defineProps<{ modelValue: string; kind?: 'environment' | 'source_change'; title?: string }>()
+const props = defineProps<{ modelValue: string; kind?: 'environment' | 'source_change' | 'source_risk'; title?: string }>()
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 const defaults = ref('')
 const variables = ref<{ name: string; label: string }[]>([])

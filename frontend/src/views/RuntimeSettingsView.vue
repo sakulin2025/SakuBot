@@ -29,17 +29,32 @@ interface ConversationSource {
   name: string
   plugin_id: string
   available: boolean
+  trusted: boolean
   reason: string
   capabilities: string[]
 }
 const sources = ref<ConversationSource[]>([])
+const trustBusy = ref<Record<string, boolean>>({})
+async function setTrust(sourceId: string, trusted: boolean) {
+  if (trustBusy.value[sourceId]) return
+  trustBusy.value[sourceId] = true
+  try {
+    const result = await api<{ items: ConversationSource[]; current: string }>('conversation-sources/trust', {
+      method: 'PUT', body: { source_id: sourceId, trusted },
+    })
+    sources.value = result.items
+    currentSource.value = result.current
+  } catch (exc) { store.toast(exc instanceof Error ? exc.message : '更新失败', true) }
+  finally { trustBusy.value[sourceId] = false }
+}
 const currentSource = ref('')
-const routing = reactive<{ mode: 'intelligent'; targets: string[]; tool_events: boolean; wake_insertion: 'queue' | 'next_boundary' | 'same_source_boundary'; same_source_priority: boolean; source_change_enabled: boolean; source_change_mode: 'context' | 'temporary'; source_change_template: string }>({
+const routing = reactive<{ mode: 'intelligent'; targets: string[]; tool_events: boolean; wake_insertion: 'queue' | 'next_boundary' | 'same_source_boundary'; same_source_priority: boolean; untrusted_source_template: string; source_change_enabled: boolean; source_change_mode: 'context' | 'temporary'; source_change_template: string }>({
   mode: 'intelligent',
   targets: [],
   tool_events: false,
   wake_insertion: 'queue',
   same_source_priority: false,
+  untrusted_source_template: '',
   source_change_enabled: true,
   source_change_mode: 'context',
   source_change_template: '',
@@ -262,6 +277,7 @@ async function changeToken() {
               <th>插件</th>
               <th>状态</th>
               <th>支持的消息类型</th>
+              <th>信任</th>
             </tr>
           </thead>
           <tbody>
@@ -270,6 +286,7 @@ async function changeToken() {
               <td>{{ source.plugin_id }}</td>
               <td :title="source.reason">{{ source.available ? '已连接' : '不可用' }}</td>
               <td>{{ source.capabilities.map((key) => capabilityNames[key] || key).join(' · ') || '—' }}</td>
+              <td @change.stop @input.stop><SSwitch :model-value="source.trusted" :disabled="trustBusy[source.id]" :aria-label="`信任 ${source.name}`" @update:model-value="setTrust(source.id, $event)" /></td>
             </tr>
           </tbody>
         </STable>
@@ -286,6 +303,7 @@ async function changeToken() {
         </SFormItem>
       </template>
     </WakePromptEditor>
+    <WakePromptEditor v-model="routing.untrusted_source_template" kind="source_risk" title="不可信来源风险警告" class="settings-section security-card" @update:model-value="routingDirty = true" />
     </SForm>
     <Teleport to="body">
       <div class="floating-actions runtime-save">

@@ -52,8 +52,21 @@ class Conversation:
     def catalog(self):
         current = self.runtime.store.kv_get('conversation.current', '')
         return {'current': current, 'items': [{'id': source['id'], 'plugin_id': source['plugin_id'],
-            'name': source['name'], 'capabilities': list(source['handlers']), **self.status(source)}
+            'name': source['name'], 'trusted': self.is_trusted(source['id']), 'capabilities': list(source['handlers']), **self.status(source)}
             for source in self.sources.values()]}
+
+    def is_trusted(self, identifier):
+        return isinstance(identifier, str) and identifier in self.sources and self.runtime.store.kv_get('conversation.source_trust', {}).get(identifier) is True
+
+    def set_trust(self, identifier, trusted, *, requester='console', run_id=''):
+        if not isinstance(identifier, str) or identifier not in self.sources or type(trusted) is not bool:
+            raise ValueError('对话源或信任状态无效')
+        values = self.runtime.store.kv_get('conversation.source_trust', {})
+        values[identifier] = trusted
+        self.runtime.store.kv_set('conversation.source_trust', values)
+        self.runtime.store.log('info', 'conversation', 'source.trust.changed', run_id=run_id,
+            data={'source_id': identifier, 'trusted': trusted, 'requester': requester})
+        self.runtime.live.publish('conversation.trust', source_id=identifier, trusted=trusted)
 
     def select(self, identifier):
         if identifier not in self.sources:
@@ -78,7 +91,7 @@ class Conversation:
         if old:
             return old
         return await self.runtime.emit('wake', owner, content, target='main', actor=actor, label=label,
-            uid=uid, priority=100, meta={**(meta or {}), 'conversation_source': key, 'role': 'user'},
+            uid=uid, priority=100, meta={**(meta or {}), 'conversation_source': key, 'source_trusted_at_receive': self.is_trusted(key), 'role': 'user'},
             insertion=self.runtime.config.settings.conversation.wake_insertion)
 
     def publish(self, kind, *, response_id, run_id='', exclude=(), **data):

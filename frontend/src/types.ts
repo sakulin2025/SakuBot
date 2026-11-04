@@ -9,7 +9,7 @@ export interface Configuration {
   wake_prompt_template: string
   compression_enabled: boolean
   compression_threshold: number
-  conversation: { mode: 'intelligent'; targets: string[]; tool_events: boolean; wake_insertion: 'queue' | 'next_boundary' | 'same_source_boundary'; same_source_priority: boolean; source_change_enabled: boolean; source_change_mode: 'context' | 'temporary'; source_change_template: string }
+  conversation: { mode: 'intelligent'; targets: string[]; tool_events: boolean; wake_insertion: 'queue' | 'next_boundary' | 'same_source_boundary'; same_source_priority: boolean; untrusted_source_template: string; source_change_enabled: boolean; source_change_mode: 'context' | 'temporary'; source_change_template: string }
   context_chars: number
   plugins: string[]
   agent_concurrency: number

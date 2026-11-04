@@ -1,6 +1,7 @@
 """Dynamic channel sources, cursor migration and sender context."""
 import hashlib
 import json
+import re
 import time
 from functools import partial
 
@@ -11,6 +12,8 @@ class ChannelSources:
 
     def sync_sources(self):
         wanted = set(self.config.get('channel_ids', []))
+        if self.config.get('respond_all_direct'):
+            wanted.update(self.dynamic_channels)
         for channel in self.declared_channels - wanted:
             self.remove_conversation_source(self.source_id(channel))
         for channel in wanted - self.declared_channels:
@@ -23,6 +26,32 @@ class ChannelSources:
     def cursor_for(self, channel):
         key = hashlib.sha256((self.config['base_url'].rstrip('/') + '\n' + self.bot_id + '\nchannel:' + channel).encode()).hexdigest()[:24]
         return 'cursor:' + key
+
+    def direct_scope(self):
+        return 'direct_channels:' + hashlib.sha256((self.config['base_url'].rstrip('/') + '\n' + self.bot_id).encode()).hexdigest()[:24]
+
+    async def accept_direct_channel(self, post):
+        channel = str(post.get('channel_id', ''))
+        if channel in self.declared_channels:
+            return True
+        if not self.online or not self.config.get('respond_all_direct') or not re.fullmatch(r'[a-z0-9]{26}', channel):
+            return False
+        try:
+            info = await self.mattermost_api('GET', 'api/v4/channels/' + channel)
+            if info.get('type') != 'D' or info.get('delete_at'):
+                return False
+            await self.mattermost_api('GET', 'api/v4/channels/' + channel + '/members/' + self.bot_id)
+        except Exception as exc:
+            self.runtime.store.log('warning', self.id, 'mattermost.direct.discovery.failed', data={'channel_id': channel, 'error': type(exc).__name__})
+            return False
+        self.channel_info[channel] = info
+        self.dynamic_channels.add(channel)
+        self.state.set(self.direct_scope(), sorted(self.dynamic_channels))
+        if self.state.get(self.cursor_for(channel)) is None:
+            self.state.set(self.cursor_for(channel), int(post.get('create_at') or time.time() * 1000))
+        self.sync_sources()
+        self.runtime.store.log('info', self.id, 'mattermost.direct.discovered', data={'channel_id': channel})
+        return True
 
     async def prepare_channels(self):
         legacy = self.config.get('legacy_owner', '')
@@ -48,11 +77,21 @@ class ChannelSources:
                 settings.targets = [new_source if key == old_source else key for key in settings.targets]
                 self.runtime.config.save(self.runtime.config.settings)
         self.channel_info = {}
-        for channel in self.config.get('channel_ids', []):
-            info = await self.mattermost_api('GET', 'api/v4/channels/' + channel)
-            await self.mattermost_api('GET', 'api/v4/channels/' + channel + '/members/' + self.bot_id)
-            if info.get('delete_at'):
-                raise ValueError('生效频道已归档：' + channel)
+        self.dynamic_channels = set(self.state.get(self.direct_scope(), [])) if self.config.get('respond_all_direct') else set()
+        for channel in set(self.config.get('channel_ids', [])) | self.dynamic_channels:
+            try:
+                info = await self.mattermost_api('GET', 'api/v4/channels/' + channel)
+                await self.mattermost_api('GET', 'api/v4/channels/' + channel + '/members/' + self.bot_id)
+            except RuntimeError:
+                if channel in self.config.get('channel_ids', []):
+                    raise
+                self.dynamic_channels.discard(channel)
+                continue
+            if info.get('delete_at') or (channel not in self.config.get('channel_ids', []) and info.get('type') != 'D'):
+                if channel in self.config.get('channel_ids', []):
+                    raise ValueError('生效频道已归档：' + channel)
+                self.dynamic_channels.discard(channel)
+                continue
             self.channel_info[channel] = info
             key = self.cursor_for(channel)
             if self.state.get(key) is None:

@@ -229,7 +229,7 @@ class Runtime:
             meta = {**(meta or {}), 'temporary_context': temporary_context}
         if kind == 'wake':
             meta = {**(meta or {}), 'send_result_to_source': send_result_to_source}
-            for key in ('source_change_notice', 'insertion_run_id', 'absorbed_run_id', 'absorbed_at', 'insertion_mode', 'wake_submitted', 'wake_request_id', 'wake_run_id'):
+            for key in ('source_risk_warning', 'source_change_notice', 'insertion_run_id', 'absorbed_run_id', 'absorbed_at', 'insertion_mode', 'wake_submitted', 'wake_request_id', 'wake_run_id'):
                 meta.pop(key, None)
             from .wake_routing import insertion_metadata
             meta.update(insertion_metadata(self, source, target, meta, insertion))
@@ -313,7 +313,7 @@ class Runtime:
         metadata = json.loads(row['meta'])
         item = {key: row[key] for key in ('id', 'at', 'source', 'actor', 'label', 'target')}
         item['text'] = row['text']
-        item['metadata'] = {key: value for key, value in metadata.items() if key not in ('segments', 'raw', 'packet', 'temporary_context', 'send_result_to_source', 'injected_context', 'history_context', 'prompt_text', 'source_change_notice', 'insertion_run_id', 'absorbed_run_id', 'absorbed_at', 'insertion_mode', 'wake_submitted', 'wake_request_id', 'wake_run_id')}
+        item['metadata'] = {key: value for key, value in metadata.items() if key not in ('segments', 'raw', 'packet', 'temporary_context', 'send_result_to_source', 'injected_context', 'history_context', 'prompt_text', 'source_risk_warning', 'source_trusted_at_receive', 'source_change_notice', 'insertion_run_id', 'absorbed_run_id', 'absorbed_at', 'insertion_mode', 'wake_submitted', 'wake_request_id', 'wake_run_id')}
         if isinstance(metadata.get('prompt_text'), str):
             return {'role': 'user', 'content': metadata['prompt_text'], '_event_id': row['id']}
         return {'role': 'assistant' if metadata.get('role') == 'assistant' else 'user', 'content': encode(item), '_event_id': row['id']}
@@ -328,6 +328,8 @@ class Runtime:
                 result.append({'role': item['role'], 'content': item['content'], '_temporary': bool(item.get('_temporary'))})
         if metadata.get('temporary_context'):
             result.append({'role': 'system', 'content': f"关联消息 {event['id']} 的本轮临时要求（从此消息加入起到本轮结束有效）：\n" + metadata['temporary_context'], '_temporary': True})
+        if metadata.get('source_risk_warning'):
+            result.append({'role': 'system', 'content': metadata['source_risk_warning'], '_temporary': True})
         from .wake_routing import identity
         result.append({**self.main_event_message(event), '_wake_body': True, '_wake_source': identity(event)})
         for message in result:

@@ -26,6 +26,20 @@ def bootstrap(config, store):
         state = {'status': 'installing' if config.fresh_install else 'complete', 'ids': ids}
         store.kv_set(KEY, state)
     if state.get('status') != 'installing':
+        # Label newly bundled plugins already installed on an existing deployment,
+        # without installing absent plugins or restoring deliberately removed ones.
+        changed = False
+        for name in IDS:
+            if name in state.get('ids', []):
+                continue
+            try:
+                program_path(config.root, name)
+            except ValueError:
+                continue
+            state.setdefault('ids', []).append(name)
+            changed = True
+        if changed:
+            store.kv_set(KEY, state)
         return
     for name in IDS:
         if name in state['ids']:

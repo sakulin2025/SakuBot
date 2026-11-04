@@ -39,6 +39,7 @@ class Extension(ChannelSources, MattermostTools, Plugin):
         self.error = '尚未连接'
         self.declared_channels = set()
         self.channel_info = {}
+        self.dynamic_channels = set()
         self.bot_id = ''
         self.connection_job = None
         self.http = None
@@ -83,7 +84,7 @@ class Extension(ChannelSources, MattermostTools, Plugin):
 
     async def page_status(self, request):
         return {'online': self.online, 'error': self.error, 'retry_at': self.retry_at,
-                'bot_id': self.bot_id, 'channel_ids': self.config.get('channel_ids', [])}
+                'bot_id': self.bot_id, 'channel_ids': sorted(self.declared_channels)}
 
     async def page_logs(self, request):
         rows = self.runtime.store.rows("SELECT id,at,level,event,data FROM logs WHERE source=? AND event LIKE 'mattermost.%' ORDER BY id DESC LIMIT 100", (self.id,))
@@ -141,7 +142,7 @@ class Extension(ChannelSources, MattermostTools, Plugin):
             # These have a separate form and can change while connection settings are edited.
             settings.slash_enabled = self.config.get('slash_enabled', False)
             settings.slash_base_url = self.config.get('slash_base_url', '')
-            connection_changed = any(settings.model_dump()[key] != self.config.get(key) for key in ('base_url', 'channel_ids', 'token'))
+            connection_changed = any(settings.model_dump()[key] != self.config.get(key) for key in ('base_url', 'channel_ids', 'token', 'respond_all_direct'))
             try:
                 if connection_changed or not all(self.config.get(k) for k in ('base_url', 'token')):
                     await self.validate_connection(base, token, settings.channel_ids)
@@ -251,7 +252,7 @@ class Extension(ChannelSources, MattermostTools, Plugin):
             delay = min(delay * 2, 120)
 
     async def catch_up(self):
-        for channel in self.config.get('channel_ids', []):
+        for channel in sorted(self.declared_channels):
             since = max(0, int(self.state.get(self.cursor_for(channel), 0)) - 1)
             data = await self.mattermost_api('GET', 'api/v4/channels/' + channel + '/posts', params={'since': since})
             posts = data.get('posts', {})
@@ -262,10 +263,12 @@ class Extension(ChannelSources, MattermostTools, Plugin):
             self.runtime.store.log('info', self.id, 'mattermost.catch_up', data={'channel_id': channel, 'posts': len(posts)})
 
     async def process_post(self, post):
-        if not isinstance(post, dict) or post.get('channel_id') not in self.declared_channels or post.get('delete_at', 0):
+        if not isinstance(post, dict) or post.get('delete_at', 0):
             return
         timestamp = int(post.get('create_at') or 0)
         if post.get('user_id') == self.bot_id or not IDENTIFIER.fullmatch(str(post.get('user_id', ''))) or post.get('type'):
+            return
+        if not await self.accept_direct_channel(post):
             return
         post_id = str(post.get('id', ''))
         if not IDENTIFIER.fullmatch(post_id):

@@ -80,7 +80,7 @@ def change_source(runtime, key, invocation):
     catalog = {item['id']: item for item in conversation.catalog()['items']}
     def descriptor(identifier):
         item = catalog.get(identifier, {})
-        return {'id': identifier, 'name': item.get('name') or identifier or '未选择', 'available': item.get('available', False)}
+        return {'id': identifier, 'name': item.get('name') or identifier or '未选择', 'available': item.get('available', False), 'trusted': item.get('trusted', False)}
     previous_source, current_source = descriptor(previous), descriptor(key)
     conversation.select(key)
     if runtime.current_run and runtime.current_run['id'] == invocation.run_id:
@@ -117,6 +117,7 @@ def flush_source_notices(invocation, messages):
 
 def activate(runtime, event, invocation):
     """Called only when a wake starts or is claimed at a safe boundary."""
+    from .source_trust import attach_warning
     data = metadata(event)
     key = data.get('conversation_source', '')
     key = key if isinstance(key, str) else ''
@@ -126,6 +127,7 @@ def activate(runtime, event, invocation):
             data['source_change_notice'] = notice
             runtime.store.execute('UPDATE events SET meta=? WHERE id=?', (json.dumps(data, ensure_ascii=False), event['id']))
             event = {**event, 'meta': json.dumps(data, ensure_ascii=False)}
+    event = attach_warning(runtime, event, invocation)
     if runtime.current_run and runtime.current_run['id'] == invocation.run_id:
         runtime.current_run['wake_source'] = identity(event)
     return event

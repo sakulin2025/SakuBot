@@ -8,6 +8,7 @@ class Settings(BaseModel):
     base_url: str = ''
     token: str = ''
     channel_ids: list[str] = Field(default_factory=list, max_length=100)
+    respond_all_direct: bool = False
     legacy_owner: str = ''
     slash_enabled: bool = False
     slash_base_url: str = ''

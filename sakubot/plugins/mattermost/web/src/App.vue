@@ -16,6 +16,7 @@ const host = usePluginHost();
 const values = reactive({
   base_url: "",
   token: "",
+  respond_all_direct: false,
   channel_ids: [] as string[],
   image_model_id: "",
   reply_split_enabled: true,
@@ -75,6 +76,8 @@ const labels: Record<string, string> = {
   "mattermost.connected": "连接成功",
   "mattermost.disconnected": "连接断开",
   "mattermost.catch_up": "消息补收",
+  "mattermost.direct.discovered": "发现私聊",
+  "mattermost.direct.discovery.failed": "私聊接入失败",
   "mattermost.message.received": "收到消息",
   "mattermost.message.sent": "消息已发送",
   "mattermost.message.failed": "消息发送失败",
@@ -214,6 +217,7 @@ watch(tab, async (next, previous) => {
               placeholder="填写 Bot Token"
             />
           </SFormItem>
+          <SFormItem label="回应所有私聊"><SSwitch v-model="values.respond_all_direct" label="回应所有私聊" /></SFormItem>
           <SFormItem label="生效频道列表">
             <div class="channel-list">
               <div v-for="(_, index) in values.channel_ids" :key="index" class="channel-row">

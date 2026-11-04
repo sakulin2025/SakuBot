@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from .wake_prompt import DEFAULT as DEFAULT_WAKE_PROMPT, CHANGE_DEFAULT, LEGACY_CHANGE_DEFAULT, validate_template, validate_change_template
+from .wake_prompt import DEFAULT as DEFAULT_WAKE_PROMPT, CHANGE_DEFAULT, RISK_DEFAULT, LEGACY_CHANGE_DEFAULT, validate_template, validate_change_template
 
 
 def http_url(value):
@@ -88,6 +88,7 @@ class ConversationSettings(BaseModel):
     tool_events: bool = False
     wake_insertion: Literal['queue', 'next_boundary', 'same_source_boundary'] = 'queue'
     same_source_priority: bool = False
+    untrusted_source_template: str = RISK_DEFAULT
     source_change_enabled: bool = True
     source_change_mode: Literal['context', 'temporary'] = 'context'
     source_change_template: str = CHANGE_DEFAULT
@@ -101,6 +102,11 @@ class ConversationSettings(BaseModel):
                 value['source_change_template'] = CHANGE_DEFAULT
             return value
         return value
+
+    @field_validator('untrusted_source_template')
+    @classmethod
+    def validate_source_risk(cls, value):
+        return validate_template(value)
 
     @field_validator('source_change_template')
     @classmethod

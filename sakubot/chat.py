@@ -142,6 +142,14 @@ def register_chat_api(app, authorize, runtime, config):
     async def sources():
         return runtime.conversation.catalog()
 
+    @app.put('/api/conversation-sources/trust', dependencies=[Depends(authorize)])
+    async def set_source_trust(request: Request):
+        data = await request.json()
+        if not isinstance(data, dict) or set(data) != {'source_id', 'trusted'}:
+            raise ValueError('信任设置无效')
+        runtime.conversation.set_trust(data['source_id'], data['trusted'])
+        return runtime.conversation.catalog()
+
     @app.put('/api/conversation-sources/current', dependencies=[Depends(authorize)])
     async def select_source(request: Request):
         data = await request.json()

@@ -769,3 +769,12 @@ QQ 的 `main_sessions` 为 `{type: "group" | "private", number: "数字号码"}`
 系统消息能力新增 `message_select_source(source_id)`：先使用 `message_sources` 取得准确 ID，切换立即生效并持久保存，不改变 `send_result_to_source`。仍使用统一源变更提醒；提醒在整批工具结果完整返回后插入，上下文/临时模式遵循运行设置。
 
 主智能体在**整批工具完成之后**检查插入；模型未请求工具时，在准备结束本轮前检查。不会在同一个 assistant 的多次 tool_calls 结果中间插入消息。主动切换会立即更新同源匹配依据；同源条件请求先保留在当前运行队列，安全点按当时的源判定，主动切换后原本等待的新源消息也可变为可吸收。相邻与同源优先开关仍生效，显式 `queue` 请求不会被提升。
+
+
+### 对话源信任
+
+每个已声明源默认 `trusted=false`，信任独立于在线状态，存于框架 KV `conversation.source_trust`。管理端来源表的开关即时生效。`message_sources` 返回 `trusted`；`message_set_source_trust(source_id, trusted)` 只允许主智能体在可信实际输入的唤醒中调用，执行时再次检查。网页管理端为已认证的可信控制入口。输出路由切换不授予信任修改权；吸收不可信输入会使该轮永久失去信任管理权；源撤销信任也立即撤销工具调用资格。插件创建的新源不得自动授予信任。
+
+`receive_main` 在接收时快照来源信任，运行时还检查当前信任。升级前无快照的外部消息按不可信处理。每个不可信来源消息在模型请求中附加 `source_risk_warning` 临时系统消息，不进入持久历史；模板是 `conversation.untrusted_source_template`。变量 `source.id/name/trusted` 对应实际输入而非当前响应源；空渲染或错误回退默认风险警告。
+
+信任状态只用于来源风险提示和信任管理工具的执行约束，不是第三方插件进程或任意 Shell 的隔离机制。
