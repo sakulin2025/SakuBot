@@ -63,8 +63,8 @@ class Conversation:
 
     def targets(self):
         settings = self.runtime.config.settings.conversation
-        return ([self.runtime.store.kv_get('conversation.current', '')] if settings.mode == 'intelligent'
-                else settings.targets)
+        current = self.runtime.store.kv_get('conversation.current', '')
+        return [current] if current else []
 
     async def receive(self, owner, identifier, content, *, actor='', label='', uid=None, meta=None):
         key = owner + '.' + identifier
@@ -77,8 +77,6 @@ class Conversation:
         old = self.runtime.store.one('SELECT id,uid,kind,status FROM events WHERE uid=?', (uid,))
         if old:
             return old
-        if self.runtime.config.settings.conversation.mode == 'intelligent':
-            self.select(key)
         return await self.runtime.emit('wake', owner, content, target='main', actor=actor, label=label,
             uid=uid, priority=100, meta={**(meta or {}), 'conversation_source': key, 'role': 'user'},
             insertion=self.runtime.config.settings.conversation.wake_insertion)
@@ -142,7 +140,7 @@ class Conversation:
                 source['queue'].task_done()
                 return
             if source['id'] not in self.targets():
-                if self.runtime.config.settings.conversation.mode == 'intelligent' and packet['type'] in PARTS:
+                if packet['type'] in PARTS:
                     self.publish(packet['type'], **{key: value for key, value in packet.items() if key != 'type'})
                 self.record(source, packet, 'superseded')
                 source['queue'].task_done()

@@ -8,6 +8,8 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from .wake_prompt import DEFAULT as DEFAULT_WAKE_PROMPT, CHANGE_DEFAULT, LEGACY_CHANGE_DEFAULT, validate_template, validate_change_template
+
 
 def http_url(value):
     url = urlsplit(value)
@@ -81,10 +83,29 @@ class ModelConfig(BaseModel):
 
 class ConversationSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    mode: Literal['broadcast', 'intelligent'] = 'intelligent'
+    mode: Literal['intelligent'] = 'intelligent'
     targets: list[str] = Field(default_factory=list, max_length=100)
     tool_events: bool = False
-    wake_insertion: Literal['queue', 'next_boundary'] = 'queue'
+    wake_insertion: Literal['queue', 'next_boundary', 'same_source_boundary'] = 'queue'
+    same_source_priority: bool = False
+    source_change_enabled: bool = True
+    source_change_mode: Literal['context', 'temporary'] = 'context'
+    source_change_template: str = CHANGE_DEFAULT
+
+    @model_validator(mode='before')
+    @classmethod
+    def follow_source_only(cls, value):
+        if isinstance(value, dict):
+            value = {**value, 'mode': 'intelligent', 'targets': []}
+            if value.get('source_change_template') == LEGACY_CHANGE_DEFAULT:
+                value['source_change_template'] = CHANGE_DEFAULT
+            return value
+        return value
+
+    @field_validator('source_change_template')
+    @classmethod
+    def validate_source_change(cls, value):
+        return validate_change_template(value)
 
 
 class AgentPreferences(BaseModel):
@@ -116,6 +137,13 @@ class Settings(BaseModel):
     def plugin_ids(cls, value):
         from .components import optional_ids
         return optional_ids(value)
+
+    wake_prompt_template: str = DEFAULT_WAKE_PROMPT
+
+    @field_validator("wake_prompt_template")
+    @classmethod
+    def wake_prompt_valid(cls, value):
+        return validate_template(value)
 
     compression_enabled: bool = True
     compression_threshold: float = Field(0.8, ge=0.1, le=0.95)

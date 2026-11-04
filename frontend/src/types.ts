@@ -6,9 +6,10 @@ export interface Configuration {
   lightweight_model_id: string
   main_persona_id: string
   max_steps: number
+  wake_prompt_template: string
   compression_enabled: boolean
   compression_threshold: number
-  conversation: { mode: 'broadcast' | 'intelligent'; targets: string[]; tool_events: boolean; wake_insertion: 'queue' | 'next_boundary' }
+  conversation: { mode: 'intelligent'; targets: string[]; tool_events: boolean; wake_insertion: 'queue' | 'next_boundary' | 'same_source_boundary'; same_source_priority: boolean; source_change_enabled: boolean; source_change_mode: 'context' | 'temporary'; source_change_template: string }
   context_chars: number
   plugins: string[]
   agent_concurrency: number

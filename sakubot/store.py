@@ -62,7 +62,7 @@ class Store:
         # Safe-point messages not yet submitted to a model have not caused actions.
         self.db.execute("""UPDATE events SET status='pending', error='', meta=json_remove(meta,'$.absorbed_run_id')
             WHERE kind='wake' AND target='main' AND status='running'
-              AND (json_extract(meta,'$.insertion_mode')='next_boundary'
+              AND (json_extract(meta,'$.insertion_mode') IN ('next_boundary','same_source_boundary')
                    OR json_extract(meta,'$.insertion_run_id') IS NOT NULL
                    OR json_extract(meta,'$.absorbed_run_id') IS NOT NULL)
               AND coalesce(json_extract(meta,'$.wake_submitted'),0)=0""")

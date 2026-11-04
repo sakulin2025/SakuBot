@@ -6,6 +6,7 @@ import UiIcon from '../components/UiIcon.vue'
 import UiModal from '../components/UiModal.vue'
 import MessageContent from '../components/MessageContent.vue'
 import ChatInput from '../components/ChatInput.vue'
+import { buildTimeline } from '../chat/timeline'
 import { sessionToken, unauthorized } from '../credentials'
 interface Message {
   id: number
@@ -15,6 +16,7 @@ interface Message {
   label: string
   text: string
   status: string
+  kind?: string
   wake_stage?: string
   role: 'user' | 'assistant' | 'event'
   meta: Record<string, unknown>
@@ -121,11 +123,11 @@ const selectedEntry = computed(() => {
   const selection = selectedTool.value
   return selection ? processes.value.find(run => run.id === selection.runId)?.entries.find(entry => entry.key === selection.key) : undefined
 })
-const runsByEvent = computed(() => {
-  const grouped = new Map<number, ProcessRun[]>()
-  for (const run of processes.value) grouped.set(run.event_id, [...(grouped.get(run.event_id) || []), run])
-  return grouped
-})
+const timeline = computed(() => buildTimeline(messages.value, processes.value))
+const expandedTools = ref<Record<string, boolean>>({})
+function visibleTools(key: string, entries: ProcessEntry[]) {
+  return expandedTools.value[key] ? entries : entries.slice(-3)
+}
 function processEntry(runId: string, entry: ProcessEntry) {
   const run = processes.value.find(item => item.id === runId)
   if (!run) return
@@ -152,6 +154,39 @@ const ghost = computed(() => activeSteps.value.at(-1))
 const canSend = computed(
   () => store.config?.enabled && !!store.agents.find((agent) => agent.id === 'main')?.ready,
 )
+const retryMessage = ref<Message | null>(null)
+const retryBusy = ref(false)
+const retryError = ref('')
+async function retryWake() {
+  if (!retryMessage.value || retryBusy.value) return
+  retryBusy.value = true
+  retryError.value = ''
+  try {
+    const result = await api<{ message: Message }>('chat/retry', { body: { event_id: retryMessage.value.id } })
+    merge(result.message)
+    retryMessage.value.meta.retry_event_id = result.message.id
+    retryMessage.value = null
+  } catch (err) {
+    retryError.value = err instanceof Error ? err.message : '重试失败'
+  } finally { retryBusy.value = false }
+}
+const rollbackMessage = ref<Message | null>(null)
+const rollbackBusy = ref(false)
+const rollbackError = ref('')
+async function rollbackChat() {
+  if (!rollbackMessage.value || rollbackBusy.value) return
+  rollbackBusy.value = true
+  rollbackError.value = ''
+  try {
+    const data = await api<Snapshot>('chat/rollback', { body: {
+      event_id: rollbackMessage.value.id, revision: contextRevision, confirmation: '回退',
+    } })
+    snapshot(data, true, true)
+    rollbackMessage.value = null
+  } catch (err) {
+    rollbackError.value = err instanceof Error ? err.message : '回退失败'
+  } finally { rollbackBusy.value = false }
+}
 function pretty(value: unknown) {
   return typeof value === 'string' ? value : JSON.stringify(value, null, 2)
 }
@@ -172,6 +207,7 @@ function clearPage(revision: number, cutoff: number) {
   activity.value = []
   tools.value = []
   processes.value = []
+  expandedTools.value = {}
   selectedTool.value = null
   pending.value = []
   running.value = null
@@ -461,12 +497,16 @@ onUnmounted(() => {
           <div class="chat-history">
             <SButton v-if="hasMore" variant="text" :loading="olderBusy" @click="older">更早消息</SButton>
           </div>
-          <template v-for="message in messages" :key="message.uid">
+          <template v-for="item in timeline" :key="item.key">
+          <template v-if="item.kind === 'message'">
+          <template v-for="message in [item.message]" :key="message.uid">
             <div v-if="message.role === 'event'" class="chat-event">
               <div class="chat-event-head">
                 <UiIcon name="events" :size="13" />
                 <span>{{ message.label || message.source }}</span>
                 <time>{{ formatDate(message.at) }}</time>
+                <SButton v-if="message.kind === 'wake' && message.status === 'failed' && !message.meta.retry_event_id" variant="text" :disabled="store.config?.enabled === false" @click="retryError = ''; retryMessage = message">重试</SButton>
+                <SButton v-if="message.kind === 'wake'" variant="text" :disabled="!!running" title="回退到此消息之前" @click="rollbackError = ''; rollbackMessage = message">回退</SButton>
               </div>
               <pre>{{ message.text }}</pre>
             </div>
@@ -477,6 +517,8 @@ onUnmounted(() => {
                   {{ message.meta.source_label || (message.source === 'web-chat' ? '网页' : message.source) }}
                 </span>
                 <time>{{ formatDate(message.at) }}</time>
+                <SButton v-if="message.kind === 'wake' && message.status === 'failed' && !message.meta.retry_event_id" variant="text" :disabled="store.config?.enabled === false" @click="retryError = ''; retryMessage = message">重试</SButton>
+                <SButton v-if="message.kind === 'wake'" variant="text" :disabled="!!running" title="回退到此消息之前" @click="rollbackError = ''; rollbackMessage = message">回退</SButton>
                 <STag
                   v-if="
                     message.role === 'user' &&
@@ -490,24 +532,31 @@ onUnmounted(() => {
                 <MessageContent :text="message.text" :parts="message.meta.parts" />
               </div>
             </article>
-            <div v-for="run in runsByEvent.get(message.id) || []" v-show="run.entries.some(item => item.kind !== 'model')" :key="run.id" class="chat-run">
-              <template v-for="entry in run.entries.filter(item => item.kind !== 'model')" :key="entry.key">
-              <button v-if="entry.kind === 'tool'" type="button" class="chat-run-entry chat-run-button" @click="selectedTool = { runId: run.id, key: entry.key }">
-                <span class="chat-run-head">
-                  <UiIcon name="plugins" :size="14" />
-                  <strong :class="{ 'tool-running': entry.status === 'running' || entry.status === 'waiting' }">{{ entry.name }}</strong>
-                  <STag v-if="entry.status === 'failed' || entry.status === 'interrupted'" :status="entry.status" />
-                  <span v-if="toolDuration(entry)" class="tool-duration">{{ toolDuration(entry) }}</span>
-                </span>
-              </button>
-              <div v-else class="chat-run-entry" :class="entry.kind">
-                <div class="chat-run-head">
-                  <UiIcon :name="entry.kind === 'model' ? 'model' : 'memory'" :size="14" />
-                  <strong :class="{ 'tool-running': entry.status === 'running' }">{{ entry.status === 'running' ? '正在压缩上下文' : entry.status === 'failed' ? '上下文压缩失败' : '上下文压缩完成' }}</strong><STag v-if="entry.status === 'failed'" status="failed" />
-                </div>
-              </div>
-              </template>
+          </template>
+          </template>
+          <section v-else-if="item.kind === 'tools'" class="chat-run">
+            <div class="chat-tools-header">
+              <strong>工具调用</strong>
+              <SButton v-if="item.entries.length > 3" variant="text" :aria-expanded="!!expandedTools[item.key]" @click="expandedTools[item.key] = !expandedTools[item.key]">
+                {{ expandedTools[item.key] ? '收起' : `展开全部（${item.entries.length}）` }}
+              </SButton>
             </div>
+            <button v-for="entry in visibleTools(item.key, item.entries)" :key="entry.key" type="button" class="chat-run-entry chat-run-button" @click="selectedTool = { runId: item.runId, key: entry.key }">
+              <span class="chat-run-head">
+                <UiIcon name="plugins" :size="14" />
+                <strong :class="{ 'tool-running': entry.status === 'running' || entry.status === 'waiting' }">{{ entry.name }}</strong>
+                <STag v-if="entry.status === 'failed' || entry.status === 'interrupted'" :status="entry.status" />
+                <span v-if="toolDuration(entry)" class="tool-duration">{{ toolDuration(entry) }}</span>
+              </span>
+            </button>
+          </section>
+          <div v-else class="chat-run chat-run-entry compression">
+            <div class="chat-run-head">
+              <UiIcon name="memory" :size="14" />
+              <strong :class="{ 'tool-running': item.entry.status === 'running' }">{{ item.entry.status === 'running' ? '正在压缩上下文' : item.entry.status === 'failed' ? '上下文压缩失败' : '上下文压缩完成' }}</strong>
+              <STag v-if="item.entry.status === 'failed'" status="failed" />
+            </div>
+          </div>
           </template>
           <article v-for="item in pending" :key="item.id" class="chat-message user">
             <div class="chat-message-meta">
@@ -554,6 +603,21 @@ onUnmounted(() => {
         </ChatInput>
       </SCard>
     </div>
+    <UiModal :open="!!retryMessage" title="重试失败的唤醒" @close="!retryBusy && (retryMessage = null)">
+      <p>将使用原消息和唤醒配置重新排队。上次已执行的工具操作可能重复执行。</p>
+      <p v-if="retryError" class="form-error">{{ retryError }}</p>
+      <template #footer>
+        <SButton :disabled="retryBusy" @click="retryMessage = null">取消</SButton>
+        <SButton :loading="retryBusy" @click="retryWake">确认重试</SButton>
+      </template>
+    </UiModal>
+    <UiModal :open="!!rollbackMessage" title="确认回退主对话" @close="!rollbackBusy && (rollbackMessage = null)">
+      <p>将此消息及之后的内容移出主上下文和聊天窗口，运行日志保留。已执行的工具操作不会撤销。</p>
+      <pre>{{ rollbackMessage?.text }}</pre>
+      <p v-if="rollbackError" class="form-error">{{ rollbackError }}</p>
+      <SButton :disabled="rollbackBusy" @click="rollbackMessage = null">取消</SButton>
+      <SButton :loading="rollbackBusy" @click="rollbackChat">确认回退</SButton>
+    </UiModal>
     <UiModal :open="!!selectedTool" :title="selectedEntry?.name || '工具调用'" wide @close="selectedTool = null">
       <div v-if="selectedEntry" class="tool-detail">
         <STag v-if="selectedEntry.status === 'failed' || selectedEntry.status === 'interrupted'" :status="selectedEntry.status" />
@@ -672,6 +736,7 @@ onUnmounted(() => {
   border-left: 2px solid var(--palette-border-e7e0f4);
   max-width: min(90%, 900px);
 }
+.chat-tools-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; font-size: 11px; color: var(--muted); }
 .chat-run-entry {
   padding: 3px 0;
   margin: 4px 0;

@@ -4,11 +4,26 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from urllib.parse import urlsplit
 from .prompt_templates import MAIN_DEFAULT, validate_template
+from sakubot.main_message_tools import rename_delivery_tools
+
+
+class MainSession(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    type: Literal['group', 'private'] = 'private'
+    number: str
+
+    @field_validator('number', mode='before')
+    @classmethod
+    def identifier(cls, value):
+        if not isinstance(value, str) or not re.fullmatch(r'[0-9]{1,20}', value.strip()) or int(value) <= 0:
+            raise ValueError('群号或 QQ 号须为有效数字，最多 20 位')
+        return str(int(value.strip()))
 
 
 class Settings(BaseModel):
     model_config = ConfigDict(extra='forbid')
     owner_id: str = ''
+    main_sessions: list[MainSession] = Field(default_factory=list, max_length=100)
     backend: Literal['napcat', 'snowluma'] = 'napcat'
     napcat_ws: str = 'ws://napcat:13001'
     napcat_token: str = ''
@@ -26,6 +41,23 @@ class Settings(BaseModel):
     reply_interval_min: float = Field(3, ge=0, allow_inf_nan=False)
     reply_interval_max: float = Field(5, ge=0, allow_inf_nan=False)
 
+    @model_validator(mode='before')
+    @classmethod
+    def migrate_main_sessions(cls, value):
+        if isinstance(value, dict) and 'main_sessions' not in value:
+            value = dict(value)
+            owner = str(value.get('owner_id') or '').strip()
+            value['main_sessions'] = [{'type': 'private', 'number': owner}] if owner else []
+        return value
+
+    @field_validator('main_sessions')
+    @classmethod
+    def unique_sessions(cls, values):
+        keys = [(item.type, item.number) for item in values]
+        if len(set(keys)) != len(keys):
+            raise ValueError('主会话不能重复')
+        return values
+
     @field_validator('reply_split_regex', 'reply_remove_regex')
     @classmethod
     def regex(cls, value):
@@ -38,7 +70,7 @@ class Settings(BaseModel):
     @field_validator('external_prompt')
     @classmethod
     def prompt(cls, value):
-        return validate_template(value)
+        return validate_template(rename_delivery_tools(value))
 
     @model_validator(mode='after')
     def intervals(self):

@@ -152,7 +152,7 @@ class AgentHandle:
         instance = self.instance
         if instance.resetting:
             raise RuntimeError("Agent 正在重置")
-        if kwargs.get('insertion', 'queue') not in ('queue', 'next_boundary'):
+        if kwargs.get('insertion', 'queue') not in (('queue', 'next_boundary', 'same_source_boundary') if instance.id == 'main' else ('queue', 'next_boundary')):
             raise ValueError('唤醒插入模式无效')
         injected = instance.take_pending(self.owner)
         task = asyncio.create_task(instance.run(goal, _injected=injected, _owner=self.owner, **kwargs), name="agent:" + instance.id)
@@ -300,7 +300,7 @@ class AgentInstance:
 
     async def run(self, goal, *, invocation=None, context="", instructions="", persist=True, timeout=300, run_id=None, target=None, metadata=None, temporary_context="", insertion='queue', _injected=None, _owner=''):
         self.ensure_active()
-        if insertion not in ('queue', 'next_boundary'):
+        if insertion not in (('queue', 'next_boundary', 'same_source_boundary') if self.id == 'main' else ('queue', 'next_boundary')):
             raise ValueError('唤醒插入模式无效')
         if self.id == "main":
             contexts = self.take_pending() if _injected is None else _injected

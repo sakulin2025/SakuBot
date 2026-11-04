@@ -7,7 +7,8 @@ class Settings(BaseModel):
     model_config = ConfigDict(extra='forbid')
     base_url: str = ''
     token: str = ''
-    owner: str = ''
+    channel_ids: list[str] = Field(default_factory=list, max_length=100)
+    legacy_owner: str = ''
     slash_enabled: bool = False
     slash_base_url: str = ''
     image_model_id: str = ''
@@ -50,6 +51,9 @@ class Settings(BaseModel):
         if not isinstance(value, dict):
             return value
         value = dict(value)
+        old_owner = value.pop('owner', '')
+        if old_owner and not value.get('channel_ids'):
+            value['legacy_owner'] = value.get('legacy_owner') or old_owner
         value.pop('slash_tokens', None)
         old = value.pop('slash_callback_url', '')
         if old and not value.get('slash_base_url'):
@@ -58,6 +62,15 @@ class Settings(BaseModel):
                 raise ValueError('旧版 Slash 请求地址格式无效')
             value['slash_base_url'] = old.rstrip('/')[:-len(suffix)] + '/'
         return value
+
+    @field_validator('channel_ids')
+    @classmethod
+    def channels_valid(cls, values):
+        if any(not re.fullmatch(r'[a-z0-9]{26}', value) for value in values):
+            raise ValueError('频道 ID 须为 26 位小写字母或数字')
+        if len(set(values)) != len(values):
+            raise ValueError('频道 ID 不能重复')
+        return values
 
     @field_validator('slash_base_url')
     @classmethod

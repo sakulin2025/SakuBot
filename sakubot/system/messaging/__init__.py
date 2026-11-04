@@ -10,7 +10,9 @@ class Extension(Plugin):
     name = 'messaging'
 
     def setup(self):
-        self.tool('message_sources', '查看框架声明的主对话源、可用状态、支持的消息类型和当前响应路由。网页始终同步；插件对话源按运行设置中的广播或智能模式投递，不假定对话源的类型。', object_schema(), self.sources)
+        self.tool('message_sources', '查看框架声明的主对话源、可用状态、支持的消息类型和当前响应路由。网页始终同步；插件对话源在唤醒实际处理时切换，后续输出跟随当前源，不假定对话源的类型。', object_schema(), self.sources)
+        self.tool('message_select_source', '运行中主动切换主会话响应源。先用 message_sources 获取准确 source_id。切换立即生效并持久保存，后续输出跟随新源；不会开启或关闭本轮投递，不撤回已发消息。可选离线源，但其外部投递可能失败，网页仍可见。请确认接收者与保密边界。',
+            object_schema({'source_id': text('message_sources 返回的主会话源完整 ID')}, ('source_id',)), self.select_source, audience='main')
         part = object_schema({'type': {'type': 'string', 'enum': ['text', 'image', 'video', 'audio', 'file']},
             'text': text('text 类型正文'), 'url': text('媒体 HTTP/HTTPS 地址或框架附件 URL'),
             'path': text('共享工作空间中的本地文件相对路径；与 url 二选一'), 'name': text('可选文件名')}, ('type',))
@@ -21,6 +23,16 @@ class Extension(Plugin):
         conversation = self.runtime.conversation
         return {**conversation.catalog(), 'mode': self.runtime.config.settings.conversation.mode,
             'targets': conversation.targets(), 'web_synced': True}
+
+    async def select_source(self, invocation, args):
+        if invocation.agent_id != 'main':
+            raise ValueError('只能由主智能体切换主会话源')
+        from sakubot.wake_routing import change_source
+        changed, notice = change_source(self.runtime, args['source_id'], invocation)
+        if notice:
+            invocation.metadata.setdefault('_pending_source_notices', []).append(notice)
+        return {**await self.sources(invocation, {}), 'changed': changed,
+            'send_result_to_source': invocation.send_result_to_source, 'explicit_target': invocation.metadata.get('reply_target', '')}
 
     async def send(self, invocation, args):
         if invocation.agent_id != 'main' and invocation.origin != 'script':

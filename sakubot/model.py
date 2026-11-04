@@ -4,6 +4,29 @@ import math
 import httpx
 
 
+class ModelRequestError(RuntimeError):
+    def __init__(self, details):
+        self.details = details
+        super().__init__('模型请求失败：' + json.dumps(details, ensure_ascii=False))
+
+
+def request_error(provider, model, response=None, error=None):
+    # Only allow diagnostic headers; never persist authentication headers.
+    details = {'provider_id': provider.id, 'model': model.model_id,
+        'endpoint': provider.api_base.split('?')[0] + '/chat/completions'}
+    if response is not None:
+        body = response.text[:16000]
+        if provider.api_key:
+            body = body.replace(provider.api_key, '[redacted]')
+        details.update(status=response.status_code, response_body=body,
+            body_truncated=len(response.text) > 16000,
+            headers={k: v for k, v in response.headers.items() if k.lower() in
+                ('x-request-id', 'request-id', 'cf-ray', 'retry-after', 'content-type', 'date')})
+    if error is not None:
+        details.update(error_type=type(error).__name__, error=str(error)[:2000])
+    return ModelRequestError(details)
+
+
 class Model:
     def __init__(self, settings):
         self.settings = settings
@@ -70,10 +93,10 @@ class Model:
         try:
             response = await self.client.post(provider.api_base + "/chat/completions",
                 headers={"Authorization": "Bearer " + provider.api_key} if provider.api_key else {}, json=payload)
-        except httpx.HTTPError:
-            raise RuntimeError("模型请求失败或超时；没有自动重试") from None
+        except httpx.HTTPError as exc:
+            raise request_error(provider, model, error=exc) from None
         if response.status_code != 200:
-            raise RuntimeError(f"模型接口 HTTP {response.status_code}，请检查模型配置或额度")
+            raise request_error(provider, model, response=response)
         try:
             body = response.json()
             message = body["choices"][0]["message"]
@@ -106,7 +129,7 @@ class Model:
             if not isinstance(body, dict):
                 raise ValueError()
             if body.get('error'):
-                raise RuntimeError('模型流式响应返回错误')
+                raise request_error(provider, model, error=RuntimeError(json.dumps(body['error'], ensure_ascii=False).replace(provider.api_key, '[redacted]') if provider.api_key else json.dumps(body['error'], ensure_ascii=False)))
             if body.get('usage'):
                 usage = body['usage']
             for choice in body.get('choices', []):
@@ -136,7 +159,8 @@ class Model:
         try:
             async with self.client.stream('POST', provider.api_base + '/chat/completions', headers=headers, json=payload) as response:
                 if response.status_code != 200:
-                    raise RuntimeError(f'模型接口 HTTP {response.status_code}，请检查模型配置或额度')
+                    await response.aread()
+                    raise request_error(provider, model, response=response)
                 if 'application/json' in response.headers.get('content-type', ''):
                     body = json.loads(await response.aread())
                     message = body['choices'][0]['message']
@@ -168,8 +192,8 @@ class Model:
                     raise RuntimeError('模型返回了未启用的工具调用')
                 result['tool_calls'] = [calls[index] for index in sorted(calls)]
             return result, usage
-        except httpx.HTTPError:
-            raise RuntimeError('模型流式请求失败或超时；没有自动重试') from None
+        except httpx.HTTPError as exc:
+            raise request_error(provider, model, error=exc) from None
         except (ValueError, KeyError, IndexError, TypeError):
             raise RuntimeError('模型流式响应格式不兼容 Chat Completions') from None
 

@@ -30,6 +30,10 @@ class Chat:
         metadata = json.loads(row['meta'])
         role = 'assistant' if metadata.get('role') == 'assistant' else 'user' if metadata.get('role') == 'user' or row['source'] == 'web-chat' else 'event'
         insertion = metadata.get('insertion_mode') == 'next_boundary' or 'insertion_run_id' in metadata
+        if metadata.get('insertion_mode') == 'same_source_boundary':
+            from .wake_routing import identity
+            active = self.runtime.current_run or {}
+            insertion = metadata.get('insertion_run_id') == active.get('id') and identity(row) == active.get('wake_source')
         stage = ('submitted' if metadata.get('wake_submitted') else 'merged') if row['status'] == 'running' else ('waiting' if insertion else 'queued') if row['status'] == 'pending' else row['status']
         return {key: row[key] for key in ('id', 'uid', 'at', 'source', 'actor', 'label', 'target', 'text', 'status', 'kind')} | {'role': role, 'meta': metadata, 'wake_stage': stage if row['kind'] == 'wake' else ''}
 
@@ -87,6 +91,33 @@ class Chat:
             'tools': tools, 'processes': processes,
             'activity': list(reversed(activity)), 'running': self.runtime.current_run,
             'enabled': self.runtime.config.settings.enabled, 'sequence': self.runtime.live.sequence}
+
+    async def retry(self, event_id):
+        store = self.runtime.store
+        row = store.one('SELECT * FROM events WHERE id=?', (event_id,))
+        if not row or row['kind'] != 'wake' or row['status'] != 'failed' or not self.visible(row):
+            raise ValueError('只能重试当前主对话中失败的唤醒消息')
+        metadata = json.loads(row['meta'])
+        if metadata.get('retry_event_id'):
+            existing = store.one('SELECT * FROM events WHERE id=?', (metadata['retry_event_id'],))
+            return {'message': self.row(existing), 'duplicate': True}
+        if not self.runtime.config.settings.enabled:
+            raise ValueError('主智能体已暂停，请先启用')
+        self.runtime.agents.snapshot('main')
+        retry_meta = dict(metadata)
+        for key in ('retry_event_id', 'exclude_context', 'exclude_main', 'rolled_back_at', 'rollback_event_id'):
+            retry_meta.pop(key, None)
+        retry_meta['retry_of'] = event_id
+        result = await self.runtime.emit('wake', row['source'], row['text'],
+            actor=row['actor'], label=row['label'], target=row['target'],
+            meta=retry_meta, uid='chat-retry:' + str(event_id), priority=row['priority'],
+            send_result_to_source=metadata.get('send_result_to_source', True), insertion='queue')
+        # Retain the failed message for audit/UI, but do not duplicate its prompt.
+        metadata.update(retry_event_id=result['id'], exclude_context=True)
+        store.execute('UPDATE events SET meta=? WHERE id=?', (json.dumps(metadata, ensure_ascii=False), event_id))
+        self.event(store.one('SELECT * FROM events WHERE id=?', (event_id,)))
+        store.log('info', 'chat', 'wake.retried', data={'event_id': event_id, 'retry_event_id': result['id']})
+        return {'message': self.row(store.one('SELECT * FROM events WHERE id=?', (result['id'],))), 'duplicate': False}
 
     async def send(self, text, client_id):
         if not isinstance(text, str) or not text.strip() or len(text) > 100000:

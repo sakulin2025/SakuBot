@@ -13,6 +13,7 @@ import { promptVariables, variableName } from './promptVariables';
 defineProps<{ active: boolean }>();
 const host = usePluginHost();
 const values = reactive({
+  main_sessions: [] as { type: "group" | "private"; number: string }[],
   owner_id: "", backend: "napcat", napcat_ws: "", napcat_token: "", snowluma_ws: "", snowluma_token: "",
   reply_split_enabled: true, reply_split_regex: "。|", reply_remove_regex: "。",
   reply_trim: true, reply_merge_newlines: true,
@@ -46,10 +47,12 @@ async function save() {
   if (busy.value || !dirty.value) return;
   busy.value = true;
   try {
-    const data = await host.api<{ napcat_token_configured: boolean; snowluma_token_configured: boolean }>(
+    const data = await host.api<{ main_sessions: typeof values.main_sessions; owner_id: string; napcat_token_configured: boolean; snowluma_token_configured: boolean }>(
       "config",
       values,
     );
+    values.main_sessions = data.main_sessions;
+    values.owner_id = data.owner_id;
     values.napcat_token = "";
     values.snowluma_token = "";
     tokenConfigured.napcat = data.napcat_token_configured;
@@ -67,6 +70,7 @@ async function save() {
 onMounted(async () => {
   try {
     const data = await host.api<{
+      main_sessions: { type: "group" | "private"; number: string }[];
       owner_id: string;
       backend: string;
       napcat_ws: string;
@@ -85,6 +89,7 @@ onMounted(async () => {
       external_prompt: string;
       external_prompt_mode: string;
     }>("config");
+    values.main_sessions = data.main_sessions;
     values.owner_id = data.owner_id;
     values.backend = data.backend;
     values.napcat_ws = data.napcat_ws;
@@ -150,17 +155,26 @@ onUnmounted(() => clearInterval(timer));
           <span v-if="status.error" class="form-error">{{ status.error }}</span>
         </div></SCard
       >
-      <SCard title="主对话源"
-        ><div class="form-body">
-          <SFormItem label="主人 QQ" for="owner-id"
-            ><SInput
-              id="owner-id"
-              v-model="values.owner_id"
-              inputmode="numeric"
-              pattern="[0-9]+"
-              required
-          /></SFormItem></div
-      ></SCard>
+      <SCard title="主对话源">
+        <div class="form-body">
+          <div v-for="(session, index) in values.main_sessions" :key="index" class="main-session-row">
+            <SSelect v-model="session.type" :aria-label="`会话类型 ${index + 1}`">
+              <option value="group">群组</option><option value="private">私聊</option>
+            </SSelect>
+            <SInput v-model="session.number" :aria-label="`会话号码 ${index + 1}`" inputmode="numeric"
+              pattern="[0-9]{1,20}" maxlength="20" :placeholder="session.type === 'group' ? '填写群号' : '填写 QQ 号'" required />
+            <SButton type="button" icon="trash" title="移除会话" @click="values.main_sessions.splice(index, 1)" />
+          </div>
+          <SButton type="button" icon="plus" :disabled="values.main_sessions.length >= 100" @click="values.main_sessions.push({ type: 'private', number: '' })">新增会话</SButton>
+        </div>
+      </SCard>
+      <SCard title="身份识别">
+        <div class="form-body">
+          <SFormItem label="主人 QQ" for="owner-id">
+            <SInput id="owner-id" v-model="values.owner_id" inputmode="numeric" pattern="[0-9]+" placeholder="用于识别主人身份" />
+          </SFormItem>
+        </div>
+      </SCard>
       <SCard title="回应分段">
         <div class="form-body">
           <SFormItem label="自动分段">
@@ -227,5 +241,6 @@ onUnmounted(() => clearInterval(timer));
 <style scoped>
 .qq-connection { width: 100%; max-width: 820px; margin: 0 auto; }
 .qq-connection .settings-grid { grid-template-columns: minmax(0, 1fr); }
+.main-session-row { display: grid; grid-template-columns: 100px minmax(0, 1fr) auto; align-items: center; gap: 10px; }
 .prompt-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 </style>

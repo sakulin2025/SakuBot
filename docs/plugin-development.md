@@ -709,7 +709,7 @@ class Extension(Plugin):
 前后端校验字段类型、必填项、整数范围、select 选项与动态引用、长度和 pattern；HTTP 地址拒绝内嵌凭据、查询参数与片段。secret 不回传原值，留空保留已有值。保存成功更新内存配置与插件状态，不重载插件。表单字段支持 placeholder，解释文字不单独占用页面空间。
 # 主 Agent 单轮结果投递
 
-插件唤醒主 Agent 时可传入 `send_result_to_source=False`，该轮的过程和最终响应仍在网页主对话中可见，但不会自动投递到响应目标。每轮提供 `report_to_owner` 和 `cancel_report` 临时函数，分别开启和取消本轮后续过程及最终结果的投递，不撤回已发送内容。默认值为 `True`，每轮独立；QQ 外部消息回应和网页主对话发起的唤醒默认关闭投递。
+插件唤醒主 Agent 时可传入 `send_result_to_source=False`，该轮的过程和最终响应仍在网页主对话中可见，但不会自动投递到响应目标。每轮提供 `message_enable_delivery` 和 `message_disable_delivery` 临时函数，分别开启和取消本轮后续过程及最终结果的投递，不撤回已发送内容。默认值为 `True`，每轮独立；QQ 外部消息回应和网页主对话发起的唤醒默认关闭投递。
 
 
 ## 长期记忆与语义召回
@@ -727,3 +727,45 @@ class Extension(Plugin):
 工具声明新增 `self.tool(name, description, parameters, handler, audience="main")`，仅主智能体模型调用可见并可执行。默认 `audience="all"` 保持现有行为。显式启用的主智能体工具不受普通人格插件列表屏蔽，但仍受插件可用性和 `with_tools(False)` 控制；协作智能体、脚本和页面 `call_tool()` 不能使用。
 
 触发源推荐按 `family.*` 声明，按 `family.<对象ID>` 发布。通过 `legacy_ids=("old_family",)` 将旧绑定迁到新声明，保留动作和参数。泛事件可多次绑定，具名 ID 只能一个动作。详见 [事件与脚本](scripts.md)。
+
+
+### 主智能体环境模板
+
+运行设置的 `wake_prompt_template` 仅负责主智能体的临时环境提示。框架每次模型请求前渲染；`time.now` 固定为该轮开始时间，响应源与 `response.send_result_to_source` 读取最新状态。渲染结果不写入持久上下文，实际内容保存在运行追踪的 `temporary_contexts` 中。
+
+插件仍通过 `wake_context`、`inject_context` 和唤醒时的 `temporary_context` 提供专属要求或资料，不应将插件要求改为依赖全局模板。全局模板使用 `environment` 分类，专属 `requirement` 与 `reminder` 仍按原顺序注入。模板错误会记录 `wake_prompt.failed` 并回退默认模板，不中断对话。
+
+插件可在主会话消息的 `meta` 中提供通用身份字段：
+
+```python
+meta={
+    'sender': {'id': '稳定用户ID', 'name': '显示名称', 'username': '用户名', 'nickname': '昵称'},
+    'channel': {'id': '频道或会话ID', 'name': '频道名称'},
+}
+```
+
+未提供时，发送者回退到事件 `actor` / `label`，会话回退到 `channel_id` / `session_id`。显示名称属于外部数据，不能用来确认主人身份。不要在这些字段中放访问令牌或完整原始消息。
+
+模板支持已声明变量的属性或常量键访问、条件和 `default/lower/upper/trim/join/length` 过滤器；不支持循环、函数调用、导入或算术表达式。可选的 `sender`、`channel`、`conversation.current` 使用 `{% if ... %}` 保护。模板变量及默认内容由 `/api/wake-prompt` 提供，`POST /api/wake-prompt/preview` 只渲染本地数据，不调用模型或发送消息。
+
+QQ 的 `main_sessions` 为 `{type: "group" | "private", number: "数字号码"}` 列表。每项动态声明为 `qq.group_号码` 或 `qq.private_号码`；配置变化只增删相应对话源，不重载插件。`owner_id` 只用于身份识别及兼容 `owner` 工具目标，主会话匹配不再以主人 QQ 为准。选中的会话不会再次经过外部回应唤醒。
+
+
+### 主会话路由与安全点插入
+
+主对话自动响应仅跟随当前源，不再支持广播。消息进入接收队列时不切换响应源；框架开始处理该唤醒或在安全点认领消息时，才激活其 `conversation_source`。网页、定时任务等没有声明对话源的唤醒保留当前响应源。来源被卸载时不自动切到其他源。
+
+运行设置支持 `queue`、`next_boundary`、`same_source_boundary`。最后一种只用于主智能体：新消息先留在当前运行的候选队列，安全点须与当时正在处理的会话源相同才可吸收，异源保持排队。吸收按待处理消息到达顺序取连续前缀，不跳过排队消息或异源边界去抽取后面的同源消息。不同 QQ 群/私聊、Mattermost 频道和网页分别视为不同源。`next_boundary` 仍可接受其他来源，但一次吸收批次只包含相邻的同源消息，消息正文也不跨源合并。
+
+`conversation.source_change_enabled` 控制源变更提醒；`source_change_mode` 为 `context`（默认）或 `temporary`；`source_change_template` 为 Jinja 模板。除本轮环境变量外，提供 `previous_source.id/name/available` 与 `current_source.id/name/available`。只在实际变更时渲染，不另建 wake、不自动发送通知；上下文模式持久保留，临时模式仅本轮有效。提醒不会改变本轮 `send_result_to_source`。
+
+`conversation.same_source_priority` 默认关闭，仅在 `wake_insertion="same_source_boundary"` 时生效。开启后，可跳过异源队列项，吸收属于当前运行、同一会话源且已标记安全点插入的所有待处理消息，按到达顺序插入；异源事件保留原队列状态和顺序。普通显式排队消息及旧运行的插入请求不会被提升。关闭时仍只处理相邻同源前缀。
+
+
+### 主对话投递与主动切换
+
+主智能体每轮提供 `message_enable_delivery` / `message_disable_delivery`，分别开启、关闭本轮向当前主会话源自动投递；不改变目的地，网页始终可见。旧名称已更名，运行配置和 QQ 额外要求中的工具名会归一化，历史审计不改写。
+
+系统消息能力新增 `message_select_source(source_id)`：先使用 `message_sources` 取得准确 ID，切换立即生效并持久保存，不改变 `send_result_to_source`。仍使用统一源变更提醒；提醒在整批工具结果完整返回后插入，上下文/临时模式遵循运行设置。
+
+主智能体在**整批工具完成之后**检查插入；模型未请求工具时，在准备结束本轮前检查。不会在同一个 assistant 的多次 tool_calls 结果中间插入消息。主动切换会立即更新同源匹配依据；同源条件请求先保留在当前运行队列，安全点按当时的源判定，主动切换后原本等待的新源消息也可变为可吸收。相邻与同源优先开关仍生效，显式 `queue` 请求不会被提升。

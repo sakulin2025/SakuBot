@@ -3,9 +3,11 @@ import { onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { api, ApiError } from '../api'
 import { useConsole } from '../stores/console'
 import SecretInput from '../components/SecretInput.vue'
+import WakePromptEditor from '../components/WakePromptEditor.vue'
 import { rememberToken } from '../credentials'
 const store = useConsole()
 const values = reactive({
+  wake_prompt_template: '',
   max_steps: 16,
   context_chars: 48000,
   agent_concurrency: 3,
@@ -32,11 +34,15 @@ interface ConversationSource {
 }
 const sources = ref<ConversationSource[]>([])
 const currentSource = ref('')
-const routing = reactive<{ mode: 'broadcast' | 'intelligent'; targets: string[]; tool_events: boolean; wake_insertion: 'queue' | 'next_boundary' }>({
+const routing = reactive<{ mode: 'intelligent'; targets: string[]; tool_events: boolean; wake_insertion: 'queue' | 'next_boundary' | 'same_source_boundary'; same_source_priority: boolean; source_change_enabled: boolean; source_change_mode: 'context' | 'temporary'; source_change_template: string }>({
   mode: 'intelligent',
   targets: [],
   tool_events: false,
   wake_insertion: 'queue',
+  same_source_priority: false,
+  source_change_enabled: true,
+  source_change_mode: 'context',
+  source_change_template: '',
 })
 const routingDirty = ref(false)
 let sourceTimer: ReturnType<typeof setInterval> | undefined
@@ -99,6 +105,7 @@ watch(
   (config) => {
     if (!config || dirty.value) return
     Object.assign(values, {
+      wake_prompt_template: config.wake_prompt_template,
       max_steps: config.max_steps,
       context_chars: config.context_chars,
       agent_concurrency: config.agent_concurrency,
@@ -115,6 +122,7 @@ async function save() {
   try {
     if (dirty.value) {
       await store.save('settings', {
+        wake_prompt_template: values.wake_prompt_template,
         max_steps: values.max_steps,
         context_chars: values.context_chars,
         agent_concurrency: values.agent_concurrency,
@@ -131,8 +139,8 @@ async function save() {
     }
     dirty.value = false
     routingDirty.value = false
-  } catch {
-    error.value = '保存失败'
+  } catch (exc) {
+    error.value = exc instanceof Error ? exc.message : '保存失败'
   } finally {
     saving.value = false
   }
@@ -197,6 +205,7 @@ async function changeToken() {
             </SFormItem>
           </div>
         </SCard>
+        <WakePromptEditor v-model="values.wake_prompt_template" @update:model-value="dirty = true" />
         <SCard id="compression" title="上下文压缩" class="settings-section">
           <div class="form-body">
             <div class="settings-row">
@@ -232,25 +241,23 @@ async function changeToken() {
           <SSelect id="wake-insertion" v-model="routing.wake_insertion">
             <option value="queue">加入队列</option>
             <option value="next_boundary">在安全位置插入</option>
+            <option value="same_source_boundary">同源时在安全位置插入</option>
           </SSelect>
         </SFormItem>
-        <SFormItem label="回复发送方式" for="conversation-mode">
-          <SSelect id="conversation-mode" v-model="routing.mode">
-            <option value="intelligent">跟随消息来源</option>
-            <option value="broadcast">广播至指定对话源</option>
-          </SSelect>
-        </SFormItem>
+        <div v-if="routing.wake_insertion === 'same_source_boundary'" class="settings-row">
+          <label id="same-source-priority-label">同源优先插入</label>
+          <SSwitch v-model="routing.same_source_priority" aria-labelledby="same-source-priority-label" @change="routingDirty = true" />
+        </div>
         <div class="settings-row">
           <label>同步工具调用过程</label>
           <SSwitch v-model="routing.tool_events" @change="routingDirty = true" />
         </div>
-        <SFormItem v-if="routing.mode === 'intelligent'" label="当前响应源">
+        <SFormItem label="当前响应源">
           <span>{{ sources.find((item) => item.id === currentSource)?.name || currentSource || '—' }}</span>
         </SFormItem>
         <STable v-if="sources.length">
           <thead>
             <tr>
-              <th v-if="routing.mode === 'broadcast'">接收</th>
               <th>对话源</th>
               <th>插件</th>
               <th>状态</th>
@@ -259,9 +266,6 @@ async function changeToken() {
           </thead>
           <tbody>
             <tr v-for="source in sources" :key="source.id">
-              <td v-if="routing.mode === 'broadcast'">
-                <SCheckbox v-model="routing.targets" :value="source.id" @change="routingDirty = true" />
-              </td>
               <td>{{ source.name }}</td>
               <td>{{ source.plugin_id }}</td>
               <td :title="source.reason">{{ source.available ? '已连接' : '不可用' }}</td>
@@ -272,6 +276,16 @@ async function changeToken() {
         <SEmpty v-else label="暂无对话源" />
       </div>
     </SCard>
+    <WakePromptEditor v-model="routing.source_change_template" kind="source_change" title="主会话源变更提醒" class="settings-section security-card" @update:model-value="routingDirty = true">
+      <template #controls>
+        <div class="settings-row"><label>启用</label><SSwitch v-model="routing.source_change_enabled" @change="routingDirty = true" /></div>
+        <SFormItem label="插入模式">
+          <SSelect v-model="routing.source_change_mode" :disabled="!routing.source_change_enabled" @change="routingDirty = true">
+            <option value="context">上下文</option><option value="temporary">临时</option>
+          </SSelect>
+        </SFormItem>
+      </template>
+    </WakePromptEditor>
     </SForm>
     <Teleport to="body">
       <div class="floating-actions runtime-save">

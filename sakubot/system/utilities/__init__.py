@@ -22,6 +22,8 @@ class Extension(Plugin):
         return '其他时区和日期计算可用 time_info、time_difference；数值计算使用 calculate。'
 
     def wake_context(self, invocation):
+        if invocation.agent_id == 'main':
+            return ''  # Main environment is rendered centrally.
         return '本轮唤醒时间（Asia/Shanghai）：' + datetime.now(ZoneInfo('Asia/Shanghai')).isoformat(timespec='seconds') + '。需要当前精确时间时使用 time_info。'
 
     @staticmethod

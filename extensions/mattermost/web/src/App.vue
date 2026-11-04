@@ -16,7 +16,7 @@ const host = usePluginHost();
 const values = reactive({
   base_url: "",
   token: "",
-  owner: "",
+  channel_ids: [] as string[],
   image_model_id: "",
   reply_split_enabled: true,
   reply_split_regex: "。|",
@@ -36,8 +36,7 @@ const status = ref({
   error: "",
   retry_at: 0,
   bot_id: "",
-  owner_id: "",
-  channel_id: "",
+  channel_ids: [] as string[],
 });
 const logs = ref<
   {
@@ -82,7 +81,7 @@ const labels: Record<string, string> = {
 };
 const fieldLabels: Record<string, string> = {
   bot_id: "机器人 ID",
-  owner_id: "主人 ID",
+  channel_ids: "生效频道",
   channel_id: "会话 ID",
   post_id: "消息 ID",
   files: "附件",
@@ -215,13 +214,15 @@ watch(tab, async (next, previous) => {
               placeholder="填写 Bot Token"
             />
           </SFormItem>
-          <SFormItem label="主人用户 ID 或用户名" for="mm-owner"
-            ><SInput
-              id="mm-owner"
-              v-model="values.owner"
-              placeholder="用户 ID 或 @用户名"
-              required
-          /></SFormItem>
+          <SFormItem label="生效频道列表">
+            <div class="channel-list">
+              <div v-for="(_, index) in values.channel_ids" :key="index" class="channel-row">
+                <SInput v-model="values.channel_ids[index]" :aria-label="`频道 ID ${index + 1}`" placeholder="26 位频道 ID" pattern="[a-z0-9]{26}" required />
+                <SButton type="button" icon="trash" title="移除频道" @click="values.channel_ids.splice(index, 1)" />
+              </div>
+              <SButton type="button" icon="plus" :disabled="values.channel_ids.length >= 100" @click="values.channel_ids.push('')">新增频道</SButton>
+            </div>
+          </SFormItem>
           <span v-if="saveError" class="save-error" role="alert">{{
             saveError
           }}</span>
@@ -324,10 +325,8 @@ watch(tab, async (next, previous) => {
       <div class="status-grid">
         <span>机器人 ID</span
         ><span class="mono">{{ status.bot_id || "—" }}</span>
-        <span>主人 ID</span
-        ><span class="mono">{{ status.owner_id || "—" }}</span>
-        <span>私聊会话 ID</span
-        ><span class="mono">{{ status.channel_id || "—" }}</span>
+        <span>生效频道</span>
+        <div class="channel-list"><span v-for="channel in status.channel_ids" :key="channel" class="mono">{{ channel }}</span><span v-if="!status.channel_ids.length">—</span></div>
         <span>下次重连</span
         ><span>{{ status.retry_at ? formatDate(status.retry_at) : "—" }}</span>
       </div>
@@ -374,6 +373,9 @@ watch(tab, async (next, previous) => {
   gap: 18px;
   padding-bottom: 90px;
 }
+.channel-list { display: grid; gap: 10px; width: 100%; }
+.channel-row { display: flex; align-items: center; gap: 8px; }
+.channel-row > :first-child { flex: 1; min-width: 0; }
 .settings-card {
   margin-top: 18px;
 }

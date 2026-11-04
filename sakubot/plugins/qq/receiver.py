@@ -75,13 +75,15 @@ class Receiver:
             "sender_id": actor, "sender_name": label, "text": "".join(row["text"] for row in parts)[:100000],
             "sender_role": sender.get('role') if group and sender.get('role') in ('owner', 'admin', 'member') else '',
             "mentions": mentions, "reply_to": reply_to, "parts": parts, "is_self": False}
-        direct = not group and actor == self.plugin.settings.owner_id
-        record.update(source=self.plugin.id, is_owner=direct or actor == self.plugin.settings.owner_id,
+        direct = session.lower() in self.plugin.declared_main_targets
+        record.update(source=self.plugin.id, is_owner=actor == self.plugin.settings.owner_id,
             is_main_source=direct, mentions_self=self.plugin.client.self_id in mentions,
             identity={'self_id': self.plugin.client.self_id, 'owner_id': self.plugin.settings.owner_id})
         if direct:
-            await self.plugin.receive_main('owner', record['text'] or '[消息附件]',
-                actor=actor, label=label, uid=uid, meta={'message': record, 'source_label': 'QQ'})
+            old_uid = 'main-source:' + self.plugin.id + '.owner:' + uid
+            if not self.runtime.store.one('SELECT id FROM events WHERE uid=?', (old_uid,)):
+                await self.plugin.receive_main(self.plugin.source_identifier(session.lower()), record['text'] or '[消息附件]',
+                    actor=actor, label=label, uid=uid, meta=self.plugin.main_message_meta(record, person['nickname']))
         await self.plugin.messages.publish(record)
 
     def record_sent(self, target, text, delivery_id):

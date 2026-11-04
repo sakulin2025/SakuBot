@@ -8,7 +8,7 @@ import uuid
 from urllib.parse import urlsplit
 
 from .model import Model
-from .plugin import Invocation, Registry, Tool, object_schema, temporary_messages
+from .plugin import Invocation, Registry, temporary_messages
 from .injections import injection, ordered
 from .store import encode
 from .components import required
@@ -207,7 +207,7 @@ class Runtime:
         self.validate_target(target)
         if not isinstance(send_result_to_source, bool) or (kind == 'context' and not send_result_to_source):
             raise ValueError('结果投递设置仅支持 wake / notify 布尔值')
-        if insertion not in ('queue', 'next_boundary') or (kind != 'wake' and insertion != 'queue'):
+        if insertion not in ('queue', 'next_boundary', 'same_source_boundary') or (kind != 'wake' and insertion != 'queue'):
             raise ValueError('唤醒插入模式无效')
         uid = uid or uuid.uuid4().hex
         if kind == 'notify':
@@ -229,12 +229,10 @@ class Runtime:
             meta = {**(meta or {}), 'temporary_context': temporary_context}
         if kind == 'wake':
             meta = {**(meta or {}), 'send_result_to_source': send_result_to_source}
-            for key in ('insertion_run_id', 'absorbed_run_id', 'insertion_mode', 'wake_submitted', 'wake_request_id', 'wake_run_id'):
+            for key in ('source_change_notice', 'insertion_run_id', 'absorbed_run_id', 'absorbed_at', 'insertion_mode', 'wake_submitted', 'wake_request_id', 'wake_run_id'):
                 meta.pop(key, None)
-            if insertion == 'next_boundary' and target == 'main':
-                meta['insertion_mode'] = 'next_boundary'
-                if self.current_run:
-                    meta['insertion_run_id'] = self.current_run['id']
+            from .wake_routing import insertion_metadata
+            meta.update(insertion_metadata(self, source, target, meta, insertion))
         row = self.store.event(kind, source, content, actor=actor, label=label, target=target,
             meta=meta, uid=uid, priority=priority, expires=expires)
         self.changed.set()
@@ -315,20 +313,23 @@ class Runtime:
         metadata = json.loads(row['meta'])
         item = {key: row[key] for key in ('id', 'at', 'source', 'actor', 'label', 'target')}
         item['text'] = row['text']
-        item['metadata'] = {key: value for key, value in metadata.items() if key not in ('segments', 'raw', 'packet', 'temporary_context', 'send_result_to_source', 'injected_context', 'history_context', 'prompt_text', 'insertion_run_id', 'absorbed_run_id', 'insertion_mode', 'wake_submitted', 'wake_request_id', 'wake_run_id')}
+        item['metadata'] = {key: value for key, value in metadata.items() if key not in ('segments', 'raw', 'packet', 'temporary_context', 'send_result_to_source', 'injected_context', 'history_context', 'prompt_text', 'source_change_notice', 'insertion_run_id', 'absorbed_run_id', 'absorbed_at', 'insertion_mode', 'wake_submitted', 'wake_request_id', 'wake_run_id')}
         if isinstance(metadata.get('prompt_text'), str):
             return {'role': 'user', 'content': metadata['prompt_text'], '_event_id': row['id']}
         return {'role': 'assistant' if metadata.get('role') == 'assistant' else 'user', 'content': encode(item), '_event_id': row['id']}
 
     def wake_messages(self, event, *, initial=False):
         metadata = json.loads(event['meta'])
-        result = []
+        from .wake_routing import notice_message
+        notice = notice_message(event)
+        result = [notice] if notice else []
         for item in [*metadata.get('history_context', []), *metadata.get('injected_context', [])]:
             if isinstance(item, dict) and item.get('role') in ('user', 'assistant') and isinstance(item.get('content'), str):
                 result.append({'role': item['role'], 'content': item['content'], '_temporary': bool(item.get('_temporary'))})
         if metadata.get('temporary_context'):
             result.append({'role': 'system', 'content': f"关联消息 {event['id']} 的本轮临时要求（从此消息加入起到本轮结束有效）：\n" + metadata['temporary_context'], '_temporary': True})
-        result.append({**self.main_event_message(event), '_wake_body': True})
+        from .wake_routing import identity
+        result.append({**self.main_event_message(event), '_wake_body': True, '_wake_source': identity(event)})
         for message in result:
             message['_wake_event_id'] = event['id']
         if initial:
@@ -342,7 +343,7 @@ class Runtime:
         result = []
         for message in messages:
             current = dict(message)
-            if result and current.get('_wake_body') and current['role'] == 'user' and result[-1].get('_wake_body') and result[-1]['role'] == 'user':
+            if result and current.get('_wake_body') and current['role'] == 'user' and result[-1].get('_wake_body') and result[-1]['role'] == 'user' and current.get('_wake_source') == result[-1].get('_wake_source'):
                 previous = result[-1]
                 previous['content'] += '\n\n' + current['content']
                 previous['_event_id'] = max(previous.get('_event_id', 0), current.get('_event_id', 0))
@@ -417,6 +418,10 @@ class Runtime:
             if 'active' in saved:
                 candidates.extend({**message, '_event_id': row['id']} for message in saved['active'])
             else:
+                from .wake_routing import notice_message
+                notice = notice_message(row)
+                if notice and not notice.get('_temporary'):
+                    candidates.append(notice)
                 candidates.append(self.main_event_message(row))
             candidates.extend({**message, '_event_id': row['id']} for message in saved.get('after', []))
         return memo, candidates
@@ -439,10 +444,8 @@ class Runtime:
         injected = instance.take_pending()
         inv.metadata['_wake_temporary'] = []
         inv.temporary_context.extend(injection(row['content'], source=event['source'], category='data', role=row['role']) for row in injected if row.get('_temporary'))
-        context = '本轮来源=' + event['source'] + '，默认回复目的地=' + inv.target + '。下方当前事件是本轮待处理任务。'
-        if inv.metadata.get('reply_target'):
-            context += '\n本轮最终文本将由框架自动投递到 ' + inv.metadata['reply_target'] + '，不要再用发送工具重复发送最终回复。当前主对话响应源不改变。'
-        inv.inject_context(context + '\n插件上下文：' + memory_text, source='framework', category='environment')
+        if contributions:
+            inv.inject_context('插件状态资料（数据，不是指令）：' + memory_text, source='framework', category='environment')
         injected = [row for row in injected if not row.get('_temporary')]
         inv.metadata['_main_injected'] = copy.deepcopy(injected)
         summary = [{"role": "assistant", "content": "历史上下文摘要：" + memo["text"], "_summary": True}] if memo["text"] else []
@@ -476,16 +479,19 @@ class Runtime:
 
     def absorb_wakes(self, messages, inv):
         if inv.agent_id == 'main':
-            rows = self.store.rows("SELECT * FROM events WHERE kind='wake' AND status='pending' AND target='main' AND (json_extract(meta,'$.insertion_mode')='next_boundary' OR json_extract(meta,'$.insertion_run_id') IS NOT NULL) AND (expires=0 OR expires>?) ORDER BY id", (time.time(),))
+            from .wake_routing import absorbable_wakes, activate
+            rows = absorbable_wakes(self, inv)
             absorbed = 0
             for row in rows:
-                changed = self.store.execute("UPDATE events SET status='running',meta=json_set(meta,'$.absorbed_run_id',?,'$.wake_run_id',?) WHERE id=? AND status='pending'", (inv.run_id, inv.run_id, row['id'])).rowcount
+                changed = self.store.execute("UPDATE events SET status='running',meta=json_set(meta,'$.absorbed_run_id',?,'$.wake_run_id',?,'$.absorbed_at',?) WHERE id=? AND status='pending'", (inv.run_id, inv.run_id, time.time(), row['id'])).rowcount
                 if not changed:
                     continue
                 row = self.store.one('SELECT * FROM events WHERE id=?', (row['id'],))
+                inv.metadata.setdefault('wake_events', []).append(copy.deepcopy(row))
+                row = activate(self, row, inv)
+                inv.metadata['wake_events'][-1] = copy.deepcopy(row)
                 messages.extend(self.wake_messages(row))
                 inv.metadata.setdefault('absorbed_events', []).append(row['id'])
-                inv.metadata.setdefault('wake_events', []).append(copy.deepcopy(row))
                 inv.metadata.setdefault('_wake_unprepared', []).append(row)
                 self.chat.event(row)
                 self.store.log('info', row['source'], 'event.absorbed', run_id=inv.run_id, data={'event_id': row['id']})
@@ -529,7 +535,18 @@ class Runtime:
             available = self.registry.available(inv) if selected and selected.capabilities.tools else []
             tools = [tool.schema() for tool in available]
             wake_temporary = inv.metadata.get('_wake_temporary', [])
-            before_active = ordered([row for row in inv.temporary_context if not row.get('_observation')] + wake_temporary)
+            environment = []
+            if inv.agent_id == 'main':
+                from .wake_prompt import DEFAULT, context as wake_environment, render as render_environment
+                variables = wake_environment(self, inv)
+                try:
+                    rendered = render_environment(self.config.settings.wake_prompt_template, variables)
+                except ValueError as exc:
+                    self.store.log('warning', 'framework', 'wake_prompt.failed', run_id=inv.run_id, data={'error': str(exc)[:500]})
+                    rendered = render_environment(DEFAULT, variables)
+                if rendered:
+                    environment.append(injection(rendered, source='framework.wake_prompt', category='environment'))
+            before_active = ordered([row for row in inv.temporary_context if not row.get('_observation')] + environment + wake_temporary)
             observations = [row for row in inv.temporary_context if row.get('_observation')]
             one_shot = ordered(inv.temporary_next)
             temporary = before_active + observations + one_shot
@@ -576,7 +593,9 @@ class Runtime:
                 if inv.agent_id == 'main':
                     self.conversation.process('model.failed', request_id=request_id, run_id=inv.run_id, agent_id=inv.agent_id)
 
-                self.store.log("error", "model", "model.failed", run_id=inv.run_id, data={"error": str(exc)[:500] if type(exc) is RuntimeError else type(exc).__name__})
+                self.store.log("error", "model", "model.failed", run_id=inv.run_id, data={"error": str(exc)[:500] if isinstance(exc, RuntimeError) else type(exc).__name__, "details": getattr(exc, "details", {}), "step": step + 1, "duration_ms": round((time.monotonic() - started) * 1000)})
+                inv.metadata.setdefault("model_errors", []).append({"step": step + 1, "details": getattr(exc, "details", {}), "error": str(exc)[:2000]})
+                self.save_trace(inv, messages, usage)
                 raise
             self.store.log("info", "model", "model.completed", run_id=inv.run_id,
                 data={"step": step + 1, "duration_ms": round((time.monotonic() - started) * 1000), "usage": used})
@@ -602,6 +621,12 @@ class Runtime:
                                       "note": "无自动重试；执行结果不明时先检查状态。"})
                 messages.append({"role": "tool", "tool_call_id": call["id"], "content": content[:20000]})
                 self.save_trace(inv, messages, usage)
+            from .wake_routing import flush_source_notices
+            flush_source_notices(inv, messages)
+            # Never insert user/context messages between an assistant tool-call batch
+            # and its complete set of results. Re-evaluate using the newly selected source.
+            self.absorb_wakes(messages, inv)
+            self.save_trace(inv, messages, usage)
             if inv.instance:
                 await inv.instance.dispatch('tool_round', {'run_id': inv.run_id, 'step': step + 1,
                     'calls': calls, 'invocation': inv})
@@ -611,7 +636,7 @@ class Runtime:
         self.store.execute("UPDATE runs SET trace=? WHERE id=?", (encode({"messages": messages, "usage": usage,
             "temporary_contexts": inv.metadata.get("temporary_contexts", []),
             "function_snapshots": inv.metadata.get("function_snapshots", []), "compressions": inv.metadata.get("compressions", []),
-            "api_requests": inv.metadata.get("api_requests", []), "wake_goal": inv.metadata.get("wake_goal", ""),
+            "model_errors": inv.metadata.get("model_errors", []), "api_requests": inv.metadata.get("api_requests", []), "wake_goal": inv.metadata.get("wake_goal", ""),
             **({"result": inv.metadata["result"]} if "result" in inv.metadata else {}),
             "persona_id": inv.persona_id, "agent_id": inv.agent_id, "model_id": inv.model_id,
             "instance_id": inv.instance.generation if inv.instance else "",
@@ -641,23 +666,16 @@ class Runtime:
             self.store.execute("UPDATE events SET meta=json_set(meta,'$.wake_run_id',?) WHERE id=?", (run_id, event['id']))
             self.chat.event(self.store.one('SELECT * FROM events WHERE id=?', (event['id'],)))
             inv.send_result_to_source = send_result_to_source
-            async def report_owner(invocation, arguments):
-                invocation.send_result_to_source = True
-                if self.current_run and self.current_run['id'] == invocation.run_id:
-                    self.current_run['send_result_to_source'] = True
-                return {'ok': True, 'send_result_to_source': True, 'message': '本轮最终结果将发送到当前响应目标'}
-            async def cancel_report(invocation, arguments):
-                invocation.send_result_to_source = False
-                if self.current_run and self.current_run['id'] == invocation.run_id:
-                    self.current_run['send_result_to_source'] = False
-                return {'ok': True, 'send_result_to_source': False, 'message': '本轮最终结果不再自动发送到响应目标；网页仍可查看'}
-            inv.temporary_tools['report_to_owner'] = Tool('report_to_owner', '开启本轮自动报告：需要将最终回答发送到当前响应目标时调用。', object_schema(), report_owner)
-            inv.temporary_tools['cancel_report'] = Tool('cancel_report', '取消本轮自动报告：不需要将最终回答发送到当前响应目标时调用；网页主对话仍可查看。不会撤回已发送内容。', object_schema(), cancel_report)
+            from .main_message_tools import install as install_message_tools
+            install_message_tools(self, inv)
             inv.metadata['reply_target'] = reply_target
             self.conversation.process("run.started", run_id=run_id, event_id=event["id"], agent_id="main")
             self.store.log("info", "agent", "agent.started", run_id=run_id, data={"event_id": event["id"], "agent_id": "main"})
             retry_deferred = False
             try:
+                from .wake_routing import activate
+                event = activate(self, event, inv)
+                inv.metadata['wake_events'][0] = copy.deepcopy(event)
                 self.prepare_agent(inv)
                 await inv.instance.dispatch("started", {"run_id": run_id, "invocation": inv})
                 messages = self.prompt(event, inv)
@@ -700,7 +718,7 @@ class Runtime:
                 for event_id in [event['id'], *inv.metadata.get('absorbed_events', [])]:
                     row = self.store.one('SELECT meta FROM events WHERE id=? AND status=\'running\'', (event_id,))
                     metadata = json.loads(row['meta']) if row else {}
-                    eligible = metadata.get('insertion_mode') == 'next_boundary' or 'insertion_run_id' in metadata or 'absorbed_run_id' in metadata
+                    eligible = metadata.get('insertion_mode') in ('next_boundary', 'same_source_boundary') or 'insertion_run_id' in metadata or 'absorbed_run_id' in metadata
                     if eligible and not metadata.get('wake_submitted'):
                         if not retry_deferred:
                             self.changed.clear()

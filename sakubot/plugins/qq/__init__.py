@@ -10,6 +10,7 @@ from .config import Settings
 from .onebot import OneBot
 from .messages import Messages
 from .receiver import Receiver
+from .main_sources import MainSources
 from .external_reply import ExternalReplies
 from .prompt_templates import MAIN_DEFAULT, OLD_DEFAULT, SUMMARY_DEFAULT, VARIABLES
 
@@ -19,12 +20,12 @@ READ_ACTIONS = ["get_login_info", "get_friend_list", "get_group_list", "get_grou
                 ]
 
 
-class Extension(ExternalReplies, Plugin):
+class Extension(MainSources, ExternalReplies, Plugin):
     name = "qq"
 
     def availability(self):
         settings = self.settings
-        return {"available": self.client.online.is_set(), "reason": self.client.error if settings.owner_id and settings.connection_ws else "未配置连接"}
+        return {"available": self.client.online.is_set(), "reason": self.client.error if settings.connection_ws else "未配置连接"}
 
     def setup(self):
         import asyncio
@@ -57,6 +58,9 @@ class Extension(ExternalReplies, Plugin):
             saved['external_prompt_mode'] = old.get('mode', 'temporary')
             self.runtime.config.atomic(self.config_path, json.dumps(saved, ensure_ascii=False, indent=2) + '\n')
         self.settings = Settings.model_validate(saved)
+        if 'main_sessions' not in saved:
+            self.runtime.config.atomic(self.config_path, self.settings.model_dump_json(indent=2) + '\n')
+        self.declared_main_targets = set()
         self.messages = Messages(self)
         self.receiver = Receiver(self)
         self.client = OneBot(self)
@@ -68,17 +72,15 @@ class Extension(ExternalReplies, Plugin):
         self.api('status', self.status)
         self.api('image-models', self.image_models)
         self.delivery_adapter('message', self.deliver, accepts=self.accepts_target, timeout=None)
+        self.migrate_reply_conflicts()
         self.setup_replies()
 
-        self.conversation_source('owner', 'QQ 主人私聊',
-            handlers={**{kind: self.main_response for kind in ('text', 'image', 'video', 'file', 'audio')},
-                'tool': self.main_tool_event},
-            availability=self.availability, timeout=None)
+        self.sync_main_sources()
         self.api("people", self.people_records)
         self.tool('people_lookup', '通过 QQ ID 或昵称检索曾见过的人，返回稳定 ID、昵称和群名片。同名需区分 ID。',
             object_schema({'query': text()}, ('query',)), self.people_lookup)
-        self.tool("qq_send", "向指定 QQ 私聊或群聊发消息。默认本轮来源会话；主人的固定私聊可填 owner。发给主人私聊的相同最终文本不会重复投递到 QQ；其他源仍可接收。",
-                  object_schema({"target": text("owner、private:QQ号、group:群号，留空使用本轮来源"),
+        self.tool("qq_send", "向指定 QQ 私聊或群聊发消息。默认本轮来源会话；主人的固定私聊可填 owner。发到已声明主会话源的相同最终文本不会重复投递到该源；其他源仍可接收。",
+                  object_schema({"target": text("owner、main、private:QQ号、group:群号；留空使用本轮来源，main 使用当前 QQ 主会话源"),
                                  "text": text("要发送的文字"), "segments": {"type": "array", "items": {"type": "object"}, "maxItems": 30}}, ()),
                   self.send)
         self.tool("qq_read", "查询当前 OneBot 协议端的 QQ 资料。按真实 ID 识别人，不用昵称作为身份；params 使用对应 OneBot 接口参数。",
@@ -100,10 +102,9 @@ class Extension(ExternalReplies, Plugin):
         self.isolate_archives()
         # Retire work queued by the removed built-in group routing feature.
         self.runtime.store.execute("UPDATE events SET status='recorded' WHERE source='qq' AND status='routing'")
-        self.runtime.store.execute("UPDATE events SET status='cancelled',error='内置群聊唤醒已移除' WHERE source='qq' AND kind='wake' AND status='pending' AND target LIKE 'group:%'")
         self.background(self.receiver.run())
         self.connection_job = None
-        if self.settings.owner_id and self.settings.connection_ws:
+        if self.settings.connection_ws:
             self.connection_job = self.background(self.client.run())
 
     async def stop(self):
@@ -116,7 +117,7 @@ class Extension(ExternalReplies, Plugin):
             SET meta=json_set(meta,'$.exclude_context',json('true'),'$.exclude_main',json('true'))
             WHERE (source='qq-notice'
               OR (source='qq' AND json_extract(meta,'$.exclude_main')=1)
-              OR (source='agent' AND json_extract(meta,'$.delivery') IS NOT NULL AND target!=?))
+              OR (source='agent' AND json_extract(meta,'$.delivery') IS NOT NULL AND json_extract(meta,'$.conversation_source') IS NULL AND target!=?))
               AND (coalesce(json_extract(meta,'$.exclude_context'),0)=0
                 OR coalesce(json_extract(meta,'$.exclude_main'),0)=0)""",
             ('private:' + self.settings.owner_id,)).rowcount
@@ -181,31 +182,32 @@ class Extension(ExternalReplies, Plugin):
                 raise ValueError('请选择支持图片的已启用模型')
         # Reconfigure only this connection; do not reload the plugin or framework.
         async with self.config_lock:
+            self.reject_reply_conflicts(settings)
             self.runtime.config.atomic(self.config_path, settings.model_dump_json(indent=2) + '\n')
-            reconnect = any(getattr(settings, key) != getattr(self.settings, key) for key in ('owner_id', 'backend', 'connection_ws', 'connection_token'))
+            reconnect = any(getattr(settings, key) != getattr(self.settings, key) for key in ('backend', 'connection_ws', 'connection_token'))
             if reconnect and self.connection_job:
                 self.connection_job.cancel()
                 await asyncio.gather(self.connection_job, return_exceptions=True)
                 if self.connection_job in self.jobs:
                     self.jobs.remove(self.connection_job)
             self.settings = settings
+            self.sync_main_sources()
             if reconnect:
                 self.connection_job = None
-                if settings.owner_id and settings.connection_ws:
+                if settings.connection_ws:
                     self.connection_job = self.background(self.client.run())
             self.client.changed()
         return await self.get_config(request)
 
-    async def main_response(self, packet):
-        return await self.send_part(self.client.owner_target(), packet)
+    async def main_response(self, packet, *, target):
+        return await self.send_part(target, packet)
 
-    async def main_tool_event(self, packet):
+    async def main_tool_event(self, packet, *, target):
         event = packet.get('event')
         if event not in ('tool.started', 'compression.started', 'compression.completed', 'compression.failed'):
             return
-        target = self.client.owner_target()
         message = ('🔨函数调用：' + str(packet.get('name', ''))) if event == 'tool.started' else {'compression.started': '🗜️ 正在压缩上下文', 'compression.completed': '🗜️ 上下文压缩完成', 'compression.failed': '⚠️ 上下文压缩失败'}[event]
-        identifier = 'qq:tool:' + str(packet['run_id']) + ':' + str(packet.get('call_id') or packet.get('compression_id')) + ':' + event
+        identifier = 'qq:tool:' + str(packet['run_id']) + ':' + str(packet.get('call_id') or packet.get('compression_id')) + ':' + event + ':' + target
         params = {**OneBot.target_params(target), 'message': [{'type': 'text', 'data': {'text': message}}]}
         async with self.client.target_lock(target):
             return await self.client.action('send_msg', params, identifier, target, message)
@@ -235,19 +237,23 @@ class Extension(ExternalReplies, Plugin):
 
     async def send(self, inv, args):
         target = args.get("target") or inv.target
-        if target in ("owner", "main"):
+        if target == "owner":
             target = self.client.owner_target()
+        elif target == "main":
+            target = self.default_main_target(inv if not args.get("target") else None)
         segments = args.get("segments")
         content = args.get("text", "")
         if not content.strip() and not segments:
             raise ValueError("消息不能为空")
         result = await self.client.send(target, content, inv.run_id + ":" + inv.call_id, segments)
-        if target == self.client.owner_target():
-            inv.metadata.setdefault('sent_source_texts', {}).setdefault(self.id + '.owner', []).append(content)
-        archived = inv.agent_id != 'main' or target != self.client.owner_target()
+        source = self.id + '.' + self.source_identifier(target)
+        if target in self.declared_main_targets:
+            inv.metadata.setdefault('sent_source_texts', {}).setdefault(source, []).append(content)
+        archived = inv.agent_id != 'main' or target not in self.declared_main_targets
         self.runtime.store.event("context", "agent", content or "[消息附件]", target=target,
                                 meta={"role": "assistant", "run_id": inv.run_id, "delivery": inv.run_id + ":" + inv.call_id, "source_label": "QQ",
-                                      "exclude_context": archived, "exclude_main": archived})
+                                      "exclude_context": archived, "exclude_main": archived,
+                                      **({"conversation_source": source} if not archived else {})})
         return result
 
     async def read(self, inv, args):
@@ -263,8 +269,10 @@ class Extension(ExternalReplies, Plugin):
 
     async def recent(self, inv, args):
         target = args.get("target") or inv.target
-        if target in ('main', 'owner'):
+        if target == 'owner':
             target = self.client.owner_target()
+        elif target == 'main':
+            target = self.default_main_target(inv if not args.get("target") else None)
         return self.messages.list(target, args.get("limit", 30))
 
     async def notices(self, inv, args):

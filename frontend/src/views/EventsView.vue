@@ -31,7 +31,7 @@ const requestTools = (body: unknown): unknown[] => Array.isArray(asObject(body).
 const otherFields = (body: unknown) => Object.fromEntries(Object.entries(asObject(body)).filter(([key]) => key !== 'messages' && key !== 'tools'))
 const messageRole = (value: unknown) => String(asObject(value).role || '消息')
 const toolName = (value: unknown) => String(asObject(asObject(value).function).name || asObject(value).name || asObject(value).type || '工具')
-type RunTrace = { compressions?: { id: string; status: string; chunks: unknown[]; error?: string; summary?: string }[]; api_requests?: { step: number; body: unknown }[]; temporary_contexts?: { step: number; messages: unknown[] }[]; result?: string; messages?: { role?: string; content?: unknown; tool_calls?: unknown[] }[] }
+type RunTrace = { model_errors?: { step: number; error: string; details: unknown }[]; compressions?: { id: string; status: string; chunks: unknown[]; error?: string; summary?: string }[]; api_requests?: { step: number; body: unknown }[]; temporary_contexts?: { step: number; messages: unknown[] }[]; result?: string; messages?: { role?: string; content?: unknown; tool_calls?: unknown[] }[] }
 const trace = computed(() => parseJson(selectedRun.value?.trace) as RunTrace | undefined)
 const injectionsForStep = (step: number) => trace.value?.temporary_contexts?.find((item) => item.step === step)?.messages || []
 const requests = computed(() => {
@@ -284,6 +284,11 @@ onMounted(load)
           </div>
           <div v-if="!requests.length">暂无请求体</div>
         </template>
+        <section v-for="(failure, index) in trace?.model_errors || []" :key="'failure:' + index" class="request-section">
+          <strong>模型请求失败 · 第 {{ failure.step }} 轮</strong>
+          <StructuredValue :value="failure.details" />
+          <pre v-if="!failure.details" class="detail-text">{{ failure.error }}</pre>
+        </section>
         <details v-for="compression in trace?.compressions || []" :key="compression.id" class="request-detail">
           <summary>上下文压缩 · {{ compression.status }}</summary>
           <StructuredValue :value="compression" />

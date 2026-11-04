@@ -36,7 +36,7 @@ class MattermostTools:
             object_schema({'action': {'type': 'string', 'enum': ['list', 'get', 'thread', 'search']},
                 'channel_id': text('list 使用的频道 ID'), 'post_id': text('get 或 thread 使用的消息 ID'),
                 'team_id': text('search 使用的团队 ID'), 'query': text('search 搜索词'), 'page': page, 'per_page': per_page}, ('action',)), self.read_posts)
-        self.tool('mattermost_send', '向指定 Mattermost 频道或指定用户私聊发送消息和工作空间文件；不指定目标时发送给主人私聊。message 自动应用插件的回应分段、移除、裁剪、换行合并和随机间隔配置，不必手动拆分。附件只随首段发送；所有分段使用同一 root_id 回复话题。返回首段 id 和全部 post_ids；部分失败时不要整条重发，先查询已发送消息。',
+        self.tool('mattermost_send', '向指定 Mattermost 频道或指定用户私聊发送消息和工作空间文件；不指定目标时使用当前 Mattermost 响应频道；若当前源不属于 Mattermost 且有多个生效频道，必须指定频道 ID。message 自动应用插件的回应分段、移除、裁剪、换行合并和随机间隔配置，不必手动拆分。附件只随首段发送；所有分段使用同一 root_id 回复话题。返回首段 id 和全部 post_ids；部分失败时不要整条重发，先查询已发送消息。',
             object_schema({'channel_id': text('频道 ID'), 'user_id': text('私聊目标用户 ID，与 channel_id 二选一'),
                 'message': text('消息正文'), 'root_id': text('可选的父消息 ID'),
                 'files': {'type': 'array', 'items': text('工作空间相对路径'), 'maxItems': 5}}, ()), self.send_message)
@@ -128,7 +128,7 @@ class MattermostTools:
         if user:
             result = await self.request_json('POST', 'api/v4/channels/direct', body=[self.bot_id, identifier(user, '用户 ID')])
             channel = result.get('id', '')
-        channel = identifier(channel or self.channel, '频道 ID')
+        channel = identifier(channel or self.default_channel(), '频道 ID')
         message, files = args.get('message', ''), args.get('files', [])
         if not message.strip() and not files:
             raise ValueError('消息和附件不能同时为空')
@@ -142,8 +142,8 @@ class MattermostTools:
             uploaded = await self.upload_file(channel, file)
             ids.append(uploaded['id'])
         posts = await self.sender.send(channel, message, root_id=root, file_ids=ids)
-        if channel == self.channel and message:
-            inv.metadata.setdefault('sent_source_texts', {}).setdefault(self.id + '.owner', []).append(message)
+        if channel in self.declared_channels and message:
+            inv.metadata.setdefault('sent_source_texts', {}).setdefault(self.id + '.' + self.source_id(channel), []).append(message)
         return {**posts[0], 'split': len(posts) > 1, 'part_count': len(posts),
                 'post_ids': [post['id'] for post in posts]}
 

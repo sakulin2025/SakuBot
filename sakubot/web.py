@@ -17,6 +17,7 @@ from .model_api import register_model_api
 from .console_api import register_console_api
 from .agent_api import register_agent_api
 from .skill_api import register_skill_api
+from .wake_prompt_api import register_wake_prompt_api
 from .chat import register_chat_api
 from .runtime import Runtime
 from .store import Store
@@ -106,6 +107,27 @@ async def clear_main_context(request: Request):
             raise HTTPException(409, str(exc)) from None
 
 
+@app.post('/api/chat/retry', dependencies=[Depends(authorize)])
+async def retry_main_wake(request: Request):
+    data = await request.json()
+    if not isinstance(data, dict) or type(data.get('event_id')) is not int:
+        raise ValueError('唤醒消息 ID 无效')
+    async with config_lock:
+        return await runtime.chat.retry(data['event_id'])
+
+
+@app.post('/api/chat/rollback', dependencies=[Depends(authorize)])
+async def rollback_main_context(request: Request):
+    data = await request.json()
+    if not isinstance(data, dict) or data.get('confirmation') != '回退':
+        raise ValueError('请确认回退主对话')
+    if type(data.get('event_id')) is not int or type(data.get('revision')) is not int:
+        raise ValueError('回退位置无效')
+    from .context_rollback import rollback
+    async with config_lock:
+        return rollback(runtime, data['event_id'], data['revision'])
+
+
 @app.get("/api/config", dependencies=[Depends(authorize)])
 async def get_config():
     return config.public()
@@ -141,7 +163,7 @@ async def patch_config(request: Request):
         "model": {"main_model_id", "lightweight_model_id"},
         "runtime": {"enabled"},
         "conversation": {"conversation"},
-        "settings": {"main_persona_id", "max_steps", "context_chars", "agent_concurrency", "compression_enabled", "compression_threshold", "conversation"},
+        "settings": {"wake_prompt_template", "main_persona_id", "max_steps", "context_chars", "agent_concurrency", "compression_enabled", "compression_threshold", "conversation"},
     }
     section = data.get("section")
     values = data.get("values")
@@ -262,6 +284,7 @@ register_agent_api(app, authorize, config, store, runtime, config_lock)
 register_skill_api(app, authorize, runtime)
 
 register_chat_api(app, authorize, runtime, config)
+register_wake_prompt_api(app, authorize, runtime)
 
 from .artifacts import register_artifacts
 register_artifacts(app, runtime)

@@ -19,12 +19,13 @@ from sakubot.plugin import Plugin
 from .config import Settings
 from .sending import Sender
 from .tools import MattermostTools
+from .channels import ChannelSources
 
 MAX_FILE = 20 * 1024 * 1024
 IDENTIFIER = re.compile(r'^[a-z0-9]{26}$')
 
 
-class Extension(MattermostTools, Plugin):
+class Extension(ChannelSources, MattermostTools, Plugin):
     name = 'mattermost'
 
     def setup(self):
@@ -36,8 +37,8 @@ class Extension(MattermostTools, Plugin):
             self.config.save()
         self.online = False
         self.error = '尚未连接'
-        self.channel = ''
-        self.owner_id = ''
+        self.declared_channels = set()
+        self.channel_info = {}
         self.bot_id = ''
         self.connection_job = None
         self.http = None
@@ -58,9 +59,7 @@ class Extension(MattermostTools, Plugin):
         from .triggers import register
         register(self)
         self.register_tools()
-        self.conversation_source('owner', 'Mattermost 主人私聊',
-            handlers={**{kind: self.deliver for kind in ('text', 'image', 'video', 'audio', 'file')},
-                      'tool': self.tool_event}, availability=self.availability, timeout=None)
+        self.sync_sources()
 
     def availability(self):
         return {'available': self.online, 'reason': '' if self.online else self.error}
@@ -72,7 +71,7 @@ class Extension(MattermostTools, Plugin):
         return await self.lookup(None, {'action': 'teams'})
 
     async def page_config(self, request):
-        data = Settings.model_validate(dict(self.config)).model_dump(exclude={'slash_enabled', 'slash_base_url'})
+        data = Settings.model_validate(dict(self.config)).model_dump(exclude={'slash_enabled', 'slash_base_url', 'legacy_owner'})
         data['token_configured'] = bool(data.pop('token'))
         return data
 
@@ -84,7 +83,7 @@ class Extension(MattermostTools, Plugin):
 
     async def page_status(self, request):
         return {'online': self.online, 'error': self.error, 'retry_at': self.retry_at,
-                'bot_id': self.bot_id, 'owner_id': self.owner_id, 'channel_id': self.channel}
+                'bot_id': self.bot_id, 'channel_ids': self.config.get('channel_ids', [])}
 
     async def page_logs(self, request):
         rows = self.runtime.store.rows("SELECT id,at,level,event,data FROM logs WHERE source=? AND event LIKE 'mattermost.%' ORDER BY id DESC LIMIT 100", (self.id,))
@@ -92,32 +91,31 @@ class Extension(MattermostTools, Plugin):
             row['data'] = json.loads(row['data'])
         return rows
 
-    async def validate_connection(self, base, token, owner):
+    async def validate_connection(self, base, token, channels):
         async with httpx.AsyncClient(base_url=base + '/', headers={'Authorization': 'Bearer ' + token},
                                      timeout=15, follow_redirects=False, trust_env=False) as client:
             me = await client.get('api/v4/users/me')
             if me.status_code != 200:
                 raise ValueError('机器人认证失败（HTTP ' + str(me.status_code) + '）')
-            owner_key = owner.lstrip('@')
-            path = 'api/v4/users/' + owner_key if IDENTIFIER.fullmatch(owner_key) else 'api/v4/users/username/' + owner_key
-            target = await client.get(path)
-            if target.status_code == 404 and IDENTIFIER.fullmatch(owner_key):
-                target = await client.get('api/v4/users/username/' + owner_key)
-            if target.status_code != 200:
-                raise ValueError('主人账号查询失败（HTTP ' + str(target.status_code) + '）')
-            bot_id, owner_id = str(me.json().get('id', '')), str(target.json().get('id', ''))
-            if not IDENTIFIER.fullmatch(bot_id) or not IDENTIFIER.fullmatch(owner_id) or bot_id == owner_id:
-                raise ValueError('主人和机器人账号无效')
+            bot_id = str(me.json().get('id', ''))
+            if not IDENTIFIER.fullmatch(bot_id):
+                raise ValueError('机器人账号无效')
+            for channel in channels:
+                target = await client.get('api/v4/channels/' + channel)
+                member = await client.get('api/v4/channels/' + channel + '/members/' + bot_id)
+                if target.status_code != 200 or member.status_code != 200:
+                    raise ValueError('频道不可访问或机器人未加入：' + channel)
+                if target.json().get('delete_at'):
+                    raise ValueError('频道已归档：' + channel)
 
     async def save_config(self, request):
         data = await request.json()
-        fields = set(Settings.model_fields) - {'slash_enabled', 'slash_base_url'}
+        fields = set(Settings.model_fields) - {'slash_enabled', 'slash_base_url', 'legacy_owner'}
         if not isinstance(data, dict) or set(data) - fields:
             raise ValueError('配置格式无效')
-        if not all(isinstance(data.get(k, ''), str) for k in ('base_url', 'token', 'owner')):
+        if not all(isinstance(data.get(k, ''), str) for k in ('base_url', 'token')):
             raise ValueError('配置字段格式无效')
         base = data.get('base_url', '').strip().rstrip('/')
-        owner = data.get('owner', '').strip()
         token = data.get('token', '').strip() or self.config.get('token', '')
         try:
             parts = urlsplit(base)
@@ -128,9 +126,9 @@ class Extension(MattermostTools, Plugin):
             raise ValueError('服务器地址格式无效')
         if not token or any(c in token for c in '\r\n'):
             raise ValueError('请填写有效的机器人访问令牌')
-        if not re.fullmatch(r'@?[A-Za-z0-9_.-]{1,64}', owner):
-            raise ValueError('主人用户 ID 或用户名格式无效')
-        candidate = {**dict(self.config), **data, 'base_url': base, 'owner': owner, 'token': token}
+        candidate = {**dict(self.config), **data, 'base_url': base, 'token': token}
+        if 'channel_ids' in data:
+            candidate['legacy_owner'] = ''
         try:
             settings = Settings.model_validate(candidate)
         except ValidationError as exc:
@@ -143,10 +141,10 @@ class Extension(MattermostTools, Plugin):
             # These have a separate form and can change while connection settings are edited.
             settings.slash_enabled = self.config.get('slash_enabled', False)
             settings.slash_base_url = self.config.get('slash_base_url', '')
-            connection_changed = any(settings.model_dump()[key] != self.config.get(key) for key in ('base_url', 'owner', 'token'))
+            connection_changed = any(settings.model_dump()[key] != self.config.get(key) for key in ('base_url', 'channel_ids', 'token'))
             try:
-                if connection_changed or not all(self.config.get(k) for k in ('base_url', 'token', 'owner')):
-                    await self.validate_connection(base, token, owner)
+                if connection_changed or not all(self.config.get(k) for k in ('base_url', 'token')):
+                    await self.validate_connection(base, token, settings.channel_ids)
             except httpx.HTTPError:
                 raise ValueError('无法连接 Mattermost，配置未保存') from None
             except (ValueError, KeyError, TypeError) as exc:
@@ -159,7 +157,7 @@ class Extension(MattermostTools, Plugin):
         return await self.page_config(request)
 
     async def reconnect(self, request):
-        if not all(self.config.get(k) for k in ('base_url', 'token', 'owner')):
+        if not all(self.config.get(k) for k in ('base_url', 'token')):
             raise ValueError('请先完成连接设置')
         async with self.config_lock:
             self.runtime.store.log('info', self.id, 'mattermost.reconnect.requested')
@@ -183,7 +181,8 @@ class Extension(MattermostTools, Plugin):
         self.online = False
         self.error = '正在连接'
         self.retry_at = 0
-        self.bot_id = self.owner_id = self.channel = ''
+        self.bot_id = ''
+        self.sync_sources()
         self.connection_job = self.background(self.run())
 
     async def mattermost_api(self, method, path, **kwargs):
@@ -198,27 +197,9 @@ class Extension(MattermostTools, Plugin):
             timeout=httpx.Timeout(30, connect=10), follow_redirects=False, trust_env=False)
         me = await self.mattermost_api('GET', 'api/v4/users/me')
         self.bot_id = str(me.get('id', ''))
-        owner = self.config['owner'].lstrip('@')
-        if IDENTIFIER.fullmatch(owner):
-            try:
-                user = await self.mattermost_api('GET', 'api/v4/users/' + owner)
-            except RuntimeError as exc:
-                if str(exc) != 'Mattermost API HTTP 404':
-                    raise
-                user = await self.mattermost_api('GET', 'api/v4/users/username/' + owner)
-        else:
-            user = await self.mattermost_api('GET', 'api/v4/users/username/' + owner)
-        self.owner_id = str(user.get('id', ''))
-        if not IDENTIFIER.fullmatch(self.bot_id) or not IDENTIFIER.fullmatch(self.owner_id) or self.owner_id == self.bot_id:
-            raise ValueError('主人和机器人账号无效')
-        channel = await self.mattermost_api('POST', 'api/v4/channels/direct', json=[self.bot_id, self.owner_id])
-        if channel.get('type') != 'D' or not IDENTIFIER.fullmatch(str(channel.get('id', ''))):
-            raise ValueError('主人私聊不可用')
-        self.channel = channel['id']
-        key = hashlib.sha256((base + '\n' + self.bot_id + '\n' + self.owner_id).encode()).hexdigest()[:24]
-        self.cursor_key = 'cursor:' + key
-        if self.state.get(self.cursor_key) is None:
-            self.state.set(self.cursor_key, int(time.time() * 1000))
+        if not IDENTIFIER.fullmatch(self.bot_id):
+            raise ValueError('机器人账号无效')
+        await self.prepare_channels()
         parts = urlsplit(base)
         path = parts.path.rstrip('/') + '/api/v4/websocket'
         ws_url = ('wss' if parts.scheme == 'https' else 'ws') + '://' + parts.netloc + path
@@ -227,7 +208,7 @@ class Extension(MattermostTools, Plugin):
     async def run(self):
         delay = 5
         while True:
-            if not all(self.config.get(k) for k in ('base_url', 'token', 'owner')):
+            if not all(self.config.get(k) for k in ('base_url', 'token')):
                 self.error = '请完成插件设置'
                 return
             started = time.monotonic()
@@ -245,7 +226,7 @@ class Extension(MattermostTools, Plugin):
                                 raise RuntimeError('Mattermost WebSocket 认证失败')
                     self.online = True
                     self.error = ''
-                    self.runtime.store.log('info', self.id, 'mattermost.connected', data={'bot_id': self.bot_id, 'owner_id': self.owner_id, 'channel_id': self.channel})
+                    self.runtime.store.log('info', self.id, 'mattermost.connected', data={'bot_id': self.bot_id, 'channel_ids': self.config.get('channel_ids', [])})
                     await self.catch_up()
                     async for raw in ws:
                         event = json.loads(raw)
@@ -270,27 +251,30 @@ class Extension(MattermostTools, Plugin):
             delay = min(delay * 2, 120)
 
     async def catch_up(self):
-        since = max(0, int(self.state.get(self.cursor_key, 0)) - 1)
-        data = await self.mattermost_api('GET', 'api/v4/channels/' + self.channel + '/posts', params={'since': since})
-        posts = data.get('posts', {})
-        if not isinstance(posts, dict):
-            raise ValueError('消息列表格式无效')
-        for post in sorted(posts.values(), key=lambda p: (p.get('create_at', 0), p.get('id', ''))):
-            await self.process_post(post)
-        self.runtime.store.log('info', self.id, 'mattermost.catch_up', data={'posts': len(posts)})
+        for channel in self.config.get('channel_ids', []):
+            since = max(0, int(self.state.get(self.cursor_for(channel), 0)) - 1)
+            data = await self.mattermost_api('GET', 'api/v4/channels/' + channel + '/posts', params={'since': since})
+            posts = data.get('posts', {})
+            if not isinstance(posts, dict):
+                raise ValueError('消息列表格式无效')
+            for post in sorted(posts.values(), key=lambda p: (p.get('create_at', 0), p.get('id', ''))):
+                await self.process_post(post)
+            self.runtime.store.log('info', self.id, 'mattermost.catch_up', data={'channel_id': channel, 'posts': len(posts)})
 
     async def process_post(self, post):
-        if not isinstance(post, dict) or post.get('channel_id') != self.channel or post.get('delete_at', 0):
+        if not isinstance(post, dict) or post.get('channel_id') not in self.declared_channels or post.get('delete_at', 0):
             return
         timestamp = int(post.get('create_at') or 0)
-        if post.get('user_id') != self.owner_id or post.get('type'):
+        if post.get('user_id') == self.bot_id or not IDENTIFIER.fullmatch(str(post.get('user_id', ''))) or post.get('type'):
             return
         post_id = str(post.get('id', ''))
         if not IDENTIFIER.fullmatch(post_id):
             return
-        uid = 'main-source:' + self.id + '.owner:' + post_id
-        if self.runtime.store.one('SELECT id FROM events WHERE uid=?', (uid,)):
-            self.state.set(self.cursor_key, max(int(self.state.get(self.cursor_key, 0)), timestamp))
+        channel = post['channel_id']
+        cursor_key = self.cursor_for(channel)
+        uid = 'main-source:' + self.id + '.' + self.source_id(channel) + ':' + post_id
+        if self.runtime.store.one('SELECT id FROM events WHERE uid IN (?,?)', (uid, 'main-source:' + self.id + '.owner:' + post_id)):
+            self.state.set(cursor_key, max(int(self.state.get(cursor_key, 0)), timestamp))
             return
         content = str(post.get('message') or '').strip()
         attachments = []
@@ -304,10 +288,12 @@ class Extension(MattermostTools, Plugin):
         if attachments:
             content += '\n' + '\n'.join(attachments)
         if content.strip():
-            await self.receive_main('owner', content, actor=self.owner_id, label='Mattermost 主人', uid=post_id,
-                meta={'source_label': 'Mattermost', 'post_id': post_id, 'channel_id': self.channel})
+            name, sender, prompt = await self.sender_context(post)
+            await self.receive_main(self.source_id(channel), content, actor=post['user_id'], label=name, uid=post_id,
+                meta={'source_label': 'Mattermost', 'post_id': post_id, 'channel_id': channel,
+                    'sender': sender, 'temporary_context': prompt})
             self.runtime.store.log('info', self.id, 'mattermost.message.received', data={'post_id': post_id, 'files': len(post.get('file_ids') or [])})
-        self.state.set(self.cursor_key, max(int(self.state.get(self.cursor_key, 0)), timestamp))
+        self.state.set(cursor_key, max(int(self.state.get(cursor_key, 0)), timestamp))
 
     async def save_attachment(self, post_id, file_id):
         info = await self.mattermost_api('GET', 'api/v4/files/' + file_id + '/info')
@@ -389,9 +375,9 @@ class Extension(MattermostTools, Plugin):
                     chunks.append(chunk)
         return b''.join(chunks), packet.get('name') or Path(parsed.path).name or 'attachment'
 
-    async def deliver(self, packet):
+    async def deliver(self, packet, *, channel_id):
         try:
-            await self.send_packet(packet)
+            await self.send_packet(packet, channel_id=channel_id)
             self.runtime.store.log('info', self.id, 'mattermost.message.sent', data={'type': packet['type']})
         except asyncio.CancelledError:
             raise
@@ -399,22 +385,22 @@ class Extension(MattermostTools, Plugin):
             self.runtime.store.log('warning', self.id, 'mattermost.message.failed', data={'type': packet.get('type', ''), 'error': type(exc).__name__})
             raise
 
-    async def send_packet(self, packet):
+    async def send_packet(self, packet, *, channel_id):
         if not self.online or not self.http:
             raise RuntimeError('Mattermost 未连接')
         if packet['type'] == 'text':
-            await self.sender.send(self.channel, packet.get('text', ''))
+            await self.sender.send(channel_id, packet.get('text', ''))
             return
         content, name = await self.bytes_for_part(packet)
-        uploaded = await self.mattermost_api('POST', 'api/v4/files', data={'channel_id': self.channel},
+        uploaded = await self.mattermost_api('POST', 'api/v4/files', data={'channel_id': channel_id},
             files={'files': (Path(name).name, content, packet.get('mime') or 'application/octet-stream')})
         items = uploaded.get('file_infos') or []
         if not items or not IDENTIFIER.fullmatch(str(items[0].get('id', ''))):
             raise RuntimeError('文件上传结果无效')
-        await self.mattermost_api('POST', 'api/v4/posts', json={'channel_id': self.channel, 'message': '', 'file_ids': [items[0]['id']]})
+        await self.mattermost_api('POST', 'api/v4/posts', json={'channel_id': channel_id, 'message': '', 'file_ids': [items[0]['id']]})
 
-    async def tool_event(self, packet):
+    async def tool_event(self, packet, *, channel_id):
         if packet.get('event') == 'tool.started':
-            await self.deliver({'type': 'text', 'text': '🔨函数调用：' + str(packet.get('name', ''))})
+            await self.deliver({'type': 'text', 'text': '🔨函数调用：' + str(packet.get('name', ''))}, channel_id=channel_id)
         elif packet.get('event') in ('compression.started', 'compression.completed', 'compression.failed'):
-            await self.deliver({'type': 'text', 'text': {'compression.started': '🗜️ 正在压缩上下文', 'compression.completed': '🗜️ 上下文压缩完成', 'compression.failed': '⚠️ 上下文压缩失败'}[packet['event']]})
+            await self.deliver({'type': 'text', 'text': {'compression.started': '🗜️ 正在压缩上下文', 'compression.completed': '🗜️ 上下文压缩完成', 'compression.failed': '⚠️ 上下文压缩失败'}[packet['event']]}, channel_id=channel_id)
