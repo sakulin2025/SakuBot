@@ -1,0 +1,40 @@
+{
+  "name": "audio_terminal",
+  "label": "音频终端",
+  "version": "0.1.0",
+  "icon": "connection",
+  "settings": {
+    "fields": [
+      {
+        "key": "base_url",
+        "label": "服务地址",
+        "type": "string",
+        "required": true,
+        "format": "http-url",
+        "default": "http://esp32-audio-terminal:8765",
+        "placeholder": "http://esp32-audio-terminal:8765"
+      },
+      {
+        "key": "token",
+        "label": "API_TOKEN",
+        "type": "secret",
+        "required": true,
+        "default": "",
+        "placeholder": "粘贴音频终端服务的 API_TOKEN"
+      },
+      {
+        "key": "subscribe_events",
+        "label": "订阅设备事件",
+        "type": "boolean",
+        "default": true
+      }
+    ],
+    "connection": {
+      "path": "/v1/devices",
+      "token_field": "token",
+      "required_paths": [
+        "devices"
+      ]
+    }
+  }
+}

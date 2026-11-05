@@ -4,6 +4,7 @@
 
 | 包 | 页面与能力 |
 | --- | --- |
+| audio_terminal | ESP32 音频终端设备控制、WAV播放、设备事件与脚本触发源 |
 | ssh_devices | SSH 设备、公钥、独立会话、Windows PowerShell/POSIX终端、并行执行、SFTP与共享工作空间文件交付 |
 | ha_control | HA连接、初始化草稿、房间、实体、别名分组、实时查询、批量控制、用户操作手册 |
 | minecraft_status | Java/基岩服务器目录、状态查询、轮询、人数和在线变化主动事件 |
