@@ -3,16 +3,156 @@
     "returns": "返回值: object\n返回值.version: string；框架版本\n返回值.boot_id: string；本次启动 ID\n返回值.uptime_seconds（分支1）: integer\n返回值.uptime_seconds（分支2）: number\n返回值.platform: string；运行平台\n返回值.python: string；Python 版本\n返回值.restart_supported: boolean；是否支持受监督重启\n返回值.running（分支1）: object；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值.running（分支1） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值.running（分支2）: null\n返回值.error: string；框架错误说明\n返回值.plugins: array；插件状态和工具/页面声明\n返回值.plugins[]: object；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值.plugins[] 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值.config: object；按 Settings 模型生成的公开配置，密钥隐藏\n返回值.config 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值.paths: object；运行目录路径\n返回值.paths 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。"
   },
   "system_plugins": {
-    "returns": "返回值（分支1）: object\n返回值（分支1）.operation_id: string（可省略）；排队管理操作 ID\n返回值（分支1）.id: string（可省略）；操作 ID\n返回值（分支1）.status: string；管理操作状态\n返回值（分支1）.execution: string（可省略）；after_current_wake 表示本轮结束后执行\n返回值（分支1）.action: string（可省略）；管理动作\n返回值（分支1）.payload: object（可省略）；操作请求\n返回值（分支1）.payload 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支1）.result（分支1）: object（可省略）\n返回值（分支1）.result（分支1） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支1）.result（分支2）: array（可省略）\n返回值（分支1）.result（分支2）[]: 任意JSON\n返回值（分支1）.result（分支3）: string（可省略）\n返回值（分支1）.result（分支4）: integer（可省略）\n返回值（分支1）.result（分支5）: number（可省略）\n返回值（分支1）.result（分支6）: boolean（可省略）\n返回值（分支1）.result（分支7）: null（可省略）\n返回值（分支1）.error: string（可省略）；失败说明\n返回值（分支2）: object\n返回值（分支2）.plugins: array；扫描后的插件目录\n返回值（分支2）.plugins[]: object；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值（分支2）.plugins[] 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支2）.added: array；新发现插件 ID\n返回值（分支2）.added[]: string\n返回值（分支2）.removed: array（可省略）；已不存在的插件 ID\n返回值（分支2）.removed[]: string\n返回值（分支2）.changed: array（可省略）；发生变化的插件 ID\n返回值（分支2）.changed[]: string\n返回值（分支3）: array\n返回值（分支3）[]: object；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值（分支3）[] 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。"
+    "returns": "返回值（分支1）: object\n返回值（分支1）.operation_id: string（可省略）；排队管理操作 ID\n返回值（分支1）.id: string（可省略）；操作 ID\n返回值（分支1）.status: string；管理操作状态\n返回值（分支1）.execution: string（可省略）；after_current_wake 表示本轮结束后执行\n返回值（分支1）.action: string（可省略）；管理动作\n返回值（分支1）.payload: object（可省略）；操作请求\n返回值（分支1）.payload 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支1）.result（分支1）: object（可省略）\n返回值（分支1）.result（分支1） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支1）.result（分支2）: array（可省略）\n返回值（分支1）.result（分支2）[]: 任意JSON\n返回值（分支1）.result（分支3）: string（可省略）\n返回值（分支1）.result（分支4）: integer（可省略）\n返回值（分支1）.result（分支5）: number（可省略）\n返回值（分支1）.result（分支6）: boolean（可省略）\n返回值（分支1）.result（分支7）: null（可省略）\n返回值（分支1）.error: string（可省略）；失败说明\n返回值（分支2）: object\n返回值（分支2）.plugins: array；扫描后的插件目录\n返回值（分支2）.plugins[]: object；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值（分支2）.plugins[] 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支2）.added: array；新发现插件 ID\n返回值（分支2）.added[]: string\n返回值（分支2）.removed: array（可省略）；已不存在的插件 ID\n返回值（分支2）.removed[]: string\n返回值（分支2）.changed: array（可省略）；发生变化的插件 ID\n返回值（分支2）.changed[]: string\n返回值（分支3）: array\n返回值（分支3）[]: object；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值（分支3）[] 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。",
+    "actions": {
+      "list": {
+        "parameters": {},
+        "returns": "array[插件清单]，当前安装信息。",
+        "example": {
+          "action": "list"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "scan": {
+        "parameters": {},
+        "returns": "插件增量扫描结果object，供发现新增插件。",
+        "example": {
+          "action": "scan"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "enable": {
+        "parameters": {
+          "id": "操作已有插件时必填；import用path",
+          "path": "import必填工作空间包路径",
+          "force": "可选boolean"
+        },
+        "returns": "Operation object，含操作ID和状态；为后台操作提交结果，不代表操作完成，使用system_operations查询。",
+        "example": {
+          "action": "enable"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "disable": {
+        "parameters": {
+          "id": "操作已有插件时必填；import用path",
+          "path": "import必填工作空间包路径",
+          "force": "可选boolean"
+        },
+        "returns": "Operation object，含操作ID和状态；为后台操作提交结果，不代表操作完成，使用system_operations查询。",
+        "example": {
+          "action": "disable"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "reload": {
+        "parameters": {
+          "id": "操作已有插件时必填；import用path",
+          "path": "import必填工作空间包路径",
+          "force": "可选boolean"
+        },
+        "returns": "Operation object，含操作ID和状态；为后台操作提交结果，不代表操作完成，使用system_operations查询。",
+        "example": {
+          "action": "reload"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "delete": {
+        "parameters": {
+          "id": "操作已有插件时必填；import用path",
+          "path": "import必填工作空间包路径",
+          "force": "可选boolean"
+        },
+        "returns": "Operation object，含操作ID和状态；为后台操作提交结果，不代表操作完成，使用system_operations查询。",
+        "example": {
+          "action": "delete"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "import": {
+        "parameters": {
+          "id": "操作已有插件时必填；import用path",
+          "path": "import必填工作空间包路径",
+          "force": "可选boolean"
+        },
+        "returns": "Operation object，含操作ID和状态；为后台操作提交结果，不代表操作完成，使用system_operations查询。",
+        "example": {
+          "action": "import"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "export": {
+        "parameters": {
+          "id": "操作已有插件时必填；import用path",
+          "path": "import必填工作空间包路径",
+          "force": "可选boolean"
+        },
+        "returns": "Operation object，含操作ID和状态；为后台操作提交结果，不代表操作完成，使用system_operations查询。",
+        "example": {
+          "action": "export"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      }
+    }
   },
   "system_config": {
-    "returns": "返回值（分支1）: object\n返回值（分支1）.operation_id: string（可省略）；排队管理操作 ID\n返回值（分支1）.id: string（可省略）；操作 ID\n返回值（分支1）.status: string；管理操作状态\n返回值（分支1）.execution: string（可省略）；after_current_wake 表示本轮结束后执行\n返回值（分支1）.action: string（可省略）；管理动作\n返回值（分支1）.payload: object（可省略）；操作请求\n返回值（分支1）.payload 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支1）.result（分支1）: object（可省略）\n返回值（分支1）.result（分支1） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支1）.result（分支2）: array（可省略）\n返回值（分支1）.result（分支2）[]: 任意JSON\n返回值（分支1）.result（分支3）: string（可省略）\n返回值（分支1）.result（分支4）: integer（可省略）\n返回值（分支1）.result（分支5）: number（可省略）\n返回值（分支1）.result（分支6）: boolean（可省略）\n返回值（分支1）.result（分支7）: null（可省略）\n返回值（分支1）.error: string（可省略）；失败说明\n返回值（分支2）: object；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值（分支2） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。"
+    "returns": "返回值（分支1）: object\n返回值（分支1）.operation_id: string（可省略）；排队管理操作 ID\n返回值（分支1）.id: string（可省略）；操作 ID\n返回值（分支1）.status: string；管理操作状态\n返回值（分支1）.execution: string（可省略）；after_current_wake 表示本轮结束后执行\n返回值（分支1）.action: string（可省略）；管理动作\n返回值（分支1）.payload: object（可省略）；操作请求\n返回值（分支1）.payload 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支1）.result（分支1）: object（可省略）\n返回值（分支1）.result（分支1） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支1）.result（分支2）: array（可省略）\n返回值（分支1）.result（分支2）[]: 任意JSON\n返回值（分支1）.result（分支3）: string（可省略）\n返回值（分支1）.result（分支4）: integer（可省略）\n返回值（分支1）.result（分支5）: number（可省略）\n返回值（分支1）.result（分支6）: boolean（可省略）\n返回值（分支1）.result（分支7）: null（可省略）\n返回值（分支1）.error: string（可省略）；失败说明\n返回值（分支2）: object；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值（分支2） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。",
+    "actions": {
+      "read": {
+        "parameters": {},
+        "returns": "框架公开配置object，敏感值按框架脱敏规则输出。",
+        "example": {
+          "action": "read"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "patch": {
+        "parameters": {
+          "values": "必填增量配置object"
+        },
+        "returns": "Operation object；后台处理，使用system_operations获取结果。",
+        "example": {
+          "action": "patch"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      }
+    }
   },
   "plugin_project": {
     "returns": "返回值（分支1）: object\n返回值（分支1）.operation_id: string（可省略）；排队管理操作 ID\n返回值（分支1）.id: string（可省略）；操作 ID\n返回值（分支1）.status: string；管理操作状态\n返回值（分支1）.execution: string（可省略）；after_current_wake 表示本轮结束后执行\n返回值（分支1）.action: string（可省略）；管理动作\n返回值（分支1）.payload: object（可省略）；操作请求\n返回值（分支1）.payload 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支1）.result（分支1）: object（可省略）\n返回值（分支1）.result（分支1） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支1）.result（分支2）: array（可省略）\n返回值（分支1）.result（分支2）[]: 任意JSON\n返回值（分支1）.result（分支3）: string（可省略）\n返回值（分支1）.result（分支4）: integer（可省略）\n返回值（分支1）.result（分支5）: number（可省略）\n返回值（分支1）.result（分支6）: boolean（可省略）\n返回值（分支1）.result（分支7）: null（可省略）\n返回值（分支1）.error: string（可省略）；失败说明\n返回值（分支2）: object\n返回值（分支2）.id: string（可省略）；开发项目 ID\n返回值（分支2）.version: string（可省略）；项目版本\n返回值（分支2）.files（分支1）: array（可省略）\n返回值（分支2）.files（分支1）[]: object；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值（分支2）.files（分支1）[] 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支2）.files（分支2）: array（可省略）\n返回值（分支2）.files（分支2）[]: string\n返回值（分支2）.path: string（可省略）；文件相对路径\n返回值（分支2）.content: string（可省略）；读取的正文\n返回值（分支2）.file_version: string（可省略）；文件版本，写入时须原样提供\n返回值（分支2）.directory: string（可省略）；SDK 目录\n返回值（分支2）.guide: string（可省略）；开发指南路径\n返回值（分支2）.build_script: string（可省略）；构建脚本路径\n返回值（分支2）.example: string（可省略）；示例文档路径\n返回值（分支2）.python_syntax: string（可省略）；语法检查结果\n返回值（分支2）.dependencies: array（可省略）；依赖声明\n返回值（分支2）.dependencies[]: 任意JSON\n返回值（分支3）: array\n返回值（分支3）[]: object\n返回值（分支3）[].id: string（可省略）；开发项目 ID\n返回值（分支3）[].version: string（可省略）；项目版本\n返回值（分支3）[].files（分支1）: array（可省略）\n返回值（分支3）[].files（分支1）[]: object；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值（分支3）[].files（分支1）[] 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支3）[].files（分支2）: array（可省略）\n返回值（分支3）[].files（分支2）[]: string\n返回值（分支3）[].path: string（可省略）；文件相对路径\n返回值（分支3）[].content: string（可省略）；读取的正文\n返回值（分支3）[].file_version: string（可省略）；文件版本，写入时须原样提供\n返回值（分支3）[].directory: string（可省略）；SDK 目录\n返回值（分支3）[].guide: string（可省略）；开发指南路径\n返回值（分支3）[].build_script: string（可省略）；构建脚本路径\n返回值（分支3）[].example: string（可省略）；示例文档路径\n返回值（分支3）[].python_syntax: string（可省略）；语法检查结果\n返回值（分支3）[].dependencies: array（可省略）；依赖声明\n返回值（分支3）[].dependencies[]: 任意JSON"
   },
   "system_operations": {
-    "returns": "返回值（分支1）: object\n返回值（分支1）.operation_id: string（可省略）；排队管理操作 ID\n返回值（分支1）.id: string（可省略）；操作 ID\n返回值（分支1）.status: string；管理操作状态\n返回值（分支1）.execution: string（可省略）；after_current_wake 表示本轮结束后执行\n返回值（分支1）.action: string（可省略）；管理动作\n返回值（分支1）.payload: object（可省略）；操作请求\n返回值（分支1）.payload 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支1）.result（分支1）: object（可省略）\n返回值（分支1）.result（分支1） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支1）.result（分支2）: array（可省略）\n返回值（分支1）.result（分支2）[]: 任意JSON\n返回值（分支1）.result（分支3）: string（可省略）\n返回值（分支1）.result（分支4）: integer（可省略）\n返回值（分支1）.result（分支5）: number（可省略）\n返回值（分支1）.result（分支6）: boolean（可省略）\n返回值（分支1）.result（分支7）: null（可省略）\n返回值（分支1）.error: string（可省略）；失败说明\n返回值（分支2）: array\n返回值（分支2）[]: object\n返回值（分支2）[].operation_id: string（可省略）；排队管理操作 ID\n返回值（分支2）[].id: string（可省略）；操作 ID\n返回值（分支2）[].status: string；管理操作状态\n返回值（分支2）[].execution: string（可省略）；after_current_wake 表示本轮结束后执行\n返回值（分支2）[].action: string（可省略）；管理动作\n返回值（分支2）[].payload: object（可省略）；操作请求\n返回值（分支2）[].payload 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支2）[].result（分支1）: object（可省略）\n返回值（分支2）[].result（分支1） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支2）[].result（分支2）: array（可省略）\n返回值（分支2）[].result（分支2）[]: 任意JSON\n返回值（分支2）[].result（分支3）: string（可省略）\n返回值（分支2）[].result（分支4）: integer（可省略）\n返回值（分支2）[].result（分支5）: number（可省略）\n返回值（分支2）[].result（分支6）: boolean（可省略）\n返回值（分支2）[].result（分支7）: null（可省略）\n返回值（分支2）[].error: string（可省略）；失败说明"
+    "returns": "返回值（分支1）: object\n返回值（分支1）.operation_id: string（可省略）；排队管理操作 ID\n返回值（分支1）.id: string（可省略）；操作 ID\n返回值（分支1）.status: string；管理操作状态\n返回值（分支1）.execution: string（可省略）；after_current_wake 表示本轮结束后执行\n返回值（分支1）.action: string（可省略）；管理动作\n返回值（分支1）.payload: object（可省略）；操作请求\n返回值（分支1）.payload 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支1）.result（分支1）: object（可省略）\n返回值（分支1）.result（分支1） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支1）.result（分支2）: array（可省略）\n返回值（分支1）.result（分支2）[]: 任意JSON\n返回值（分支1）.result（分支3）: string（可省略）\n返回值（分支1）.result（分支4）: integer（可省略）\n返回值（分支1）.result（分支5）: number（可省略）\n返回值（分支1）.result（分支6）: boolean（可省略）\n返回值（分支1）.result（分支7）: null（可省略）\n返回值（分支1）.error: string（可省略）；失败说明\n返回值（分支2）: array\n返回值（分支2）[]: object\n返回值（分支2）[].operation_id: string（可省略）；排队管理操作 ID\n返回值（分支2）[].id: string（可省略）；操作 ID\n返回值（分支2）[].status: string；管理操作状态\n返回值（分支2）[].execution: string（可省略）；after_current_wake 表示本轮结束后执行\n返回值（分支2）[].action: string（可省略）；管理动作\n返回值（分支2）[].payload: object（可省略）；操作请求\n返回值（分支2）[].payload 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支2）[].result（分支1）: object（可省略）\n返回值（分支2）[].result（分支1） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支2）[].result（分支2）: array（可省略）\n返回值（分支2）[].result（分支2）[]: 任意JSON\n返回值（分支2）[].result（分支3）: string（可省略）\n返回值（分支2）[].result（分支4）: integer（可省略）\n返回值（分支2）[].result（分支5）: number（可省略）\n返回值（分支2）[].result（分支6）: boolean（可省略）\n返回值（分支2）[].result（分支7）: null（可省略）\n返回值（分支2）[].error: string（可省略）；失败说明",
+    "actions": {
+      "list": {
+        "parameters": {},
+        "returns": "array[Operation]。",
+        "example": {
+          "action": "list"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "get": {
+        "parameters": {
+          "id": "必填操作ID"
+        },
+        "returns": "Operation object，包含最终结果或错误。",
+        "example": {
+          "action": "get"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "cancel": {
+        "parameters": {
+          "id": "必填操作ID"
+        },
+        "returns": "取消后的Operation object，不保证能撤销已发出的操作。",
+        "example": {
+          "action": "cancel"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      }
+    }
   },
   "system_restart": {
     "returns": "返回值: object\n返回值.operation_id: string（可省略）；排队管理操作 ID\n返回值.id: string（可省略）；操作 ID\n返回值.status: string；管理操作状态\n返回值.execution: string（可省略）；after_current_wake 表示本轮结束后执行\n返回值.action: string（可省略）；管理动作\n返回值.payload: object（可省略）；操作请求\n返回值.payload 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值.result（分支1）: object（可省略）\n返回值.result（分支1） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值.result（分支2）: array（可省略）\n返回值.result（分支2）[]: 任意JSON\n返回值.result（分支3）: string（可省略）\n返回值.result（分支4）: integer（可省略）\n返回值.result（分支5）: number（可省略）\n返回值.result（分支6）: boolean（可省略）\n返回值.result（分支7）: null（可省略）\n返回值.error: string（可省略）；失败说明"

@@ -3,10 +3,145 @@
     "returns": "返回值: object\n返回值.public_key: string；OpenSSH 公钥，非私钥\n返回值.fingerprint: string；公钥指纹\n返回值.trust_command: string；用户可选的授权命令\n返回值.next: string；后续配置步骤"
   },
   "ssh_device": {
-    "returns": "返回值（分支1）: object\n返回值（分支1）.id: string（可省略）；设备 ID\n返回值（分支1）.name: string（可省略）；名称\n返回值（分支1）.description: string（可省略）；用途描述\n返回值（分支1）.address: string（可省略）；SSH 主机地址\n返回值（分支1）.port: integer（可省略）；SSH 端口\n返回值（分支1）.username: string（可省略）；远端用户名\n返回值（分支2）: object\n返回值（分支2）.devices: array（可省略）；设备列表\n返回值（分支2）.devices[]: object\n返回值（分支2）.devices[].id: string（可省略）；设备 ID\n返回值（分支2）.devices[].name: string（可省略）；名称\n返回值（分支2）.devices[].description: string（可省略）；用途描述\n返回值（分支2）.devices[].address: string（可省略）；SSH 主机地址\n返回值（分支2）.devices[].port: integer（可省略）；SSH 端口\n返回值（分支2）.devices[].username: string（可省略）；远端用户名\n返回值（分支2）.saved: boolean（可省略）；保存标志\n返回值（分支2）.device: object（可省略）；保存后的设备\n返回值（分支2）.device.id: string（可省略）；设备 ID\n返回值（分支2）.device.name: string（可省略）；名称\n返回值（分支2）.device.description: string（可省略）；用途描述\n返回值（分支2）.device.address: string（可省略）；SSH 主机地址\n返回值（分支2）.device.port: integer（可省略）；SSH 端口\n返回值（分支2）.device.username: string（可省略）；远端用户名\n返回值（分支2）.connected: boolean（可省略）；是否连接\n返回值（分支2）.removed: string（可省略）；已删除设备 ID\n返回值（分支2）.name: string（可省略）；已删除设备名"
+    "returns": "返回值（分支1）: object\n返回值（分支1）.id: string（可省略）；设备 ID\n返回值（分支1）.name: string（可省略）；名称\n返回值（分支1）.description: string（可省略）；用途描述\n返回值（分支1）.address: string（可省略）；SSH 主机地址\n返回值（分支1）.port: integer（可省略）；SSH 端口\n返回值（分支1）.username: string（可省略）；远端用户名\n返回值（分支2）: object\n返回值（分支2）.devices: array（可省略）；设备列表\n返回值（分支2）.devices[]: object\n返回值（分支2）.devices[].id: string（可省略）；设备 ID\n返回值（分支2）.devices[].name: string（可省略）；名称\n返回值（分支2）.devices[].description: string（可省略）；用途描述\n返回值（分支2）.devices[].address: string（可省略）；SSH 主机地址\n返回值（分支2）.devices[].port: integer（可省略）；SSH 端口\n返回值（分支2）.devices[].username: string（可省略）；远端用户名\n返回值（分支2）.saved: boolean（可省略）；保存标志\n返回值（分支2）.device: object（可省略）；保存后的设备\n返回值（分支2）.device.id: string（可省略）；设备 ID\n返回值（分支2）.device.name: string（可省略）；名称\n返回值（分支2）.device.description: string（可省略）；用途描述\n返回值（分支2）.device.address: string（可省略）；SSH 主机地址\n返回值（分支2）.device.port: integer（可省略）；SSH 端口\n返回值（分支2）.device.username: string（可省略）；远端用户名\n返回值（分支2）.connected: boolean（可省略）；是否连接\n返回值（分支2）.removed: string（可省略）；已删除设备 ID\n返回值（分支2）.name: string（可省略）；已删除设备名",
+    "actions": {
+      "list": {
+        "parameters": {},
+        "returns": "object{devices:array[Device]}。",
+        "example": {
+          "action": "list"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "get": {
+        "parameters": {
+          "device": "必填ID或唯一名称"
+        },
+        "returns": "Device object。",
+        "example": {
+          "action": "get"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "add": {
+        "parameters": {
+          "details": "必填name/description/address/username，可选port默认22"
+        },
+        "returns": "Device object，保存不建立连接。",
+        "example": {
+          "action": "add"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "update": {
+        "parameters": {
+          "device": "必填",
+          "details": "需要更改的字段"
+        },
+        "returns": "Device object，会关闭受影响连接。",
+        "example": {
+          "action": "update"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "remove": {
+        "parameters": {
+          "device": "必填"
+        },
+        "returns": "object{removed:string,name:string}。",
+        "example": {
+          "action": "remove"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      }
+    }
   },
   "ssh_session": {
-    "returns": "返回值（分支1）: object\n返回值（分支1）.id: string（可省略）；会话 ID\n返回值（分支1）.device_id: string（可省略）；设备 ID\n返回值（分支1）.device: string（可省略）；设备名称\n返回值（分支1）.description: string（可省略）；会话用途\n返回值（分支1）.address: string（可省略）；远端地址\n返回值（分支1）.username: string（可省略）；登录用户\n返回值（分支1）.port: integer（可省略）；端口\n返回值（分支1）.shell: string（可省略）；powershell/posix/not_detected\n返回值（分支1）.cwd: string（可省略）；远端当前目录\n返回值（分支1）.connected: boolean（可省略）；SSH 是否连接\n返回值（分支1）.busy: boolean（可省略）；会话是否正在执行命令\n返回值（分支2）: object\n返回值（分支2）.sessions: array（可省略）；会话列表\n返回值（分支2）.sessions[]: object\n返回值（分支2）.sessions[].id: string（可省略）；会话 ID\n返回值（分支2）.sessions[].device_id: string（可省略）；设备 ID\n返回值（分支2）.sessions[].device: string（可省略）；设备名称\n返回值（分支2）.sessions[].description: string（可省略）；会话用途\n返回值（分支2）.sessions[].address: string（可省略）；远端地址\n返回值（分支2）.sessions[].username: string（可省略）；登录用户\n返回值（分支2）.sessions[].port: integer（可省略）；端口\n返回值（分支2）.sessions[].shell: string（可省略）；powershell/posix/not_detected\n返回值（分支2）.sessions[].cwd: string（可省略）；远端当前目录\n返回值（分支2）.sessions[].connected: boolean（可省略）；SSH 是否连接\n返回值（分支2）.sessions[].busy: boolean（可省略）；会话是否正在执行命令\n返回值（分支2）.removed: string（可省略）；被删除会话 ID"
+    "returns": "返回值（分支1）: object\n返回值（分支1）.id: string（可省略）；会话 ID\n返回值（分支1）.device_id: string（可省略）；设备 ID\n返回值（分支1）.device: string（可省略）；设备名称\n返回值（分支1）.description: string（可省略）；会话用途\n返回值（分支1）.address: string（可省略）；远端地址\n返回值（分支1）.username: string（可省略）；登录用户\n返回值（分支1）.port: integer（可省略）；端口\n返回值（分支1）.shell: string（可省略）；powershell/posix/not_detected\n返回值（分支1）.cwd: string（可省略）；远端当前目录\n返回值（分支1）.connected: boolean（可省略）；SSH 是否连接\n返回值（分支1）.busy: boolean（可省略）；会话是否正在执行命令\n返回值（分支2）: object\n返回值（分支2）.sessions: array（可省略）；会话列表\n返回值（分支2）.sessions[]: object\n返回值（分支2）.sessions[].id: string（可省略）；会话 ID\n返回值（分支2）.sessions[].device_id: string（可省略）；设备 ID\n返回值（分支2）.sessions[].device: string（可省略）；设备名称\n返回值（分支2）.sessions[].description: string（可省略）；会话用途\n返回值（分支2）.sessions[].address: string（可省略）；远端地址\n返回值（分支2）.sessions[].username: string（可省略）；登录用户\n返回值（分支2）.sessions[].port: integer（可省略）；端口\n返回值（分支2）.sessions[].shell: string（可省略）；powershell/posix/not_detected\n返回值（分支2）.sessions[].cwd: string（可省略）；远端当前目录\n返回值（分支2）.sessions[].connected: boolean（可省略）；SSH 是否连接\n返回值（分支2）.sessions[].busy: boolean（可省略）；会话是否正在执行命令\n返回值（分支2）.removed: string（可省略）；被删除会话 ID",
+    "actions": {
+      "list": {
+        "parameters": {
+          "device": "可选设备筛选"
+        },
+        "returns": "object{sessions:array[Session]}。",
+        "example": {
+          "action": "list"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "open": {
+        "parameters": {
+          "device": "必填",
+          "details": "可选description/timeout/idle_timeout"
+        },
+        "returns": "Session object，新的会话记录。",
+        "example": {
+          "action": "open"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "get": {
+        "parameters": {
+          "session_id": "必填"
+        },
+        "returns": "Session object。",
+        "example": {
+          "action": "get"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "connect": {
+        "parameters": {
+          "session_id": "必填"
+        },
+        "returns": "Session object，建立或复用连接。",
+        "example": {
+          "action": "connect"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "update": {
+        "parameters": {
+          "session_id": "必填",
+          "details": "待修改配置"
+        },
+        "returns": "Session object。",
+        "example": {
+          "action": "update"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "disconnect": {
+        "parameters": {
+          "session_id": "必填"
+        },
+        "returns": "Session object，记录保留但连接关闭。",
+        "example": {
+          "action": "disconnect"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "reset": {
+        "parameters": {
+          "session_id": "必填"
+        },
+        "returns": "Session object，终端目录与环境重置。",
+        "example": {
+          "action": "reset"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "remove": {
+        "parameters": {
+          "session_id": "必填"
+        },
+        "returns": "object{removed:string}，删除会话记录。",
+        "example": {
+          "action": "remove"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      }
+    }
   },
   "ssh_terminal": {
     "returns": "返回值: object\n返回值.session_id: string；会话 ID\n返回值.device: string；设备名称\n返回值.command: string（可省略）；实际命令\n返回值.stdout: string（可省略）；标准输出\n返回值.stderr: string（可省略）；标准错误\n返回值.output: string（可省略）；合并输出，按当前平台返回\n返回值.exit_code（分支1）: integer（可省略）\n返回值.exit_code（分支2）: null（可省略）\n返回值.status: string（可省略）；执行状态\n返回值.cwd: string（可省略）；执行后目录\n返回值.timed_out: boolean（可省略）；是否超时\n返回值.truncated: boolean（可省略）；输出是否截断\n返回值.note: string（可省略）；中断或结果未知提示"

@@ -3,9 +3,123 @@
     "returns": "返回值: string"
   },
   "alist_browse": {
-    "returns": "返回值（分支1）: object\n返回值（分支1）.content（分支1）: array（可省略）\n返回值（分支1）.content（分支1）[]: object\n返回值（分支1）.content（分支1）[].name: string（可省略）；文件名\n返回值（分支1）.content（分支1）[].size: integer（可省略）；字节数\n返回值（分支1）.content（分支1）[].is_dir: boolean（可省略）；是否目录\n返回值（分支1）.content（分支1）[].modified: string（可省略）；上游修改时间\n返回值（分支1）.content（分支1）[].path: string（可省略）；AList 绝对路径\n返回值（分支1）.content（分支1）[].raw_url: string（可省略）；按权限获取的原始下载地址\n返回值（分支1）.content（分支1）[].sign: string（可省略）；上游临时签名，不对外泄露\n返回值（分支1）.content（分支2）: null（可省略）\n返回值（分支1）.total: integer（可省略）；条目总数\n返回值（分支1）.items: array（可省略）；插件整理后的条目\n返回值（分支1）.items[]: object\n返回值（分支1）.items[].name: string（可省略）；文件名\n返回值（分支1）.items[].size: integer（可省略）；字节数\n返回值（分支1）.items[].is_dir: boolean（可省略）；是否目录\n返回值（分支1）.items[].modified: string（可省略）；上游修改时间\n返回值（分支1）.items[].path: string（可省略）；AList 绝对路径\n返回值（分支1）.items[].raw_url: string（可省略）；按权限获取的原始下载地址\n返回值（分支1）.items[].sign: string（可省略）；上游临时签名，不对外泄露\n返回值（分支1）.path: string（可省略）；所列路径\n返回值（分支1）.page: integer（可省略）；从1开始页码\n返回值（分支2）: object\n返回值（分支2）.name: string（可省略）；文件名\n返回值（分支2）.size: integer（可省略）；字节数\n返回值（分支2）.is_dir: boolean（可省略）；是否目录\n返回值（分支2）.modified: string（可省略）；上游修改时间\n返回值（分支2）.path: string（可省略）；AList 绝对路径\n返回值（分支2）.raw_url: string（可省略）；按权限获取的原始下载地址\n返回值（分支2）.sign: string（可省略）；上游临时签名，不对外泄露"
+    "returns": "返回值（分支1）: object\n返回值（分支1）.content（分支1）: array（可省略）\n返回值（分支1）.content（分支1）[]: object\n返回值（分支1）.content（分支1）[].name: string（可省略）；文件名\n返回值（分支1）.content（分支1）[].size: integer（可省略）；字节数\n返回值（分支1）.content（分支1）[].is_dir: boolean（可省略）；是否目录\n返回值（分支1）.content（分支1）[].modified: string（可省略）；上游修改时间\n返回值（分支1）.content（分支1）[].path: string（可省略）；AList 绝对路径\n返回值（分支1）.content（分支1）[].raw_url: string（可省略）；按权限获取的原始下载地址\n返回值（分支1）.content（分支1）[].sign: string（可省略）；上游临时签名，不对外泄露\n返回值（分支1）.content（分支2）: null（可省略）\n返回值（分支1）.total: integer（可省略）；条目总数\n返回值（分支1）.items: array（可省略）；插件整理后的条目\n返回值（分支1）.items[]: object\n返回值（分支1）.items[].name: string（可省略）；文件名\n返回值（分支1）.items[].size: integer（可省略）；字节数\n返回值（分支1）.items[].is_dir: boolean（可省略）；是否目录\n返回值（分支1）.items[].modified: string（可省略）；上游修改时间\n返回值（分支1）.items[].path: string（可省略）；AList 绝对路径\n返回值（分支1）.items[].raw_url: string（可省略）；按权限获取的原始下载地址\n返回值（分支1）.items[].sign: string（可省略）；上游临时签名，不对外泄露\n返回值（分支1）.path: string（可省略）；所列路径\n返回值（分支1）.page: integer（可省略）；从1开始页码\n返回值（分支2）: object\n返回值（分支2）.name: string（可省略）；文件名\n返回值（分支2）.size: integer（可省略）；字节数\n返回值（分支2）.is_dir: boolean（可省略）；是否目录\n返回值（分支2）.modified: string（可省略）；上游修改时间\n返回值（分支2）.path: string（可省略）；AList 绝对路径\n返回值（分支2）.raw_url: string（可省略）；按权限获取的原始下载地址\n返回值（分支2）.sign: string（可省略）；上游临时签名，不对外泄露",
+    "actions": {
+      "list": {
+        "parameters": {
+          "path": "默认/",
+          "page": "默认1"
+        },
+        "returns": "目录列表object，含content等上游列表字段；不是裸array。",
+        "example": {
+          "action": "list"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "info": {
+        "parameters": {
+          "path": "必填文件或目录路径"
+        },
+        "returns": "单文件元数据object，不保证有下载地址。",
+        "example": {
+          "action": "info"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "download": {
+        "parameters": {
+          "path": "必填文件路径"
+        },
+        "returns": "包含raw_url等上游下载资料的文件元数据object；受目录下载设置约束。",
+        "example": {
+          "action": "download"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      }
+    }
   },
   "alist_write": {
-    "returns": "返回值（分支1）: object\n返回值（分支1）.preview: boolean（可省略）；是否仅预览\n返回值（分支1）.action: string（可省略）；文件操作名称\n返回值（分支1）.path: string（可省略）；源/目标绝对路径\n返回值（分支1）.target: string（可省略）；移动复制目标\n返回值（分支1）.consequence: string（可省略）；操作后果\n返回值（分支1）.next: string（可省略）；确认流程要求\n返回值（分支1）.success: boolean（可省略）；是否成功\n返回值（分支1）.task: object（可省略）；上游异步任务信息\n返回值（分支1）.task 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支2）（分支1）: object\n返回值（分支2）（分支1） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支2）（分支2）: array\n返回值（分支2）（分支2）[]: 任意JSON\n返回值（分支2）（分支3）: string\n返回值（分支2）（分支4）: integer\n返回值（分支2）（分支5）: number\n返回值（分支2）（分支6）: boolean\n返回值（分支2）（分支7）: null"
+    "returns": "返回值（分支1）: object\n返回值（分支1）.preview: boolean（可省略）；是否仅预览\n返回值（分支1）.action: string（可省略）；文件操作名称\n返回值（分支1）.path: string（可省略）；源/目标绝对路径\n返回值（分支1）.target: string（可省略）；移动复制目标\n返回值（分支1）.consequence: string（可省略）；操作后果\n返回值（分支1）.next: string（可省略）；确认流程要求\n返回值（分支1）.success: boolean（可省略）；是否成功\n返回值（分支1）.task: object（可省略）；上游异步任务信息\n返回值（分支1）.task 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支2）（分支1）: object\n返回值（分支2）（分支1） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支2）（分支2）: array\n返回值（分支2）（分支2）[]: 任意JSON\n返回值（分支2）（分支3）: string\n返回值（分支2）（分支4）: integer\n返回值（分支2）（分支5）: number\n返回值（分支2）（分支6）: boolean\n返回值（分支2）（分支7）: null",
+    "actions": {
+      "mkdir": {
+        "parameters": {
+          "path": "必填完整源路径或目标路径",
+          "target": "rename时新文件名，move/copy时目标目录",
+          "source_url": "upload时HTTP/HTTPS来源",
+          "confirmed": "默认false；确认后以相同参数传true"
+        },
+        "returns": "confirmed=false返回{preview:true,action:string,path:string,target:string,consequence:string,next:string}；confirmed=true返回AList对应写接口原始JSON，具体字段由操作及服务端决定。",
+        "example": {
+          "action": "mkdir"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "upload": {
+        "parameters": {
+          "path": "必填完整源路径或目标路径",
+          "target": "rename时新文件名，move/copy时目标目录",
+          "source_url": "upload时HTTP/HTTPS来源",
+          "confirmed": "默认false；确认后以相同参数传true"
+        },
+        "returns": "confirmed=false返回{preview:true,action:string,path:string,target:string,consequence:string,next:string}；confirmed=true返回AList对应写接口原始JSON，具体字段由操作及服务端决定。",
+        "example": {
+          "action": "upload"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "remove": {
+        "parameters": {
+          "path": "必填完整源路径或目标路径",
+          "target": "rename时新文件名，move/copy时目标目录",
+          "source_url": "upload时HTTP/HTTPS来源",
+          "confirmed": "默认false；确认后以相同参数传true"
+        },
+        "returns": "confirmed=false返回{preview:true,action:string,path:string,target:string,consequence:string,next:string}；confirmed=true返回AList对应写接口原始JSON，具体字段由操作及服务端决定。",
+        "example": {
+          "action": "remove"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "rename": {
+        "parameters": {
+          "path": "必填完整源路径或目标路径",
+          "target": "rename时新文件名，move/copy时目标目录",
+          "source_url": "upload时HTTP/HTTPS来源",
+          "confirmed": "默认false；确认后以相同参数传true"
+        },
+        "returns": "confirmed=false返回{preview:true,action:string,path:string,target:string,consequence:string,next:string}；confirmed=true返回AList对应写接口原始JSON，具体字段由操作及服务端决定。",
+        "example": {
+          "action": "rename"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "move": {
+        "parameters": {
+          "path": "必填完整源路径或目标路径",
+          "target": "rename时新文件名，move/copy时目标目录",
+          "source_url": "upload时HTTP/HTTPS来源",
+          "confirmed": "默认false；确认后以相同参数传true"
+        },
+        "returns": "confirmed=false返回{preview:true,action:string,path:string,target:string,consequence:string,next:string}；confirmed=true返回AList对应写接口原始JSON，具体字段由操作及服务端决定。",
+        "example": {
+          "action": "move"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "copy": {
+        "parameters": {
+          "path": "必填完整源路径或目标路径",
+          "target": "rename时新文件名，move/copy时目标目录",
+          "source_url": "upload时HTTP/HTTPS来源",
+          "confirmed": "默认false；确认后以相同参数传true"
+        },
+        "returns": "confirmed=false返回{preview:true,action:string,path:string,target:string,consequence:string,next:string}；confirmed=true返回AList对应写接口原始JSON，具体字段由操作及服务端决定。",
+        "example": {
+          "action": "copy"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      }
+    },
+    "notes": "预览10分钟有效；必须用户明确确认本次操作。不将原生JSON猜成统一saved对象。"
   }
 }

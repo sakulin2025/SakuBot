@@ -3,19 +3,255 @@
     "returns": "返回值: object\n返回值.id: string；首段消息 ID；成功返回时保证存在\n返回值.split: boolean；是否实际分成多条消息发送\n返回值.part_count: integer；已成功发送的分段数量\n返回值.post_ids: array；所有分段的消息 ID，按发送顺序\n返回值.post_ids[]: string\n返回值.channel_id: string（可省略）；目标频道 ID\n返回值.user_id: string（可省略）；发消息的机器人用户 ID\n返回值.message: string（可省略）；首段实际发送正文\n返回值.root_id: string（可省略）；话题根消息 ID\n返回值.file_ids: array（可省略）；首段附带的文件 ID\n返回值.file_ids[]: string\n返回值.create_at: integer（可省略）；首段创建时间，Unix 毫秒"
   },
   "mattermost_lookup": {
-    "returns": "返回值（分支1）: object\n返回值（分支1）.id: string（可省略）；用户 ID\n返回值（分支1）.username: string（可省略）；登录用户名\n返回值（分支1）.nickname: string（可省略）；昵称\n返回值（分支1）.first_name: string（可省略）；名字\n返回值（分支1）.last_name: string（可省略）；姓氏\n返回值（分支1）.roles: string（可省略）；平台角色字符串，不等于主人的信任权限\n返回值（分支2）: object\n返回值（分支2）.id: string（可省略）；频道 ID\n返回值（分支2）.team_id: string（可省略）；团队 ID\n返回值（分支2）.type: string（可省略）；O 公开频道、P 私有频道、D 私聊、G 多人私聊\n返回值（分支2）.name: string（可省略）；频道 URL 名称\n返回值（分支2）.display_name: string（可省略）；频道显示名\n返回值（分支3）: array\n返回值（分支3）[]: object\n返回值（分支3）[].id: string（可省略）；用户 ID\n返回值（分支3）[].username: string（可省略）；登录用户名\n返回值（分支3）[].nickname: string（可省略）；昵称\n返回值（分支3）[].first_name: string（可省略）；名字\n返回值（分支3）[].last_name: string（可省略）；姓氏\n返回值（分支3）[].roles: string（可省略）；平台角色字符串，不等于主人的信任权限\n返回值（分支4）: array\n返回值（分支4）[]: object\n返回值（分支4）[].id: string（可省略）；频道 ID\n返回值（分支4）[].team_id: string（可省略）；团队 ID\n返回值（分支4）[].type: string（可省略）；O 公开频道、P 私有频道、D 私聊、G 多人私聊\n返回值（分支4）[].name: string（可省略）；频道 URL 名称\n返回值（分支4）[].display_name: string（可省略）；频道显示名\n返回值（分支5）: array\n返回值（分支5）[]: object\n返回值（分支5）[].id: string（可省略）；团队 ID\n返回值（分支5）[].name: string（可省略）；团队 URL 名称\n返回值（分支5）[].display_name: string（可省略）；显示名称\n返回值（分支6）: object；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值（分支6） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支7）: array\n返回值（分支7）[]: object；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值（分支7）[] 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支8）: object\n返回值（分支8）.truncated: boolean；true 表示原始响应已截断，不能当成完整原始对象读取\n返回值（分支8）.preview: string；被截断原始 JSON 的文本预览，不是完整 JSON 文档\n返回值（分支8）.hint: string；缩小范围或分页的提示"
+    "returns": "返回值（分支1）: object\n返回值（分支1）.id: string（可省略）；用户 ID\n返回值（分支1）.username: string（可省略）；登录用户名\n返回值（分支1）.nickname: string（可省略）；昵称\n返回值（分支1）.first_name: string（可省略）；名字\n返回值（分支1）.last_name: string（可省略）；姓氏\n返回值（分支1）.roles: string（可省略）；平台角色字符串，不等于主人的信任权限\n返回值（分支2）: object\n返回值（分支2）.id: string（可省略）；频道 ID\n返回值（分支2）.team_id: string（可省略）；团队 ID\n返回值（分支2）.type: string（可省略）；O 公开频道、P 私有频道、D 私聊、G 多人私聊\n返回值（分支2）.name: string（可省略）；频道 URL 名称\n返回值（分支2）.display_name: string（可省略）；频道显示名\n返回值（分支3）: array\n返回值（分支3）[]: object\n返回值（分支3）[].id: string（可省略）；用户 ID\n返回值（分支3）[].username: string（可省略）；登录用户名\n返回值（分支3）[].nickname: string（可省略）；昵称\n返回值（分支3）[].first_name: string（可省略）；名字\n返回值（分支3）[].last_name: string（可省略）；姓氏\n返回值（分支3）[].roles: string（可省略）；平台角色字符串，不等于主人的信任权限\n返回值（分支4）: array\n返回值（分支4）[]: object\n返回值（分支4）[].id: string（可省略）；频道 ID\n返回值（分支4）[].team_id: string（可省略）；团队 ID\n返回值（分支4）[].type: string（可省略）；O 公开频道、P 私有频道、D 私聊、G 多人私聊\n返回值（分支4）[].name: string（可省略）；频道 URL 名称\n返回值（分支4）[].display_name: string（可省略）；频道显示名\n返回值（分支5）: array\n返回值（分支5）[]: object\n返回值（分支5）[].id: string（可省略）；团队 ID\n返回值（分支5）[].name: string（可省略）；团队 URL 名称\n返回值（分支5）[].display_name: string（可省略）；显示名称\n返回值（分支6）: object；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值（分支6） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支7）: array\n返回值（分支7）[]: object；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值（分支7）[] 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支8）: object\n返回值（分支8）.truncated: boolean；true 表示原始响应已截断，不能当成完整原始对象读取\n返回值（分支8）.preview: string；被截断原始 JSON 的文本预览，不是完整 JSON 文档\n返回值（分支8）.hint: string；缩小范围或分页的提示",
+    "actions": {
+      "me": {
+        "parameters": {},
+        "returns": "User object，当前机器人用户。",
+        "example": {
+          "action": "me"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "user": {
+        "parameters": {
+          "id": "必填用户ID或用户名"
+        },
+        "returns": "User object。",
+        "example": {
+          "action": "user"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "users_search": {
+        "parameters": {
+          "query": "必填搜索词",
+          "per_page": "默认30"
+        },
+        "returns": "array[User]。",
+        "example": {
+          "action": "users_search"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "teams": {
+        "parameters": {},
+        "returns": "array[Team]。",
+        "example": {
+          "action": "teams"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "channels": {
+        "parameters": {
+          "team_id": "必填团队ID"
+        },
+        "returns": "array[Channel]。",
+        "example": {
+          "action": "channels"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "channel": {
+        "parameters": {
+          "id": "必填频道ID"
+        },
+        "returns": "Channel object。",
+        "example": {
+          "action": "channel"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "members": {
+        "parameters": {
+          "id": "必填频道ID",
+          "page": "默认0",
+          "per_page": "默认30"
+        },
+        "returns": "array[Member]，成员关联记录而非完整User。",
+        "example": {
+          "action": "members"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      }
+    },
+    "errors": "调用异常与正常业务数据分开；原生API的错误语义以该工具说明为准。",
+    "notes": "上游响应超过工具输出上限时可替换为{truncated:true,preview:string,hint:string}，preview不是完整JSON，不能直接解析为完整结果。上游非2xx通常抛异常。未列出的原生扩展字段查当前服务端API资料。"
   },
   "mattermost_read_posts": {
-    "returns": "返回值（分支1）: object\n返回值（分支1）.id: string；Mattermost 消息唯一 ID\n返回值（分支1）.channel_id: string（可省略）；目标频道 ID\n返回值（分支1）.user_id: string（可省略）；消息发送者 ID\n返回值（分支1）.message: string（可省略）；消息正文\n返回值（分支1）.root_id: string（可省略）；所属话题根消息 ID，空字符串为独立消息\n返回值（分支1）.create_at: integer（可省略）；创建时间，Unix 毫秒\n返回值（分支1）.update_at: integer（可省略）；更新时间，Unix 毫秒\n返回值（分支1）.file_ids: array（可省略）；附件文件 ID 列表\n返回值（分支1）.file_ids[]: string\n返回值（分支1）.props: object（可省略）；平台自定义消息属性，具体键取决于消息类型\n返回值（分支1）.props 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支2）: object\n返回值（分支2）.order: array（可省略）；消息 ID 排序列表\n返回值（分支2）.order[]: string\n返回值（分支2）.posts: object；以消息 ID 为键的消息字典\n返回值（分支2）.posts 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支2）.next_post_id: string（可省略）；平台分页游标，可能为空\n返回值（分支2）.prev_post_id: string（可省略）；平台分页游标，可能为空\n返回值（分支2）.has_next: boolean（可省略）；平台是否声明仍有后续结果\n返回值（分支3）: object\n返回值（分支3）.truncated: boolean；true 表示原始响应已截断，不能当成完整原始对象读取\n返回值（分支3）.preview: string；被截断原始 JSON 的文本预览，不是完整 JSON 文档\n返回值（分支3）.hint: string；缩小范围或分页的提示"
+    "returns": "返回值（分支1）: object\n返回值（分支1）.id: string；Mattermost 消息唯一 ID\n返回值（分支1）.channel_id: string（可省略）；目标频道 ID\n返回值（分支1）.user_id: string（可省略）；消息发送者 ID\n返回值（分支1）.message: string（可省略）；消息正文\n返回值（分支1）.root_id: string（可省略）；所属话题根消息 ID，空字符串为独立消息\n返回值（分支1）.create_at: integer（可省略）；创建时间，Unix 毫秒\n返回值（分支1）.update_at: integer（可省略）；更新时间，Unix 毫秒\n返回值（分支1）.file_ids: array（可省略）；附件文件 ID 列表\n返回值（分支1）.file_ids[]: string\n返回值（分支1）.props: object（可省略）；平台自定义消息属性，具体键取决于消息类型\n返回值（分支1）.props 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支2）: object\n返回值（分支2）.order: array（可省略）；消息 ID 排序列表\n返回值（分支2）.order[]: string\n返回值（分支2）.posts: object；以消息 ID 为键的消息字典\n返回值（分支2）.posts 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支2）.next_post_id: string（可省略）；平台分页游标，可能为空\n返回值（分支2）.prev_post_id: string（可省略）；平台分页游标，可能为空\n返回值（分支2）.has_next: boolean（可省略）；平台是否声明仍有后续结果\n返回值（分支3）: object\n返回值（分支3）.truncated: boolean；true 表示原始响应已截断，不能当成完整原始对象读取\n返回值（分支3）.preview: string；被截断原始 JSON 的文本预览，不是完整 JSON 文档\n返回值（分支3）.hint: string；缩小范围或分页的提示",
+    "actions": {
+      "list": {
+        "parameters": {
+          "channel_id": "必填",
+          "page": "默认0",
+          "per_page": "默认30"
+        },
+        "returns": "PostList object：order:array[string]按展示顺序的消息ID，posts:object消息ID→Post；不能按数组读取posts。",
+        "example": {
+          "action": "list"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "get": {
+        "parameters": {
+          "post_id": "必填"
+        },
+        "returns": "Post object。",
+        "example": {
+          "action": "get"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "thread": {
+        "parameters": {
+          "post_id": "必填"
+        },
+        "returns": "PostList object，order和posts同list。",
+        "example": {
+          "action": "thread"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "search": {
+        "parameters": {
+          "team_id": "必填",
+          "query": "必填",
+          "page": "默认0",
+          "per_page": "默认30"
+        },
+        "returns": "PostList object。",
+        "example": {
+          "action": "search"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      }
+    },
+    "errors": "调用异常与正常业务数据分开；原生API的错误语义以该工具说明为准。",
+    "notes": "上游响应超过工具输出上限时可替换为{truncated:true,preview:string,hint:string}，preview不是完整JSON，不能直接解析为完整结果。上游非2xx通常抛异常。未列出的原生扩展字段查当前服务端API资料。"
   },
   "mattermost_post_action": {
-    "returns": "返回值（分支1）: object\n返回值（分支1）.id: string；Mattermost 消息唯一 ID\n返回值（分支1）.channel_id: string（可省略）；目标频道 ID\n返回值（分支1）.user_id: string（可省略）；消息发送者 ID\n返回值（分支1）.message: string（可省略）；消息正文\n返回值（分支1）.root_id: string（可省略）；所属话题根消息 ID，空字符串为独立消息\n返回值（分支1）.create_at: integer（可省略）；创建时间，Unix 毫秒\n返回值（分支1）.update_at: integer（可省略）；更新时间，Unix 毫秒\n返回值（分支1）.file_ids: array（可省略）；附件文件 ID 列表\n返回值（分支1）.file_ids[]: string\n返回值（分支1）.props: object（可省略）；平台自定义消息属性，具体键取决于消息类型\n返回值（分支1）.props 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支2）: object；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值（分支2） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支3）: array\n返回值（分支3）[]: object；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值（分支3）[] 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支4）: object\n返回值（分支4）.truncated: boolean；true 表示原始响应已截断，不能当成完整原始对象读取\n返回值（分支4）.preview: string；被截断原始 JSON 的文本预览，不是完整 JSON 文档\n返回值（分支4）.hint: string；缩小范围或分页的提示"
+    "returns": "返回值（分支1）: object\n返回值（分支1）.id: string；Mattermost 消息唯一 ID\n返回值（分支1）.channel_id: string（可省略）；目标频道 ID\n返回值（分支1）.user_id: string（可省略）；消息发送者 ID\n返回值（分支1）.message: string（可省略）；消息正文\n返回值（分支1）.root_id: string（可省略）；所属话题根消息 ID，空字符串为独立消息\n返回值（分支1）.create_at: integer（可省略）；创建时间，Unix 毫秒\n返回值（分支1）.update_at: integer（可省略）；更新时间，Unix 毫秒\n返回值（分支1）.file_ids: array（可省略）；附件文件 ID 列表\n返回值（分支1）.file_ids[]: string\n返回值（分支1）.props: object（可省略）；平台自定义消息属性，具体键取决于消息类型\n返回值（分支1）.props 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支2）: object；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值（分支2） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支3）: array\n返回值（分支3）[]: object；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值（分支3）[] 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支4）: object\n返回值（分支4）.truncated: boolean；true 表示原始响应已截断，不能当成完整原始对象读取\n返回值（分支4）.preview: string；被截断原始 JSON 的文本预览，不是完整 JSON 文档\n返回值（分支4）.hint: string；缩小范围或分页的提示",
+    "actions": {
+      "edit": {
+        "parameters": {
+          "post_id": "必填",
+          "message": "必填1..12000字符"
+        },
+        "returns": "Post object。",
+        "example": {
+          "action": "edit"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "delete": {
+        "parameters": {
+          "post_id": "必填"
+        },
+        "returns": "上游确认object，可能只有status字段；不返回Post。",
+        "example": {
+          "action": "delete"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "pin": {
+        "parameters": {
+          "post_id": "必填"
+        },
+        "returns": "上游确认object，不保证包含消息字段。",
+        "example": {
+          "action": "pin"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "unpin": {
+        "parameters": {
+          "post_id": "必填"
+        },
+        "returns": "上游确认object。",
+        "example": {
+          "action": "unpin"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "reactions": {
+        "parameters": {
+          "post_id": "必填"
+        },
+        "returns": "array[Reaction]；常见user_id/post_id/emoji_name/create_at，具体字段由上游决定。",
+        "example": {
+          "action": "reactions"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "react": {
+        "parameters": {
+          "post_id": "必填",
+          "emoji": "必填表情名"
+        },
+        "returns": "Reaction object。",
+        "example": {
+          "action": "react"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "unreact": {
+        "parameters": {
+          "post_id": "必填",
+          "emoji": "必填表情名"
+        },
+        "returns": "上游确认object。",
+        "example": {
+          "action": "unreact"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      }
+    },
+    "errors": "调用异常与正常业务数据分开；原生API的错误语义以该工具说明为准。",
+    "notes": "上游响应超过工具输出上限时可替换为{truncated:true,preview:string,hint:string}，preview不是完整JSON，不能直接解析为完整结果。上游非2xx通常抛异常。未列出的原生扩展字段查当前服务端API资料。"
   },
   "mattermost_file": {
-    "returns": "返回值（分支1）: object\n返回值（分支1）.id: string（可省略）；平台文件 ID\n返回值（分支1）.name: string（可省略）；文件名\n返回值（分支1）.size: integer（可省略）；文件大小，字节\n返回值（分支1）.mime_type: string（可省略）；MIME 类型\n返回值（分支1）.extension: string（可省略）；文件扩展名\n返回值（分支2）: object\n返回值（分支2）.path: string；保存的工作空间相对路径\n返回值（分支2）.file_id: string；原始 Mattermost 文件 ID\n返回值（分支2）.size: integer；下载字节数\n返回值（分支3）: object\n返回值（分支3）.truncated: boolean；true 表示原始响应已截断，不能当成完整原始对象读取\n返回值（分支3）.preview: string；被截断原始 JSON 的文本预览，不是完整 JSON 文档\n返回值（分支3）.hint: string；缩小范围或分页的提示"
+    "returns": "返回值（分支1）: object\n返回值（分支1）.id: string（可省略）；平台文件 ID\n返回值（分支1）.name: string（可省略）；文件名\n返回值（分支1）.size: integer（可省略）；文件大小，字节\n返回值（分支1）.mime_type: string（可省略）；MIME 类型\n返回值（分支1）.extension: string（可省略）；文件扩展名\n返回值（分支2）: object\n返回值（分支2）.path: string；保存的工作空间相对路径\n返回值（分支2）.file_id: string；原始 Mattermost 文件 ID\n返回值（分支2）.size: integer；下载字节数\n返回值（分支3）: object\n返回值（分支3）.truncated: boolean；true 表示原始响应已截断，不能当成完整原始对象读取\n返回值（分支3）.preview: string；被截断原始 JSON 的文本预览，不是完整 JSON 文档\n返回值（分支3）.hint: string；缩小范围或分页的提示",
+    "actions": {
+      "info": {
+        "parameters": {
+          "file_id": "必填"
+        },
+        "returns": "FileInfo object。",
+        "example": {
+          "action": "info"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "upload": {
+        "parameters": {
+          "channel_id": "必填",
+          "path": "必填工作空间文件路径"
+        },
+        "returns": "FileInfo object，含上游文件id；不发消息，发送时再引用附件。",
+        "example": {
+          "action": "upload"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "download": {
+        "parameters": {
+          "file_id": "必填",
+          "path": "必填且目标不能已存在"
+        },
+        "returns": "object{path:string,file_id:string,size:integer}，size为字节。",
+        "example": {
+          "action": "download"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      }
+    },
+    "errors": "调用异常与正常业务数据分开；原生API的错误语义以该工具说明为准。",
+    "notes": "上游响应超过工具输出上限时可替换为{truncated:true,preview:string,hint:string}，preview不是完整JSON，不能直接解析为完整结果。上游非2xx通常抛异常。未列出的原生扩展字段查当前服务端API资料。"
   },
   "mattermost_request": {
-    "returns": "返回值（分支1）（分支1）: object\n返回值（分支1）（分支1） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支1）（分支2）: array\n返回值（分支1）（分支2）[]: 任意JSON\n返回值（分支1）（分支3）: string\n返回值（分支1）（分支4）: integer\n返回值（分支1）（分支5）: number\n返回值（分支1）（分支6）: boolean\n返回值（分支1）（分支7）: null\n返回值（分支2）: object\n返回值（分支2）.truncated: boolean；true 表示原始响应已截断，不能当成完整原始对象读取\n返回值（分支2）.preview: string；被截断原始 JSON 的文本预览，不是完整 JSON 文档\n返回值（分支2）.hint: string；缩小范围或分页的提示"
+    "returns": "返回值（分支1）（分支1）: object\n返回值（分支1）（分支1） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支1）（分支2）: array\n返回值（分支1）（分支2）[]: 任意JSON\n返回值（分支1）（分支3）: string\n返回值（分支1）（分支4）: integer\n返回值（分支1）（分支5）: number\n返回值（分支1）（分支6）: boolean\n返回值（分支1）（分支7）: null\n返回值（分支2）: object\n返回值（分支2）.truncated: boolean；true 表示原始响应已截断，不能当成完整原始对象读取\n返回值（分支2）.preview: string；被截断原始 JSON 的文本预览，不是完整 JSON 文档\n返回值（分支2）.hint: string；缩小范围或分页的提示",
+    "notes": "上游响应超过工具输出上限时可替换为{truncated:true,preview:string,hint:string}，preview不是完整JSON，不能直接解析为完整结果。上游非2xx通常抛异常。未列出的原生扩展字段查当前服务端API资料。"
   },
   "mattermost_command": {
     "returns": "返回值（分支1）: object\n返回值（分支1）.id: string（可省略）；本地托管命令 ID\n返回值（分支1）.trigger: string（可省略）；不带斜杠的触发名称\n返回值（分支1）.display_name: string（可省略）；显示名称\n返回值（分支1）.team_id: string（可省略）；团队 ID\n返回值（分支1）.status: string（可省略）；本地同步状态\n返回值（分支1）.enabled: boolean（可省略）；是否启用\n返回值（分支1）.command_id: string（可省略）；Mattermost 远端命令 ID\n返回值（分支1）.error: string（可省略）；同步错误，空表示无已知错误\n返回值（分支1）.ready: boolean（可省略）；当前命令是否可用\n返回值（分支2）: object\n返回值（分支2）.commands: array（可省略）；已声明命令列表\n返回值（分支2）.commands[]: object\n返回值（分支2）.commands[].id: string（可省略）；本地托管命令 ID\n返回值（分支2）.commands[].trigger: string（可省略）；不带斜杠的触发名称\n返回值（分支2）.commands[].display_name: string（可省略）；显示名称\n返回值（分支2）.commands[].team_id: string（可省略）；团队 ID\n返回值（分支2）.commands[].status: string（可省略）；本地同步状态\n返回值（分支2）.commands[].enabled: boolean（可省略）；是否启用\n返回值（分支2）.commands[].command_id: string（可省略）；Mattermost 远端命令 ID\n返回值（分支2）.commands[].error: string（可省略）；同步错误，空表示无已知错误\n返回值（分支2）.commands[].ready: boolean（可省略）；当前命令是否可用\n返回值（分支2）.removed（分支1）: string（可省略）\n返回值（分支2）.removed（分支2）: boolean（可省略）\n返回值（分支2）.saved: boolean（可省略）；是否保存成功\n返回值（分支2）.synced: boolean（可省略）；是否完成远端同步\n返回值（分支2）.deleted: string（可省略）；被删除的本地命令 ID\n返回值（分支2）.callback_url: string（可省略）；当前 Slash 回调 URL\n返回值（分支2）.remote: array（可省略）；可选的远端指令清单，已移除令牌\n返回值（分支2）.remote[]: object；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值（分支2）.remote[] 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支3）: array\n返回值（分支3）[]: object\n返回值（分支3）[].id: string（可省略）；本地托管命令 ID\n返回值（分支3）[].trigger: string（可省略）；不带斜杠的触发名称\n返回值（分支3）[].display_name: string（可省略）；显示名称\n返回值（分支3）[].team_id: string（可省略）；团队 ID\n返回值（分支3）[].status: string（可省略）；本地同步状态\n返回值（分支3）[].enabled: boolean（可省略）；是否启用\n返回值（分支3）[].command_id: string（可省略）；Mattermost 远端命令 ID\n返回值（分支3）[].error: string（可省略）；同步错误，空表示无已知错误\n返回值（分支3）[].ready: boolean（可省略）；当前命令是否可用"

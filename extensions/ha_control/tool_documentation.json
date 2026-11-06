@@ -1,6 +1,104 @@
 {
   "ha_initialize": {
-    "returns": "返回值（分支1）: object\n返回值（分支1）.initialized: boolean；是否已发布初始化配置\n返回值（分支1）.has_draft: boolean；是否有未发布草稿\n返回值（分支1）.status: string；初始化状态说明\n返回值（分支1）.built_at: string；发布时间，尚未发布为空\n返回值（分支1）.rooms: array；当前已发布房间配置\n返回值（分支1）.rooms[]: object；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值（分支1）.rooms[] 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支1）.entities: array；当前已发布实体配置\n返回值（分支1）.entities[]: object；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值（分支1）.entities[] 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支2）: object\n返回值（分支2）.message: string；本次向导操作结果说明\n返回值（分支2）.rooms: array（可省略）；该操作返回的房间草稿\n返回值（分支2）.rooms[]: object；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值（分支2）.rooms[] 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支2）.entity_count: integer（可省略）；扫描发现的实体数量\n返回值（分支3）: array\n返回值（分支3）[]: object；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值（分支3）[] 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。"
+    "returns": "返回值（分支1）: object\n返回值（分支1）.initialized: boolean；是否已发布初始化配置\n返回值（分支1）.has_draft: boolean；是否有未发布草稿\n返回值（分支1）.status: string；初始化状态说明\n返回值（分支1）.built_at: string；发布时间，尚未发布为空\n返回值（分支1）.rooms: array；当前已发布房间配置\n返回值（分支1）.rooms[]: object；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值（分支1）.rooms[] 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支1）.entities: array；当前已发布实体配置\n返回值（分支1）.entities[]: object；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值（分支1）.entities[] 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支2）: object\n返回值（分支2）.message: string；本次向导操作结果说明\n返回值（分支2）.rooms: array（可省略）；该操作返回的房间草稿\n返回值（分支2）.rooms[]: object；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值（分支2）.rooms[] 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支2）.entity_count: integer（可省略）；扫描发现的实体数量\n返回值（分支3）: array\n返回值（分支3）[]: object；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值（分支3）[] 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。",
+    "actions": {
+      "status": {
+        "parameters": {},
+        "returns": "初始化状态object：initialized:boolean、has_draft:boolean、status:string、built_at:string、rooms:array[Room]、entities:array[ConfiguredEntity]。",
+        "example": {
+          "action": "status"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "scan": {
+        "parameters": {
+          "confirmed": "覆盖已有草稿时须明确确认"
+        },
+        "returns": "object{message:string,rooms:array[Room],entity_count:integer}，只生成草稿。",
+        "example": {
+          "action": "scan"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "rooms": {
+        "parameters": {},
+        "returns": "array[Room]，不是带rooms字段的包装对象。",
+        "example": {
+          "action": "rooms"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "entities": {
+        "parameters": {
+          "area": "可选房间标识"
+        },
+        "returns": "array[ConfiguredEntity]，不是实时状态列表。",
+        "example": {
+          "action": "entities"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "room": {
+        "parameters": {
+          "area": "必填房间标识",
+          "enabled": "boolean"
+        },
+        "returns": "object{message:string,rooms:array[Room]}，更新草稿。",
+        "example": {
+          "action": "room"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "policy": {
+        "parameters": {
+          "entity_id": "必填",
+          "policy": "controllable/readonly/ignore",
+          "alias": "可选string",
+          "group": "可选string"
+        },
+        "returns": "object{message:string,rooms:array[Room]}。",
+        "example": {
+          "action": "policy"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "review_room": {
+        "parameters": {
+          "area": "必填",
+          "confirmed": "用户确认时为true"
+        },
+        "returns": "object{message:string,rooms:array[Room]}。",
+        "example": {
+          "action": "review_room"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "build": {
+        "parameters": {
+          "confirmed": "发布前确认"
+        },
+        "returns": "与status相同的初始化状态object。",
+        "example": {
+          "action": "build"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "reset": {
+        "parameters": {
+          "confirmed": "必填true"
+        },
+        "returns": "object{message:string}。",
+        "example": {
+          "action": "reset"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      }
+    },
+    "notes": "草稿操作与已发布配置分离。只有build发布后查询控制才使用新配置；配置实体与实时查询实体不是同一种返回对象。",
+    "structures": {
+      "Room": "object：area:string（区域标识，未分配为__unassigned__）；name:string；enabled:boolean；reviewed:boolean；__template_key:string（内部表单标识room）。草稿rooms等视图增加entity_count:integer；status读取原配置，不保证有entity_count。",
+      "ConfiguredEntity": "object：entity_id:string；name:string；area:string；policy:string（controllable/readonly/ignore）；alias:string；group:string；reviewed:boolean；__template_key:string（内部表单标识entity）。这是配置，不包含实时state/attributes；本地旧配置可能缺少reviewed或内部表单标识。"
+    }
   },
   "ha_query": {
     "returns": "返回值: object\n返回值.entities: array；查询成功始终返回的实体列表；无匹配为 []\n返回值.entities[]: object\n返回值.entities[].entity_id: string；完整 HA 实体 ID，始终存在\n返回值.entities[].name: string；配置名称，缺失时使用 HA 友好名称或实体 ID\n返回值.entities[].friendly_name: string；HA 友好名称，缺失时使用 name\n返回值.entities[].display_name: string；优先本地别名的显示名称\n返回值.entities[].domain: string；实际实体域，例如 switch/light/sensor\n返回值.entities[].area: string；房间标识，未设置为空字符串\n返回值.entities[].alias: string；本地别名，未设置为空字符串\n返回值.entities[].group: string；逻辑分组，未设置为空字符串\n返回值.entities[].policy（分支1）: string\n返回值.entities[].policy（分支2）: null\n返回值.entities[].state（分支1）: string\n返回值.entities[].state（分支2）: null\n返回值.entities[].state_text（分支1）: string\n返回值.entities[].state_text（分支2）: null\n返回值.entities[].attributes: object（可省略）；仅 summary=false 时返回的 HA 动态属性，键由实体能力决定\n返回值.entities[].attributes 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值.total: integer；截断前匹配实体总数\n返回值.truncated: boolean；entities 是否因100项上限截断\n返回值.domains: object（可省略）；仅 summary=true 时返回的域名到实体数量映射\n返回值.domains 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值.related_entities: array（可省略）；按 light 查询时额外发现的照明用途 switch/input_boolean\n返回值.related_entities[]: object\n返回值.related_entities[].entity_id: string；完整 HA 实体 ID，始终存在\n返回值.related_entities[].name: string；配置名称，缺失时使用 HA 友好名称或实体 ID\n返回值.related_entities[].friendly_name: string；HA 友好名称，缺失时使用 name\n返回值.related_entities[].display_name: string；优先本地别名的显示名称\n返回值.related_entities[].domain: string；实际实体域，例如 switch/light/sensor\n返回值.related_entities[].area: string；房间标识，未设置为空字符串\n返回值.related_entities[].alias: string；本地别名，未设置为空字符串\n返回值.related_entities[].group: string；逻辑分组，未设置为空字符串\n返回值.related_entities[].policy（分支1）: string\n返回值.related_entities[].policy（分支2）: null\n返回值.related_entities[].state（分支1）: string\n返回值.related_entities[].state（分支2）: null\n返回值.related_entities[].state_text（分支1）: string\n返回值.related_entities[].state_text（分支2）: null\n返回值.related_entities[].attributes: object（可省略）；仅 summary=false 时返回的 HA 动态属性，键由实体能力决定\n返回值.related_entities[].attributes 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值.related_total: integer（可省略）；存在 related_entities 时的未截断相关实体总数\n返回值.related_truncated: boolean（可省略）；相关实体列表是否截断\n返回值.note: string（可省略）；类型/用途匹配提示；仅适用时返回"
@@ -9,10 +107,85 @@
     "returns": "返回值: object\n返回值.entity: object；实体身份及名称，不包含实时状态\n返回值.entity.entity_id: string；完整 HA 实体 ID，始终存在\n返回值.entity.name: string；配置名称，缺失时使用 HA 友好名称或实体 ID\n返回值.entity.friendly_name: string；HA 友好名称，缺失时使用 name\n返回值.entity.display_name: string；优先本地别名的显示名称\n返回值.entity.domain: string；实际实体域，例如 switch/light/sensor\n返回值.entity.area: string；房间标识，未设置为空字符串\n返回值.entity.alias: string；本地别名，未设置为空字符串\n返回值.entity.group: string；逻辑分组，未设置为空字符串\n返回值.entity.policy（分支1）: string\n返回值.entity.policy（分支2）: null\n返回值.start: string；含时区 ISO8601 起始时间\n返回值.end: string；含时区 ISO8601 结束时间\n返回值.records: array；当前页历史状态；无记录为 []\n返回值.records[]: object\n返回值.records[].state（分支1）: string\n返回值.records[].state（分支2）: null\n返回值.records[].last_changed（分支1）: string\n返回值.records[].last_changed（分支2）: null\n返回值.records[].last_updated（分支1）: string\n返回值.records[].last_updated（分支2）: null\n返回值.records[].attributes: object；本条历史保留的状态属性，未提供为 {}\n返回值.records[].attributes 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值.total: integer；历史记录总数\n返回值.offset: integer；当前分页偏移\n返回值.truncated: boolean；是否仍有后续历史记录\n返回值.next_offset（分支1）: integer\n返回值.next_offset（分支2）: null\n返回值.note: string；历史保留和初始状态的解释"
   },
   "ha_control": {
-    "returns": "返回值（分支1）: object\n返回值（分支1）.preview: boolean [True]；仅预览，不执行设备操作\n返回值（分支1）.plans: array；准备执行的服务计划\n返回值（分支1）.plans[]: object\n返回值（分支1）.plans[].domain: string；HA 服务所属域\n返回值（分支1）.plans[].service: string；服务名称\n返回值（分支1）.plans[].data: object；按所选服务定义的请求体\n返回值（分支1）.plans[].data 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支2）: object\n返回值（分支2）.success: boolean；所有服务是否成功；部分失败仍保留逐项执行结果\n返回值（分支2）.results: array；依实际执行顺序返回各项结果，不自动重放失败项\n返回值（分支2）.results[]: object\n返回值（分支2）.results[].domain: string；HA 服务所属域\n返回值（分支2）.results[].service: string；服务名称\n返回值（分支2）.results[].data: object；按所选服务定义的请求体\n返回值（分支2）.results[].data 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支2）.results[].success: boolean；此项服务是否成功\n返回值（分支2）.results[].device: object；本项控制实体的身份和名称\n返回值（分支2）.results[].device.entity_id: string；完整 HA 实体 ID，始终存在\n返回值（分支2）.results[].device.name: string；配置名称，缺失时使用 HA 友好名称或实体 ID\n返回值（分支2）.results[].device.friendly_name: string；HA 友好名称，缺失时使用 name\n返回值（分支2）.results[].device.display_name: string；优先本地别名的显示名称\n返回值（分支2）.results[].device.domain: string；实际实体域，例如 switch/light/sensor\n返回值（分支2）.results[].device.area: string；房间标识，未设置为空字符串\n返回值（分支2）.results[].device.alias: string；本地别名，未设置为空字符串\n返回值（分支2）.results[].device.group: string；逻辑分组，未设置为空字符串\n返回值（分支2）.results[].device.policy（分支1）: string\n返回值（分支2）.results[].device.policy（分支2）: null\n返回值（分支2）.results[].error: string（可省略）；本项服务失败时的原因；失败后不自动重试"
+    "returns": "返回值（分支1）: object\n返回值（分支1）.preview: boolean [True]；仅预览，不执行设备操作\n返回值（分支1）.plans: array；准备执行的服务计划\n返回值（分支1）.plans[]: object\n返回值（分支1）.plans[].domain: string；HA 服务所属域\n返回值（分支1）.plans[].service: string；服务名称\n返回值（分支1）.plans[].data: object；按所选服务定义的请求体\n返回值（分支1）.plans[].data 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支2）: object\n返回值（分支2）.success: boolean；所有服务是否成功；部分失败仍保留逐项执行结果\n返回值（分支2）.results: array；依实际执行顺序返回各项结果，不自动重放失败项\n返回值（分支2）.results[]: object\n返回值（分支2）.results[].domain: string；HA 服务所属域\n返回值（分支2）.results[].service: string；服务名称\n返回值（分支2）.results[].data: object；按所选服务定义的请求体\n返回值（分支2）.results[].data 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支2）.results[].success: boolean；此项服务是否成功\n返回值（分支2）.results[].device: object；本项控制实体的身份和名称\n返回值（分支2）.results[].device.entity_id: string；完整 HA 实体 ID，始终存在\n返回值（分支2）.results[].device.name: string；配置名称，缺失时使用 HA 友好名称或实体 ID\n返回值（分支2）.results[].device.friendly_name: string；HA 友好名称，缺失时使用 name\n返回值（分支2）.results[].device.display_name: string；优先本地别名的显示名称\n返回值（分支2）.results[].device.domain: string；实际实体域，例如 switch/light/sensor\n返回值（分支2）.results[].device.area: string；房间标识，未设置为空字符串\n返回值（分支2）.results[].device.alias: string；本地别名，未设置为空字符串\n返回值（分支2）.results[].device.group: string；逻辑分组，未设置为空字符串\n返回值（分支2）.results[].device.policy（分支1）: string\n返回值（分支2）.results[].device.policy（分支2）: null\n返回值（分支2）.results[].error: string（可省略）；本项服务失败时的原因；失败后不自动重试",
+    "actions": {
+      "on": {
+        "parameters": {
+          "entity_id": "单实体或用entity_ids列表",
+          "preview": "默认false"
+        },
+        "returns": "preview=true返回{preview:true,plans:array[Plan]}；执行返回{success:boolean,results:array[ActionResult]}。",
+        "example": {
+          "action": "on"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "off": {
+        "parameters": {
+          "entity_id": "单实体或entity_ids",
+          "preview": "默认false"
+        },
+        "returns": "同on。",
+        "example": {
+          "action": "off"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "set": {
+        "parameters": {
+          "entity_id": "单实体或entity_ids",
+          "params": "按实体能力定义"
+        },
+        "returns": "同on；ActionResult中的error仅本项失败时存在，可能部分成功，不能盲目重放。",
+        "example": {
+          "action": "set"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      }
+    },
+    "errors": "调用异常与正常业务数据分开；原生API的错误语义以该工具说明为准。"
   },
   "ha_manual": {
-    "returns": "返回值: object\n返回值.title: string；手册标题\n返回值.content: string；手册正文\n返回值.shared_across_sessions: boolean；跨会话共享标志\n返回值.saved: boolean（可省略）；写入操作返回的保存标志\n返回值.device_operations: integer（可省略）；写入手册实际控制设备次数，始终为0"
+    "returns": "返回值: object\n返回值.title: string；手册标题\n返回值.content: string；手册正文\n返回值.shared_across_sessions: boolean；跨会话共享标志\n返回值.saved: boolean（可省略）；写入操作返回的保存标志\n返回值.device_operations: integer（可省略）；写入手册实际控制设备次数，始终为0",
+    "actions": {
+      "read": {
+        "parameters": {},
+        "returns": "object{title:string,content:string,shared_across_sessions:true}。",
+        "example": {
+          "action": "read"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "write": {
+        "parameters": {
+          "content": "必填完整替换正文，可为空"
+        },
+        "returns": "同read，另加saved:true、device_operations:0。",
+        "example": {
+          "action": "write"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "append": {
+        "parameters": {
+          "content": "必填非空新增正文"
+        },
+        "returns": "同write，返回追加后的完整content。",
+        "example": {
+          "action": "append"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "clear": {
+        "parameters": {},
+        "returns": "同write，content为空字符串；不操作设备。",
+        "example": {
+          "action": "clear"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      }
+    },
+    "errors": "调用异常与正常业务数据分开；原生API的错误语义以该工具说明为准。"
   },
   "ha_api": {
     "returns": "返回值: object\n返回值.ok: boolean；HTTP 状态是否为2xx；非2xx仍返回此固定结果封装\n返回值.status: integer；HTTP 状态码\n返回值.content_type: string；响应 MIME 类型\n返回值.data（分支1）: object\n返回值.data（分支1） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值.data（分支2）: array\n返回值.data（分支2）[]: 任意JSON\n返回值.data（分支3）: string\n返回值.data（分支4）: integer\n返回值.data（分支5）: number\n返回值.data（分支6）: boolean\n返回值.data（分支7）: null\n返回值.truncated: boolean（可省略）；文本响应是否截断\n返回值.error: string（可省略）；HTTP 错误提示；例如认证失败"

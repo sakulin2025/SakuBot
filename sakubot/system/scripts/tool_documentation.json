@@ -1,14 +1,248 @@
 {
   "script_manage": {
-    "returns": "list/get/revisions 返回脚本资料；check 返回 ok、diagnostics；save 返回脚本资料和 saved=true；失败抛异常。"
+    "returns": "Script object：id:string；name:string；description:string；parameters:object（参数JSON Schema）；version:string（32位版本标识）；timeout:integer（秒，1..86400）；enabled:boolean；concurrency:string（queue/merge/skip）；updated:number（Unix秒）；on_failure:string（none/wake/notify）；failure_threshold:integer；cooldown_seconds:integer（秒）；send_result_to_source:boolean；event_sources:array[string]（文档选择，不是事件载荷类型约束）；tool_plugins:array[string]|null（文档选择，不限制运行工具）；api_version:integer，新版本为2。旧历史元数据可能缺少新增字段。",
+    "errors": "参数无效、资源不存在、连接失败等通过异常报告；不会返回冒充成功对象的错误字符串。",
+    "example": {
+      "call": {
+        "action": "check",
+        "code": "async def main(ctx, event, tools):\n    return event[\"data\"]\n"
+      },
+      "result": {
+        "ok": true,
+        "diagnostics": []
+      }
+    },
+    "actions": {
+      "list": {
+        "parameters": {},
+        "returns": "array[Script]，无脚本为[]。",
+        "example": {
+          "action": "list"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "get": {
+        "parameters": {
+          "id": "必填string",
+          "version": "可选string，历史版本标识"
+        },
+        "returns": "Script，另有 code:string（完整源码）；历史源码读取时会转换为三参数入口，历史文件保留。",
+        "example": {
+          "action": "get"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "check": {
+        "parameters": {
+          "code": "string；省略时须提供id读取当前源码",
+          "id": "可选string"
+        },
+        "returns": "object{ok:boolean,diagnostics:array[{severity:string,message:string,line:integer,column:integer}]}；成功diagnostics=[]，位置从1开始；仅检查语法和入口，不执行。",
+        "example": {
+          "action": "check"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "save": {
+        "parameters": {
+          "name": "新建必填string",
+          "code": "必填string，完整源码",
+          "id": "更新必填string",
+          "expected_version": "更新必填string，须等于当前版本",
+          "parameters": "可选object，根为object的JSON Schema",
+          "timeout": "默认120秒",
+          "enabled": "默认true",
+          "concurrency": "默认merge",
+          "on_failure": "默认none",
+          "failure_threshold": "默认1",
+          "cooldown_seconds": "默认3600秒",
+          "send_result_to_source": "默认true"
+        },
+        "returns": "Script + saved:true；失败抛异常，不产生新版本，不使用hard参数。未传的可选配置在更新时沿用旧值。",
+        "example": {
+          "action": "save"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "revisions": {
+        "parameters": {
+          "id": "必填string"
+        },
+        "returns": "array[{version:string,at:number}]，按版本文件修改时间最新在前，at为Unix秒。",
+        "example": {
+          "action": "revisions"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "delete": {
+        "parameters": {
+          "id": "必填string",
+          "confirm": "必填true"
+        },
+        "returns": "object{deleted:string}；须先解除绑定及插件引用、停止排队/运行任务；删除注册，历史与私有数据保留。",
+        "example": {
+          "action": "delete"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      }
+    }
   },
   "script_development": {
-    "returns": "documentation 为当前文档文本片段；documentation_hash 标识版本；total 为字符数；next_offset 为下一页偏移，无更多时 null。"
+    "returns": "object：documentation:string（当前文档JSON文本的一段）；documentation_hash:string（整份文档SHA256）；total:integer（字符总数）；next_offset:integer|null（无后续页为null）。offset默认0，limit默认10000、范围1000..12000。先按顺序拼接所有documentation片段，再json.loads，不单独解析一页。后续页重复相同选择参数并携带documentation_hash，定义变化抛异常要求重新读取。文档正文含instructions:string、entrypoint:string、ctx/event/helpers:object、example:string、parameters:object、events:array[object]、tools:array[object]、plugins:array[{plugin:string,files:array[{path:string,content:string}]}]。未声明来源项为{id:string,declared:false}。",
+    "errors": "参数无效、资源不存在、连接失败等通过异常报告；不会返回冒充成功对象的错误字符串。",
+    "example": {
+      "call": {
+        "tool_plugins": [
+          "ha_control"
+        ],
+        "sources": [
+          "ha_control.entity_state_changed.*"
+        ],
+        "offset": 0,
+        "limit": 10000
+      }
+    },
+    "requirements": "每次新建或修改脚本必须重新查阅并读完相关当前文档，不能以记忆替代。"
   },
   "script_tools": {
-    "returns": "工具列表，每项包含 name、description、parameters、plugin，及可选的插件返回说明。"
+    "returns": "array[object]：name:string（全局方法名）、plugin:string（来源资料，不参与调用）、description:string、parameters:object（模型调用参数说明）。可选returns:string、actions:object、example/examples:object|array、errors:string及插件自定义文档字段。只列当前可用且脚本可调用的方法。查不到不表示可凭记忆使用；先确认插件状态。",
+    "errors": "参数无效、资源不存在、连接失败等通过异常报告；不会返回冒充成功对象的错误字符串。",
+    "example": {
+      "call": {
+        "plugin": "ha_control",
+        "query": "query"
+      }
+    },
+    "notes": "按plugin/query筛选文档；调用始终为await tools[\"方法名\"](...)，不要传插件ID。"
   },
   "script_run": {
-    "returns": "排队运行记录，含执行 id；使用 script_execution 查询进度和结果。"
+    "returns": "正常手动调用返回 object{id:string,status:\"queued\",version:string}。id为执行ID，用于script_execution，不是脚本ID。若为禁用脚本显式提供event可返回{status:\"disabled\"}而没有执行id。重复、合并、跳过等内部触发返回另有duplicate:boolean、status:\"merged\"或\"skipped\"、active_id:string，不能假设所有入队结果都有version。",
+    "errors": "参数无效、资源不存在、连接失败等通过异常报告；不会返回冒充成功对象的错误字符串。",
+    "example": {
+      "call": {
+        "id": "my_script",
+        "params": {}
+      },
+      "result": {
+        "id": "script:<执行标识>",
+        "status": "queued",
+        "version": "<脚本版本>"
+      }
+    },
+    "notes": "省略event生成manual事件；手动运行无合并/跳过绑定策略。此工具提交不代表完成，不应未经授权试运行有外部效果的脚本。"
+  },
+  "script_execution": {
+    "returns": "Run object：id:string；script_id:string；binding_id:string（手动执行通常为空）；version:string；status:string（queued/running/done/failed/cancelled/interrupted，旧记录以实际值为准）；queued:number（Unix秒）；started:number|null；finished:number|null；error:string。list最多返回最近100项。\nget/stop的详情额外包含 input:object（params:object、event:object{id:string,source:string,at:number,data:object}、chain:array[string]、failure_policy:object；直接wake绑定的input另有target_kind/binding）、output:任意JSON|null（未产生结果为null）、logs:string（日志末尾最多256Ki字符）、uid:string|null（去重标识）、wake_id:integer|null、tool_calls:array[object]。每项tool_calls含 id:integer、run_id:string、call_id:string、tool_name:string、plugin_id:string、origin:string、arguments:string（JSON文本）、output:string（JSON文本或尚无结果时空字符串）、status:string、started:number、finished:number|null、error:string。不要对 arguments/output 直接下标，先按需 json.loads。",
+    "errors": "参数无效、资源不存在、连接失败等通过异常报告；不会返回冒充成功对象的错误字符串。",
+    "example": {
+      "call": {
+        "action": "get",
+        "id": "script:<执行标识>"
+      }
+    },
+    "actions": {
+      "list": {
+        "parameters": {
+          "script_id": "可选string，按脚本筛选"
+        },
+        "returns": "array[Run]，按queued倒序。",
+        "example": {
+          "action": "list"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "get": {
+        "parameters": {
+          "id": "必填执行ID"
+        },
+        "returns": "Run详情，包含解析后的input/output及tool_calls。",
+        "example": {
+          "action": "get"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "stop": {
+        "parameters": {
+          "id": "必填执行ID"
+        },
+        "returns": "停止或取消后返回Run详情；已结束记录原样返回，不能撤销外部操作。",
+        "example": {
+          "action": "stop"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      }
+    }
+  },
+  "script_binding": {
+    "returns": "Binding object：id:string；source:string（含插件来源前缀的事件ID或通配模式）；target_kind:string（script/wake）；script_id:string（wake为空）；name:string；enabled:boolean；source_params:object（插件业务筛选参数）；params:object（脚本参数，wake为空）；on_failure:string；failure_threshold:integer；cooldown_seconds:integer；send_result_to_source:boolean；updated:number（Unix秒）。prompt:string 仅wake动作必有。list返回还增加 available:boolean、eligible:boolean、declared:boolean、reason:string；save结果不保证包含这四个计算字段。\nSource object：id:string；plugin_id:string；name:string；parameters:object（可选筛选表单文档）；event_schema:object（可选载荷说明）；id_description:string（可以为空）；available:boolean。未声明来源不会被sources凭空列出，但可以直接绑定。事件文档不是运行时强制类型。",
+    "errors": "参数无效、资源不存在、连接失败等通过异常报告；不会返回冒充成功对象的错误字符串。",
+    "example": {
+      "call": {
+        "action": "save",
+        "source": "example.changed.*",
+        "target_kind": "wake",
+        "prompt": "检查观测变化",
+        "send_result_to_source": false
+      }
+    },
+    "actions": {
+      "sources": {
+        "parameters": {
+          "source": "可选string，精确或实际事件ID用于聚焦对应声明"
+        },
+        "returns": "array[Source]；无匹配返回[]，不是单个对象。",
+        "example": {
+          "action": "sources"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "options": {
+        "parameters": {
+          "source": "必填string"
+        },
+        "returns": "object，键为筛选字段；值由插件options回调定义，常见array[{value:string,label:string}]。未知来源或无回调为{}。",
+        "example": {
+          "action": "options"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "list": {
+        "parameters": {},
+        "returns": "array[Binding]，包括计算后的可用性字段。",
+        "example": {
+          "action": "list"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "save": {
+        "parameters": {
+          "source": "新建必填string；更新可沿用",
+          "id": "更新必填string",
+          "target_kind": "新建默认script，更新沿用",
+          "script_id": "script动作必填",
+          "prompt": "wake动作必填string，1..50000字符",
+          "name": "可选，默认动作名+来源名",
+          "source_params": "默认{}，事件筛选",
+          "params": "默认{}，脚本输入",
+          "enabled": "默认true"
+        },
+        "returns": "Binding，不增加saved:true；具名source至多一个动作；可绑定尚未声明的来源。",
+        "example": {
+          "action": "save"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "delete": {
+        "parameters": {
+          "id": "必填绑定ID",
+          "confirm": "必填true"
+        },
+        "returns": "object{deleted:string}；取消该绑定尚在排队的执行。",
+        "example": {
+          "action": "delete"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      }
+    }
   }
 }

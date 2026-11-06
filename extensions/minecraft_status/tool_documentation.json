@@ -1,6 +1,58 @@
 {
   "minecraft_servers": {
-    "returns": "返回值（分支1）: object\n返回值（分支1）.id: string；保存条目 ID\n返回值（分支1）.name: string；名称\n返回值（分支1）.alias: string（可省略）；别名\n返回值（分支1）.description: string（可省略）；本地描述\n返回值（分支1）.edition: string；java/bedrock\n返回值（分支1）.address: string；保存的域名/IP，可包含端口；实际查询以此字段为准\n返回值（分支1）.host: string（可省略）；服务器域名或 IP\n返回值（分支1）.port: integer（可省略）；查询端口\n返回值（分支1）.display_name: string；优先使用别名的显示名称\n返回值（分支2）: object\n返回值（分支2）.items: array；保存的服务器条目\n返回值（分支2）.items[]: object\n返回值（分支2）.items[].id: string；保存条目 ID\n返回值（分支2）.items[].name: string；名称\n返回值（分支2）.items[].alias: string（可省略）；别名\n返回值（分支2）.items[].description: string（可省略）；本地描述\n返回值（分支2）.items[].edition: string；java/bedrock\n返回值（分支2）.items[].address: string；保存的域名/IP，可包含端口；实际查询以此字段为准\n返回值（分支2）.items[].host: string（可省略）；服务器域名或 IP\n返回值（分支2）.items[].port: integer（可省略）；查询端口\n返回值（分支2）.items[].display_name: string；优先使用别名的显示名称\n返回值（分支2）.total: integer；条目总数\n返回值（分支3）: object\n返回值（分支3）.saved: boolean [True]；条目已保存\n返回值（分支3）.server: object；保存后的完整条目\n返回值（分支3）.server.id: string；保存条目 ID\n返回值（分支3）.server.name: string；名称\n返回值（分支3）.server.alias: string（可省略）；别名\n返回值（分支3）.server.description: string（可省略）；本地描述\n返回值（分支3）.server.edition: string；java/bedrock\n返回值（分支3）.server.address: string；保存的域名/IP，可包含端口；实际查询以此字段为准\n返回值（分支3）.server.host: string（可省略）；服务器域名或 IP\n返回值（分支3）.server.port: integer（可省略）；查询端口\n返回值（分支3）.server.display_name: string；优先使用别名的显示名称\n返回值（分支4）: object\n返回值（分支4）.removed: string；已删除条目 ID"
+    "returns": "返回值（分支1）: object\n返回值（分支1）.id: string；保存条目 ID\n返回值（分支1）.name: string；名称\n返回值（分支1）.alias: string（可省略）；别名\n返回值（分支1）.description: string（可省略）；本地描述\n返回值（分支1）.edition: string；java/bedrock\n返回值（分支1）.address: string；保存的域名/IP，可包含端口；实际查询以此字段为准\n返回值（分支1）.host: string（可省略）；服务器域名或 IP\n返回值（分支1）.port: integer（可省略）；查询端口\n返回值（分支1）.display_name: string；优先使用别名的显示名称\n返回值（分支2）: object\n返回值（分支2）.items: array；保存的服务器条目\n返回值（分支2）.items[]: object\n返回值（分支2）.items[].id: string；保存条目 ID\n返回值（分支2）.items[].name: string；名称\n返回值（分支2）.items[].alias: string（可省略）；别名\n返回值（分支2）.items[].description: string（可省略）；本地描述\n返回值（分支2）.items[].edition: string；java/bedrock\n返回值（分支2）.items[].address: string；保存的域名/IP，可包含端口；实际查询以此字段为准\n返回值（分支2）.items[].host: string（可省略）；服务器域名或 IP\n返回值（分支2）.items[].port: integer（可省略）；查询端口\n返回值（分支2）.items[].display_name: string；优先使用别名的显示名称\n返回值（分支2）.total: integer；条目总数\n返回值（分支3）: object\n返回值（分支3）.saved: boolean [True]；条目已保存\n返回值（分支3）.server: object；保存后的完整条目\n返回值（分支3）.server.id: string；保存条目 ID\n返回值（分支3）.server.name: string；名称\n返回值（分支3）.server.alias: string（可省略）；别名\n返回值（分支3）.server.description: string（可省略）；本地描述\n返回值（分支3）.server.edition: string；java/bedrock\n返回值（分支3）.server.address: string；保存的域名/IP，可包含端口；实际查询以此字段为准\n返回值（分支3）.server.host: string（可省略）；服务器域名或 IP\n返回值（分支3）.server.port: integer（可省略）；查询端口\n返回值（分支3）.server.display_name: string；优先使用别名的显示名称\n返回值（分支4）: object\n返回值（分支4）.removed: string；已删除条目 ID",
+    "actions": {
+      "list": {
+        "parameters": {},
+        "returns": "object{items:array[Server],total:integer}。",
+        "example": {
+          "action": "list"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "get": {
+        "parameters": {
+          "server": "必填已有ID/名称/别名"
+        },
+        "returns": "Server object。",
+        "example": {
+          "action": "get"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "add": {
+        "parameters": {
+          "details": "必填，name/address必有，可带edition/alias/description"
+        },
+        "returns": "object{saved:true,server:Server}。",
+        "example": {
+          "action": "add"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "update": {
+        "parameters": {
+          "server": "必填",
+          "details": "必填，仅变更字段"
+        },
+        "returns": "object{saved:true,server:Server}。",
+        "example": {
+          "action": "update"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "remove": {
+        "parameters": {
+          "server": "必填"
+        },
+        "returns": "object{removed:string}。",
+        "example": {
+          "action": "remove"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      }
+    },
+    "errors": "调用异常与正常业务数据分开；原生API的错误语义以该工具说明为准。"
   },
   "minecraft_status": {
     "returns": "返回值: object\n返回值.items: array；逐服务器查询结果\n返回值.items[]（分支1）: object\n返回值.items[]（分支1）.server: object；查询目标的本地条目资料\n返回值.items[]（分支1）.server.id: string；保存条目 ID\n返回值.items[]（分支1）.server.name: string；名称\n返回值.items[]（分支1）.server.alias: string（可省略）；别名\n返回值.items[]（分支1）.server.description: string（可省略）；本地描述\n返回值.items[]（分支1）.server.edition: string；java/bedrock\n返回值.items[]（分支1）.server.address: string；保存的域名/IP，可包含端口；实际查询以此字段为准\n返回值.items[]（分支1）.server.host: string（可省略）；服务器域名或 IP\n返回值.items[]（分支1）.server.port: integer（可省略）；查询端口\n返回值.items[]（分支1）.server.display_name: string；优先使用别名的显示名称\n返回值.items[]（分支1）.checked_at: string；含时区 ISO8601 查询时间\n返回值.items[]（分支1）.cached: boolean；是否来自缓存\n返回值.items[]（分支1）.age_seconds: number；缓存年龄秒数\n返回值.items[]（分支1）.online: boolean [True]；状态协议可达\n返回值.items[]（分支1）.state: string ['online']；已成功查询在线状态\n返回值.items[]（分支1）.version: string；服务器自报版本\n返回值.items[]（分支1）.protocol: integer；协议版本号\n返回值.items[]（分支1）.motd: string；已转换为纯文本的服务器公告\n返回值.items[]（分支1）.latency_ms: number；状态查询延迟，毫秒\n返回值.items[]（分支1）.players_online: integer；当前在线人数\n返回值.items[]（分支1）.players_max: integer；服务器人数容量\n返回值.items[]（分支1）.player_sample: array；可能不完整的服务器自报玩家样本\n返回值.items[]（分支1）.player_sample[]: string\n返回值.items[]（分支1）.sample_note: string；玩家样本的可靠性说明\n返回值.items[]（分支1）.map_name（分支1）: string（可省略）\n返回值.items[]（分支1）.map_name（分支2）: null（可省略）\n返回值.items[]（分支1）.gamemode（分支1）: string（可省略）\n返回值.items[]（分支1）.gamemode（分支2）: null（可省略）\n返回值.items[]（分支2）: object\n返回值.items[]（分支2）.server: object；查询目标的本地条目资料\n返回值.items[]（分支2）.server.id: string；保存条目 ID\n返回值.items[]（分支2）.server.name: string；名称\n返回值.items[]（分支2）.server.alias: string（可省略）；别名\n返回值.items[]（分支2）.server.description: string（可省略）；本地描述\n返回值.items[]（分支2）.server.edition: string；java/bedrock\n返回值.items[]（分支2）.server.address: string；保存的域名/IP，可包含端口；实际查询以此字段为准\n返回值.items[]（分支2）.server.host: string（可省略）；服务器域名或 IP\n返回值.items[]（分支2）.server.port: integer（可省略）；查询端口\n返回值.items[]（分支2）.server.display_name: string；优先使用别名的显示名称\n返回值.items[]（分支2）.checked_at: string；含时区 ISO8601 查询时间\n返回值.items[]（分支2）.cached: boolean；是否来自缓存\n返回值.items[]（分支2）.age_seconds: number；缓存年龄秒数\n返回值.items[]（分支2）.online: null；无法确认当前在线状态；不代表确定关服\n返回值.items[]（分支2）.state: string ['unreachable']；未收到有效状态响应\n返回值.items[]（分支2）.error: string；不可达原因\n返回值.items[]（分支2）.error_type: string；查询异常类别\n返回值.items[]（分支2）.note: string；不能将不可达等同关服的提示\n返回值.total: integer；查询目标数\n返回值.note: string；数据可靠性提示"

@@ -1,0 +1,64 @@
+{
+  "time_info": {
+    "returns": "返回 object，以下键始终存在：timezone:string，输入或默认的 IANA 时区；iso:string，指定时区精确到秒的 ISO8601；date:string，YYYY-MM-DD；weekday:string，星期一到星期日；unix_seconds:number，Unix秒；utc:string，UTC ISO8601。",
+    "errors": "参数无效、资源不存在、连接失败等通过异常报告；不会返回冒充成功对象的错误字符串。",
+    "example": {
+      "call": {
+        "timezone": "Asia/Shanghai",
+        "value": "2026-11-06T12:00:00+08:00"
+      },
+      "result": {
+        "timezone": "Asia/Shanghai",
+        "iso": "2026-11-06T12:00:00+08:00",
+        "date": "2026-11-06",
+        "weekday": "星期五",
+        "unix_seconds": 1793937600.0,
+        "utc": "2026-11-06T04:00:00+00:00"
+      }
+    }
+  },
+  "time_difference": {
+    "returns": "返回 object，seconds:number、hours:number、days:number 均必有。结果为 end-start，可为负数；days=seconds/86400，是经过的时长而非日历日期跨度。无时区输入按 timezone 解释，默认 Asia/Shanghai。",
+    "errors": "参数无效、资源不存在、连接失败等通过异常报告；不会返回冒充成功对象的错误字符串。",
+    "example": {
+      "call": {
+        "start": "2026-11-06T12:00:00+08:00",
+        "end": "2026-11-06T13:30:00+08:00"
+      },
+      "result": {
+        "seconds": 5400.0,
+        "hours": 1.5,
+        "days": 0.0625
+      }
+    }
+  },
+  "calculate": {
+    "returns": "返回 object：expression:string，去除首尾空白后的原表达式；result:integer|number，计算结果。结果为浮点数时可能存在浮点舍入，不承诺十进制财务精度。非法语法、未支持函数、溢出和除零等抛异常。",
+    "errors": "参数无效、资源不存在、连接失败等通过异常报告；不会返回冒充成功对象的错误字符串。",
+    "example": {
+      "call": {
+        "expression": "(120+35)*2"
+      },
+      "result": {
+        "expression": "(120+35)*2",
+        "result": 310
+      }
+    }
+  },
+  "image_describe": {
+    "returns": "返回 object：description:string，非空图片分析正文；image:string，原输入地址或路径，base64输入返回字面量 [base64 图片]；model_id:string，实际使用的框架模型条目ID；usage:object，供应商返回的用量数据，键可缺少。usage 常见 prompt_tokens/completion_tokens/total_tokens 为整数，但并非所有供应商都有；未知字段查实际供应商文档，不将缺失当成0。图片内容和用户定制 prompt 的分析结果是文本，不是结构化识别字段。",
+    "errors": "参数无效、资源不存在、连接失败等通过异常报告；不会返回冒充成功对象的错误字符串。",
+    "example": {
+      "call": {
+        "image": "projects/photo.jpg",
+        "prompt": "读取营养成分表中的能量数值"
+      },
+      "result": {
+        "description": "营养成分表标示每100克能量为……",
+        "image": "projects/photo.jpg",
+        "model_id": "vision",
+        "usage": {}
+      }
+    }
+  }
+}

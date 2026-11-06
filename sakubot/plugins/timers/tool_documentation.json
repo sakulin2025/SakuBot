@@ -1,5 +1,42 @@
 {
   "schedule_manage": {
-    "returns": "返回值（分支1）: object\n返回值（分支1）.id: string；定时任务 ID\n返回值（分支1）.data: object；任务定义\n返回值（分支1）.data.content: string（可省略）；任务提示词或通知正文\n返回值（分支1）.data.mode: string（可省略）；wake/context/notify/script\n返回值（分支1）.data.script_id: string（可省略）；script 模式脚本 ID\n返回值（分支1）.data.script_params: object（可省略）；脚本参数，按脚本 Schema 校验\n返回值（分支1）.data.script_params 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支1）.data.send_result_to_source: boolean（可省略）；是否向主会话源投递\n返回值（分支1）.data.interval_seconds: integer（可省略）；重复间隔秒数\n返回值（分支1）.data.daily_time: string（可省略）；每日 HH:MM\n返回值（分支1）.data.timezone: string（可省略）；IANA 时区\n返回值（分支1）.data.at: string（可省略）；一次性含时区 ISO8601\n返回值（分支1）.next_at（分支1）: number\n返回值（分支1）.next_at（分支2）: null\n返回值（分支2）: array\n返回值（分支2）[]: object\n返回值（分支2）[].id: string；定时任务 ID\n返回值（分支2）[].data: object；任务定义\n返回值（分支2）[].data.content: string（可省略）；任务提示词或通知正文\n返回值（分支2）[].data.mode: string（可省略）；wake/context/notify/script\n返回值（分支2）[].data.script_id: string（可省略）；script 模式脚本 ID\n返回值（分支2）[].data.script_params: object（可省略）；脚本参数，按脚本 Schema 校验\n返回值（分支2）[].data.script_params 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支2）[].data.send_result_to_source: boolean（可省略）；是否向主会话源投递\n返回值（分支2）[].data.interval_seconds: integer（可省略）；重复间隔秒数\n返回值（分支2）[].data.daily_time: string（可省略）；每日 HH:MM\n返回值（分支2）[].data.timezone: string（可省略）；IANA 时区\n返回值（分支2）[].data.at: string（可省略）；一次性含时区 ISO8601\n返回值（分支2）[].next_at（分支1）: number\n返回值（分支2）[].next_at（分支2）: null\n返回值（分支3）: object\n返回值（分支3）.deleted: string；已删除任务 ID"
+    "returns": "返回值（分支1）: object\n返回值（分支1）.id: string；定时任务 ID\n返回值（分支1）.data: object；任务定义\n返回值（分支1）.data.content: string（可省略）；任务提示词或通知正文\n返回值（分支1）.data.mode: string（可省略）；wake/context/notify/script\n返回值（分支1）.data.script_id: string（可省略）；script 模式脚本 ID\n返回值（分支1）.data.script_params: object（可省略）；脚本参数，按脚本 Schema 校验\n返回值（分支1）.data.script_params 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支1）.data.send_result_to_source: boolean（可省略）；是否向主会话源投递\n返回值（分支1）.data.interval_seconds: integer（可省略）；重复间隔秒数\n返回值（分支1）.data.daily_time: string（可省略）；每日 HH:MM\n返回值（分支1）.data.timezone: string（可省略）；IANA 时区\n返回值（分支1）.data.at: string（可省略）；一次性含时区 ISO8601\n返回值（分支1）.next_at（分支1）: number\n返回值（分支1）.next_at（分支2）: null\n返回值（分支2）: array\n返回值（分支2）[]: object\n返回值（分支2）[].id: string；定时任务 ID\n返回值（分支2）[].data: object；任务定义\n返回值（分支2）[].data.content: string（可省略）；任务提示词或通知正文\n返回值（分支2）[].data.mode: string（可省略）；wake/context/notify/script\n返回值（分支2）[].data.script_id: string（可省略）；script 模式脚本 ID\n返回值（分支2）[].data.script_params: object（可省略）；脚本参数，按脚本 Schema 校验\n返回值（分支2）[].data.script_params 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支2）[].data.send_result_to_source: boolean（可省略）；是否向主会话源投递\n返回值（分支2）[].data.interval_seconds: integer（可省略）；重复间隔秒数\n返回值（分支2）[].data.daily_time: string（可省略）；每日 HH:MM\n返回值（分支2）[].data.timezone: string（可省略）；IANA 时区\n返回值（分支2）[].data.at: string（可省略）；一次性含时区 ISO8601\n返回值（分支2）[].next_at（分支1）: number\n返回值（分支2）[].next_at（分支2）: null\n返回值（分支3）: object\n返回值（分支3）.deleted: string；已删除任务 ID",
+    "actions": {
+      "list": {
+        "parameters": {},
+        "returns": "array[Schedule]，调度数据由data字段承载。",
+        "example": {
+          "action": "list"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "save": {
+        "parameters": {
+          "id": "更新时提供",
+          "name": "新建必填",
+          "mode": "默认wake，context/wake/notify/script",
+          "content": "非script模式必填",
+          "at/interval_seconds/daily_time": "三者恰好一个",
+          "script_id": "script模式必填",
+          "script_params": "脚本参数",
+          "send_result_to_source": "默认true"
+        },
+        "returns": "object{id:string,data:object,next_at:number}，next_at为Unix秒；data为合并默认值后的任务设置。",
+        "example": {
+          "action": "save"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      },
+      "delete": {
+        "parameters": {
+          "id": "必填"
+        },
+        "returns": "object{deleted:string}。",
+        "example": {
+          "action": "delete"
+        },
+        "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
+      }
+    }
   }
 }
