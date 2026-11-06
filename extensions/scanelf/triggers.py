@@ -1,4 +1,5 @@
 """Device source registration; transport and transition detection live separately."""
+from .event_docs import PARAMETERS, EVENT, ID_DESCRIPTION
 from sakubot.plugin import object_schema
 
 from .client import normalize_mac
@@ -28,7 +29,6 @@ def register(plugin):
     for family, title in [('device_state_changed', '设备上下线'), ('device_online', '设备上线'),
                           ('device_offline', '设备下线'), ('device_discovered', '发现新设备')]:
         plugin.trigger_source(family + '.*', title,
-            object_schema({'mac':{'type':'string','title':'设备 MAC · 留空全部'},'state':{'type':'string','title':'状态','enum':['any','online','offline'],'default':'any'}}),
-            object_schema({'mac':{'type':'string'},'online':{'type':'boolean'},'previous_online':{'type':['boolean','null']},'device':{'type':'object'},'at':{'type':'number'}},('mac','online')),
+            PARAMETERS, EVENT, id_description=ID_DESCRIPTION,
             subscribe=plugin.device_watcher.subscribe,match=match,options=options,validate=validate,
             legacy_ids=(family,) if family == 'device_state_changed' else ())

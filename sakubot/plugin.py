@@ -70,6 +70,7 @@ class Tool:
     handler: object
     plugin_id: str = ""
     audience: str = "all"
+    result_schema: dict | None = None
 
     def schema(self):
         return {"type": "function", "function": {
@@ -157,9 +158,16 @@ class Plugin:
         task.add_done_callback(finished)
         return task
 
-    def trigger_source(self, identifier, name, parameters, event_schema, *, subscribe=None, options=None, match=None, validate=None, legacy_ids=()):
+    def trigger_source(self, identifier, name, parameters=None, event_schema=None, *, parameters_type=None, event_type=None, examples=None, description="", id_description="", subscribe=None, options=None, match=None, validate=None, legacy_ids=()):
+        if parameters_type is not None or event_type is not None:
+            from .contracts import schema_from_type
+            if parameters_type is not None:
+                parameters = schema_from_type(parameters_type)
+            if event_type is not None:
+                event_schema = schema_from_type(event_type)
+                event_schema.update(description=description or event_schema.get('description', ''), examples=examples or [])
         return self.runtime.scripts.sources.declare(self.id, identifier, name, parameters, event_schema,
-            subscribe=subscribe, options=options, match=match, validate=validate, legacy_ids=legacy_ids)
+            id_description=id_description, subscribe=subscribe, options=options, match=match, validate=validate, legacy_ids=legacy_ids)
 
     async def emit_trigger(self, identifier, payload, *, uid=None):
         return await self.runtime.scripts.sources.emit(self.id, identifier, payload, uid=uid)
@@ -193,10 +201,28 @@ class Plugin:
             send_to_source=invocation.send_result_to_source if invocation else True,
             run_id=invocation.run_id if invocation else '', response_id=response_id)
 
-    def tool(self, name, description, parameters, handler, *, audience="all"):
+    def tool(self, name, description, parameters, handler, *, audience="all", result_type=None, result_schema=None):
         if audience not in ("all", "main"):
             raise ValueError("函数使用范围无效")
-        self.runtime.registry.add(Tool(name, description, parameters, handler, plugin_id=self.id, audience=audience))
+        if name in getattr(self, 'tool_argument_types', {}):
+            from .contracts import schema_from_type
+            parameters = schema_from_type(self.tool_argument_types[name])
+        if parameters is None:
+            raise ValueError('工具缺少参数类型声明：' + name)
+        if result_type is None and name in getattr(self, 'tool_result_types', {}):
+            result_type = self.tool_result_types[name]
+        if result_type is not None:
+            from .contracts import schema_from_type
+            result_schema = schema_from_type(result_type)
+        if result_schema is not None:
+            jsonschema.Draft202012Validator.check_schema(result_schema)
+        self.runtime.registry.add(Tool(name, description, parameters, handler, plugin_id=self.id, audience=audience, result_schema=result_schema))
+
+    def typed_tool(self, name, description, arguments_type, result_type, handler, *, audience="all"):
+        """Register a tool using documented TypedDict arguments and return types."""
+        from .contracts import schema_from_type
+        self.tool(name, description, schema_from_type(arguments_type), handler,
+                  audience=audience, result_type=result_type)
 
     def get_agent(self, identifier):
         full_id = identifier if identifier == "main" or ":" in identifier else self.id + ":" + identifier
@@ -364,7 +390,7 @@ class Registry:
             available.append(tool)
         return available
 
-    async def call(self, name, arguments, inv):
+    async def call(self, name, arguments, inv, *, rejection=None):
         store = self.runtime.store
         known = inv.temporary_tools.get(name) or (inv.instance.tools.get(name) if inv.instance else None) or self.tools.get(name)
         last = (inv.metadata.get("function_snapshots") or [{}])[-1]
@@ -376,6 +402,8 @@ class Registry:
         store.log("info", plugin or "registry", "tool.started", run_id=inv.run_id, tool_call_id=trace_id, data={"function": name})
         task = None
         try:
+            if rejection:
+                raise ValueError(rejection)
             tools = {tool.name: tool for tool in self.available(inv)}
             if name not in tools:
                 raise ValueError("函数不存在或当前人格不可见")
@@ -388,6 +416,8 @@ class Registry:
             task = asyncio.create_task(tool.handler(inv, args))
             self.inflight.setdefault(plugin, set()).add(task)
             result = await task
+            if tool.result_schema is not None:
+                jsonschema.validate(result, tool.result_schema)
             output = encode(result)
             if len(output) > 1000000:
                 output = encode({"truncated": True, "preview": output[:1000000]})

@@ -1,3 +1,7 @@
+from .tool_arguments import ARGUMENTS
+from .tool_types import R_calorie_confirm, R_calorie_record, R_calorie_report
+from .tool_types import RESULTS
+from .event_docs import PARAMETERS, EVENT, ID_DESCRIPTION
 import calendar
 import math
 import re
@@ -27,6 +31,8 @@ def today():
 
 
 class Extension(Plugin):
+    tool_result_types = RESULTS
+    tool_argument_types = ARGUMENTS
     name = 'calorie_calendar'
 
     def setup(self):
@@ -43,8 +49,7 @@ class Extension(Plugin):
             CREATE TABLE IF NOT EXISTS days (day TEXT PRIMARY KEY, confirmed INTEGER NOT NULL, updated REAL NOT NULL);
         ''')
         for source, title in [('record_changed','热量记录变化'),('confirmation_changed','热量日期确认变化')]:
-            self.trigger_source(source + '.*',title,object_schema({'day':{'type':'string','title':'日期 · 留空不限','pattern':r'^$|^\d{4}-\d{2}-\d{2}$'}}),
-                object_schema({'day':{'type':'string'},'action':{'type':'string'},'record_id':{'type':'string'},'summary':{'type':'object'}},('day','action','summary')),
+            self.trigger_source(source + '.*',title,PARAMETERS, EVENT, id_description=ID_DESCRIPTION,
                 match=lambda event,params:not params.get('day') or params['day']==event['day'],legacy_ids=(source,))
         self.page('manage', '热量日历' , Path(__file__).parent / 'web' / 'dist', icon='activity', group_id='productivity', order=30)
         self.api('calendar', self.calendar_api)
@@ -53,14 +58,11 @@ class Extension(Plugin):
         self.api('entry/{identifier}', self.delete_api, methods=('DELETE',))
         self.api('confirm', self.confirm_api, methods=('POST',))
         self.tool('calorie_record', '按日期添加、修改或删除热量摄入/消耗记录。早餐、午餐、晚餐、基础代谢、活动消耗是每天各一条的特殊标签；其他标签可重复。增删改记录不会改变日期确认状态。',
-            object_schema({'action': {'type': 'string', 'enum': ['add', 'update', 'delete']}, 'id': text('修改或删除时提供记录 ID'),
-                'date': text('日期 YYYY-MM-DD，新增时可留空表示今天'), 'kind': {'type': 'string', 'enum': ['intake', 'expenditure']},
-                'label': text('餐次、消耗类型或自定义标签'), 'kcal': {'type': 'number', 'minimum': 0, 'maximum': 100000},
-                'estimated': {'type': 'boolean'}, 'note': text('详情描述：具体食物、份量、估算依据或修正说明；追加食物时保留并更新已有详情'), 'source': text('数据来源，例如用户、设备、品牌营养表或估算')}, ('action',)), self.record_tool)
+            None, self.record_tool)
         self.tool('calorie_report', '查询日期区间的热量记录及统计；汇总仅包括已确认日期。可只传 date 查询某日，也可传 start、end 查询最长 366 天。',
-            object_schema({'date': text('单日 YYYY-MM-DD'), 'start': text('开始日期 YYYY-MM-DD'), 'end': text('结束日期 YYYY-MM-DD')}, ()), self.report_tool)
+            None, self.report_tool)
         self.tool('calorie_confirm', '确认或取消确认某天热量记录。只有已确认的日期计入累计统计；增删改记录不会改变确认状态。',
-            object_schema({'date': text('日期 YYYY-MM-DD，留空表示今天'), 'confirmed': {'type': 'boolean'}}, ('confirmed',)), self.confirm_tool)
+            None, self.confirm_tool)
 
     async def stop(self):
         await super().stop()
@@ -200,7 +202,7 @@ class Extension(Plugin):
         data = await request.json()
         return self.confirm(data.get('date'), data.get('confirmed'))
 
-    async def record_tool(self, inv, args):
+    async def record_tool(self, inv, args) -> R_calorie_record:
         action = args['action']
         payload = {k: v for k, v in args.items() if k != 'action'}
         if action in ('update', 'delete') and not payload.get('id'):
@@ -209,7 +211,7 @@ class Extension(Plugin):
             raise ValueError('新增记录不应指定 ID')
         return self.delete_entry(payload['id']) if action == 'delete' else self.save_entry(payload)
 
-    async def report_tool(self, inv, args):
+    async def report_tool(self, inv, args) -> R_calorie_report:
         if args.get('date'):
             return self.day(args['date'])
         start = day_value(args.get('start') or today())
@@ -219,5 +221,5 @@ class Extension(Plugin):
         rows = self.totals(start, end)
         return {'start': start, 'end': end, 'days': rows, 'total': self.aggregate(rows)}
 
-    async def confirm_tool(self, inv, args):
+    async def confirm_tool(self, inv, args) -> R_calorie_confirm:
         return self.confirm(args.get('date'), args['confirmed'])

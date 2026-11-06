@@ -1,4 +1,8 @@
 """Audio Terminal device control, event feed and script trigger sources."""
+from .tool_arguments import ARGUMENTS
+from .tool_types import R_audio_terminal_control, R_audio_terminal_devices, R_audio_terminal_events, R_audio_terminal_play, R_audio_terminal_status, R_audio_terminal_stop
+from .tool_types import RESULTS
+from .event_docs import PARAMETERS, EVENT, ID_DESCRIPTION
 import asyncio
 from collections import deque
 import contextlib
@@ -15,6 +19,8 @@ from .client import Client, MAX_WAV, base_url, control_params, device_id
 
 
 class Extension(Plugin):
+    tool_result_types = RESULTS
+    tool_argument_types = ARGUMENTS
     name = 'audio_terminal'
 
     def setup(self):
@@ -47,14 +53,9 @@ class Extension(Plugin):
         self.api('control', self.api_control, methods=('POST',))
         self.api('play/{device}', self.api_play, methods=('PUT',))
         self.skill('control', Path(__file__).parent / 'skills' / 'control')
-        params = object_schema({'device_id': text('设备 ID，留空匹配所有设备')})
-        schema = object_schema({'id': text(), 'device_id': text(), 'event': text(),
-                                'received_at': {'type': 'number'}, 'data': {'type': 'object'},
-                                'timestamp_ms': {'type': ['number', 'null']}},
-                               ('id', 'device_id', 'event', 'received_at', 'data', 'timestamp_ms'))
         for family, label in [('wake', '设备唤醒'), ('button', '设备按键'),
                               ('playback', '播放事件'), ('connection', '设备连接状态')]:
-            self.trigger_source(family + '.*', label, params, schema, options=self.trigger_options,
+            self.trigger_source(family + '.*', label, PARAMETERS, EVENT, id_description=ID_DESCRIPTION, options=self.trigger_options,
                                 match=lambda event, values: not values.get('device_id') or values['device_id'] == event['device_id'])
 
     def availability(self):
@@ -250,7 +251,7 @@ class Extension(Plugin):
                 self.devices_cache[identity]['error'] = str(exc)
             raise
 
-    async def devices(self, refresh: bool=False):
+    async def devices(self, refresh: bool=False) -> R_audio_terminal_devices:
         """查询音频终端设备、名称、在线状态、固件与事件连接。状态带观察时间；服务不可达时在线状态为未知。
 
         Args:
@@ -262,11 +263,11 @@ class Extension(Plugin):
                 'items': [{**row, 'name': self.display_name(key)}
                           for key, row in self.devices_cache.items()]}
 
-    async def status(self, device: str):
+    async def status(self, device: str) -> R_audio_terminal_status:
         """查询指定音频终端的实时状态。device 使用 audio_terminal_devices 返回的完整设备 ID。"""
         return {'device_id': device, 'status': await self.read_status(device)}
 
-    async def control(self, device: str, action: str, parameters: dict=None):
+    async def control(self, device: str, action: str, parameters: dict=None) -> R_audio_terminal_control:
         """调节音频终端；多次调用按设备串行，超时不自动重试。音量由固件自身保存，其他设置显式调用 save 保存。
 
         Args:
@@ -285,7 +286,7 @@ class Extension(Plugin):
                 await self.read_status(identity)
             return {'ok': True, 'device_id': identity, 'result': result}
 
-    async def stop_playback(self, device: str):
+    async def stop_playback(self, device: str) -> R_audio_terminal_stop:
         """停止设备当前播放。查询实时 playback_id 后停止；不自动重试结果未知的请求。"""
         identity = self.resolve(device)
         async with self.command_locks.setdefault(identity, asyncio.Lock()):
@@ -297,7 +298,7 @@ class Extension(Plugin):
                 await self.read_status(identity)
             return {'ok': True, 'result': result}
 
-    async def play_file(self, device: str, path: str):
+    async def play_file(self, device: str, path: str) -> R_audio_terminal_play:
         """播放共享工作空间中的 16kHz、单声道 PCM16 WAV，最长120秒。会替换设备原有播放；返回接受不代表播放完成，完成事件见 audio_terminal_events。
 
         Args:
@@ -325,7 +326,7 @@ class Extension(Plugin):
                 await self.read_status(identity)
             return result
 
-    def events(self, device: str='', limit: int=50, event: str=''):
+    def events(self, device: str='', limit: int=50, event: str='') -> R_audio_terminal_events:
         """读取有界的设备事件历史。断线期间无补传；VAD/训练候选只记录，不自动唤醒 Agent。
 
         Args:

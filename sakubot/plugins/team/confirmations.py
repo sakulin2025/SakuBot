@@ -1,3 +1,6 @@
+from .temporary_types import ConfirmationArgs
+from .tool_types import R_team_requests, R_team_resolve, R_team_wait_confirmation
+from .tool_types import RESULTS
 import asyncio
 import json
 import time
@@ -13,15 +16,15 @@ class Confirmations:
         self.api("requests", self.page_requests)
         self.api("requests/resolve", self.page_resolve, methods=("POST",))
         self.tool("team_requests", "查看专业团队待答复的问题和操作确认，后续用户答复可按 request_id 对应。",
-            object_schema({"status": {"type": "string", "enum": ["waiting", "answered", "all"]}}), self.request_list)
+            None, self.request_list)
         self.tool("team_resolve", "答复团队成员的待确认请求并恢复其执行。能自行判断时直接答复；需要用户信息时先询问，收到答复后再调用。confirmation 的 approved=true 表示同意，false 表示拒绝；question 用 answer 回答。",
-            object_schema({"request_id": text(), "answer": text(), "approved": {"type": "boolean"}}, ("request_id",)), self.resolve_request)
+            None, self.resolve_request)
 
     def add_confirmation_tool(self, agent):
         agent.tool("team_wait_confirmation", "待确认：向主 Agent 提问或请求确认某项操作，暂停本次执行。主 Agent 可自行判断或询问用户；拿到答复后此函数才返回，继续当前任务，无需重新派发。",
             object_schema({"kind": {"type": "string", "enum": ["question", "confirmation"]},
                 "question": text("待回答的问题或待确认操作"), "context": text("主 Agent 判断所需信息"),
-                "options": {"type": "array", "items": {"type": "string"}, "maxItems": 20}}, ("kind", "question")), self.wait_confirmation)
+                "options": {"type": "array", "items": {"type": "string"}, "maxItems": 20}}, ("kind", "question")), self.wait_confirmation, arguments_type=ConfirmationArgs, result_type=RESULTS['team_wait_confirmation'])
 
     def request_records(self, status="waiting"):
         rows = self.runtime.store.rows("SELECT * FROM team_requests WHERE (?='all' OR status=?) ORDER BY created DESC LIMIT 200", (status, status))
@@ -30,7 +33,7 @@ class Confirmations:
             row["approved"] = bool(row["approved"]) if row["approved"] is not None else None
         return rows
 
-    async def request_list(self, invocation, args):
+    async def request_list(self, invocation, args) -> R_team_requests:
         return self.request_records(args.get("status", "waiting"))
 
     async def page_requests(self, request):
@@ -39,7 +42,7 @@ class Confirmations:
     async def page_resolve(self, request):
         return await self.call_tool("team_resolve", await request.json())
 
-    async def resolve_request(self, invocation, args):
+    async def resolve_request(self, invocation, args) -> R_team_resolve:
         identifier = args["request_id"]
         row = self.runtime.store.one("SELECT * FROM team_requests WHERE id=?", (identifier,))
         if not row:
@@ -67,7 +70,7 @@ class Confirmations:
         self.runtime.store.log("info", self.id, "team.request.answered", run_id=row["run_id"], data={"request_id": identifier, "agent_id": row["agent_id"]})
         return {**result, "status": "answered"}
 
-    async def wait_confirmation(self, invocation, args):
+    async def wait_confirmation(self, invocation, args) -> R_team_wait_confirmation:
         if invocation.control is None:
             raise ValueError("Agent 当前没有可暂停的运行")
         question, context = args["question"].strip(), args.get("context", "")

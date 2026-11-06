@@ -1,3 +1,6 @@
+from .tool_arguments import ARGUMENTS
+from .tool_types import R_workspace_publish, R_workspace_shell, R_workspace_shell_list, R_workspace_shell_start, R_workspace_shell_status, R_workspace_shell_stop
+from .tool_types import RESULTS
 import asyncio
 from pathlib import Path
 
@@ -10,21 +13,21 @@ from sakubot.workspace import MAX_FILE
 
 
 class Extension(Plugin):
+    tool_result_types = RESULTS
+    tool_argument_types = ARGUMENTS
     name = 'workspace'
 
     def setup(self):
         self.tool('workspace_shell', '直接在 SakuBot 容器执行 /bin/sh 命令，支持文件操作、管道、重定向、Python、curl、git、jq、rg、node、npm、ffmpeg、ffprobe、sqlite3。默认 cwd 为共享工作空间 /data/workspace，可传相对子目录。不是宿主机终端，也不是文件沙箱；命令可以访问当前容器用户可访问的文件。每次调用是独立进程，cd 和环境变量不跨调用保留。默认超时60秒，最多600秒，返回退出码及合并输出；超时或取消会终止进程组。耗时命令或临时服务应使用 workspace_shell_start，不要通过 & 或 nohup 留后台进程。',
-            object_schema({'command': text('要交给 /bin/sh 执行的完整命令'), 'cwd': text('相对工作空间的初始目录，默认根目录'),
-                'timeout': {'type': 'integer', 'minimum': 1, 'maximum': 600}}, ('command',)), self.shell)
+            None, self.shell)
         self.tool('workspace_shell_start', '启动独立后台 Shell 任务并立即返回任务 id。可并行运行，不占用当前 Agent 调用等待；Agent 本轮完成或重置不终止任务。默认超时3600秒，最长604800秒（7天），最多并行16个。运行长命令或临时服务时直接传前台命令，不加 &、nohup 或自行 daemonize。用 workspace_shell_status 查看合并输出和结果，用 workspace_shell_stop 终止整个进程组。完成、失败、超时或停止后默认以主动事件唤醒主 Agent，并附上结果；notify=false 可关闭。插件停用或容器停止会结束任务，重启不自动续跑。',
-            object_schema({'command': text('完整 /bin/sh 命令'), 'cwd': text('相对工作空间目录'),
-                'description': text('任务用途'), 'notify': {'type': 'boolean', 'default': True, 'description': '结束后唤醒主 Agent，默认开启'}, 'timeout': {'type': 'integer', 'minimum': 1, 'maximum': 604800}}, ('command',)), self.shell_start)
+            None, self.shell_start)
         self.tool('workspace_shell_status', '读取后台任务状态、退出码及实时合并输出（最多保留前48KiB和后16KiB）。wait_seconds 可等待最多30秒；仍运行则返回 running，避免短间隔反复轮询。完成状态 completed/failed/timed_out/cancelled/interrupted。任务默认结束后主动唤醒主 Agent，无需轮询；此工具用于按需检查进度。',
-            object_schema({'id': text('后台任务 id'), 'wait_seconds': {'type': 'integer', 'minimum': 0, 'maximum': 30}}, ('id',)), self.shell_status)
-        self.tool('workspace_shell_list', '列出共享后台 Shell 任务及描述、状态、命令、超时和时间，最新在前；保留最近100个任务记录。所有 Agent 共用任务列表，停止任务前先确认用途。', object_schema({}), self.shell_list)
+            None, self.shell_status)
+        self.tool('workspace_shell_list', '列出共享后台 Shell 任务及描述、状态、命令、超时和时间，最新在前；保留最近100个任务记录。所有 Agent 共用任务列表，停止任务前先确认用途。', None, self.shell_list)
         self.tool('workspace_shell_stop', '停止指定后台 Shell 任务及其进程组，返回最终状态和已有输出。已结束的任务直接返回记录。',
-            object_schema({'id': text('后台任务 id')}, ('id',)), self.shell_stop)
-        self.tool('workspace_publish', '将共享工作空间文件发布为框架附件；主 Agent 可直接向主对话发送图片、视频、语音或文件，网页始终同步，其他源按能力接收。协作 Agent 只返回附件信息供主 Agent 处理。path 为工作空间相对路径；kind=auto 按扩展名识别。URL 7天有效，源文件不删除。', object_schema({'path':text('工作空间相对文件路径'),'kind':{'type':'string','enum':['auto','image','video','audio','file']},'name':text('可选显示文件名'),'send':{'type':'boolean','default':True}},('path',)),self.publish_file)
+            None, self.shell_stop)
+        self.tool('workspace_publish', '将共享工作空间文件发布为框架附件；主 Agent 可直接向主对话发送图片、视频、语音或文件，网页始终同步，其他源按能力接收。协作 Agent 只返回附件信息供主 Agent 处理。path 为工作空间相对路径；kind=auto 按扩展名识别。URL 7天有效，源文件不删除。', None,self.publish_file)
         self.page('manage', '工作空间', Path(__file__).parent / 'web' / 'dist', icon='folder', order=5, aliases=('/workspace',), group_id='system')
         handlers = {'workspace_list': (self.workspace.list, {'path': text('相对目录，默认根目录'), 'offset': {'type': 'integer', 'minimum': 0}, 'limit': {'type': 'integer', 'minimum': 1, 'maximum': 200}, 'query': text()}, (), '分页浏览共享工作空间。顶层 path 和 version 对应当前列出的目录；items 中每项的 version 对应该子文件或子目录。移动、删除当前目录使用顶层 version，无需列出父目录。目录条目变化后需重新获取版本。'),
             'workspace_read': (self.workspace.read, {'path': text(), 'offset': {'type': 'integer', 'minimum': 0}, 'limit': {'type': 'integer', 'minimum': 1, 'maximum': 500}}, ('path',), '按行读取共享文本文件，content 为原文，numbered_content 带从1开始的行号。局部修改使用 edit 或 patch，不要求 version 相同。二进制文件只返回属性。'),
@@ -38,7 +41,7 @@ class Extension(Plugin):
             async def handler(invocation, args, method=method):
                 # Calls are bounded and synchronous; the shared lock protects versions and mutation.
                 return method(**args)
-            self.tool(name, description, object_schema(schema, required), handler)
+            self.tool(name, description, None, handler)
         self.api('files', self.files)
         self.api('file', self.document)
         self.api('file', self.write, methods=('POST',))
@@ -57,7 +60,7 @@ class Extension(Plugin):
             content = ''
         return '共享工作空间位于 /data/workspace。可用 workspace_shell 直接执行容器 /bin/sh 命令，默认在工作空间；已安装 Python、curl、git、jq、rg、node、npm、ffmpeg、ffprobe、sqlite3。耗时命令用 workspace_shell_start 启动后台任务，再用 workspace_shell_status(id, wait_seconds) 查看结果；不要在普通 shell 中用 & 或 nohup 留进程。后台任务默认在结束后以主动事件唤醒主 Agent，无需轮询。文件局部修改使用 workspace_patch（start_line/old/new）或 workspace_edit，按原文唯一匹配检查冲突，允许其他位置变化及行号漂移；整文件覆盖可提供 base_content。移动删除仍携带 version。\n工作约定：\n' + content
 
-    async def publish_file(self, invocation, args):
+    async def publish_file(self, invocation, args) -> R_workspace_publish:
         artifact=self.artifact(self.workspace.path(args['path'],allow_root=False),args.get('name') or None)
         kind=args.get('kind','auto')
         if kind=='auto':
@@ -68,7 +71,7 @@ class Extension(Plugin):
             await self.respond_main([{'type':kind,**artifact}],invocation=invocation)
         return {**artifact,'kind':kind,'sent':sent}
 
-    async def shell(self, invocation, args):
+    async def shell(self, invocation, args) -> R_workspace_shell:
         return await self.workspace.shell(**args)
 
     async def start(self):
@@ -94,19 +97,19 @@ class Extension(Plugin):
                     self.runtime.store.log("error", self.id, "shell.notification.failed", data={"job_id": job["id"], "error": type(exc).__name__})
             await asyncio.sleep(1)
 
-    async def shell_start(self, invocation, args):
+    async def shell_start(self, invocation, args) -> R_workspace_shell_start:
         options = dict(args)
         notify = options.pop("notify", True)
         completion = {"agent_id": invocation.agent_id, "actor": invocation.actor, "run_id": invocation.run_id} if notify else None
         return self.workspace.shell_runner.start(**options, _completion=completion)
 
-    async def shell_status(self, invocation, args):
+    async def shell_status(self, invocation, args) -> R_workspace_shell_status:
         return await self.workspace.shell_runner.job(**args)
 
-    async def shell_list(self, invocation, args):
+    async def shell_list(self, invocation, args) -> R_workspace_shell_list:
         return {'items': self.workspace.shell_runner.list_jobs()}
 
-    async def shell_stop(self, invocation, args):
+    async def shell_stop(self, invocation, args) -> R_workspace_shell_stop:
         return await self.workspace.shell_runner.cancel_job(**args)
 
     async def stop(self):

@@ -192,7 +192,10 @@ class Scripts:
         marker = key + '@' + script['version']
         if marker in chain:
             raise ValueError('已阻止同版本脚本循环触发；请先检查执行记录和程序')
-        payload = {'params':params,'event':event or {'source':'manual','id':uuid.uuid4().hex,'at':time.time(),'data':{}},
+        from .script_contracts import validate_event
+        event = event if event is not None else {'source':'manual','id':uuid.uuid4().hex,'at':time.time(),'data':{}}
+        validate_event(script,event)
+        payload = {'params':params,'event':event,
                    'chain':chain + [marker], 'failure_policy':binding or {'id':'script:'+key,**{field:script.get(field,default) for field,default in [('on_failure','none'),('failure_threshold',1),('cooldown_seconds',3600),('send_result_to_source',True)]}}}
         if len(encode(payload).encode()) > 524288:
             raise ValueError('脚本输入超过 512 KiB')

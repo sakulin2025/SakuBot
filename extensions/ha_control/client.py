@@ -66,6 +66,73 @@ class HomeAssistant:
                 raise
             raise PluginError("Home Assistant 连接失败或响应格式错误") from None
 
+    def request(self, method, path, query=None, body=None):
+        verb = str(method or "GET").strip().upper()
+        if verb not in ("GET", "POST", "PUT", "PATCH", "DELETE"):
+            raise PluginError("method 仅支持 GET、POST、PUT、PATCH、DELETE")
+        target = str(path or "").strip()
+        if (not target.startswith("/api/") or any(mark in target for mark in ("://", "?", "#", ".."))
+                or any(char.isspace() for char in target)):
+            raise PluginError("path 必须是以 /api/ 开头的相对路径，不要包含协议、域名、查询字符串或 ..")
+        if body is not None and verb in ("GET", "DELETE"):
+            raise PluginError("GET 和 DELETE 的请使用 query 传参，不要传 body")
+        if body is not None and not isinstance(body, (dict, list)):
+            raise PluginError("body 必须是 JSON 对象或数组")
+        params = []
+        if query is not None:
+            if not isinstance(query, dict):
+                raise PluginError("query 必须是对象")
+            for key, value in query.items():
+                if not isinstance(key, str) or not key.strip():
+                    raise PluginError("query 的键必须是非空字符串")
+                if value is None:
+                    continue
+                if isinstance(value, (list, tuple)):
+                    value = ",".join(str(item) for item in value)
+                elif isinstance(value, bool):
+                    value = "true" if value else "false"
+                params.append((key, str(value)))
+        token = str(self.config.get("token") or "").strip()
+        if not token:
+            raise PluginError("请先在插件页面填写 Home Assistant token")
+        try:
+            response = requests.request(verb, self.base + target, params=params or None,
+                                        json=body, headers={"Authorization": f"Bearer {token}"},
+                                        timeout=max(1, min(int(self.config.get("timeout", 30)), 300)),
+                                        allow_redirects=False, stream=True)
+            try:
+                chunks, size = [], 0
+                for chunk in response.iter_content(65536):
+                    size += len(chunk)
+                    if size > 2 * 1024 * 1024:
+                        raise PluginError("接口返回超过 2 MiB，请用 query 参数缩小范围")
+                    chunks.append(chunk)
+            finally:
+                response.close()
+        except requests.RequestException:
+            raise PluginError("Home Assistant 连接失败或请求超时；写操作结果可能未知") from None
+        raw = b"".join(chunks)
+        content_type = str(response.headers.get("content-type") or "").split(";")[0].strip().lower()
+        text = raw.decode(response.encoding or "utf-8", "replace")
+        result = {"ok": 200 <= response.status_code < 300, "status": response.status_code,
+                  "content_type": content_type}
+        if not text:
+            result["data"] = None
+        elif "json" in content_type or text.lstrip().startswith(("{", "[")):
+            try:
+                data = json.loads(text)
+            except ValueError:
+                data = text
+            if len(json.dumps(data, ensure_ascii=False)) > 60000:
+                raise PluginError("接口返回的 JSON 超过 60000 字符，请使用 query 参数缩小范围")
+            result["data"] = data
+        else:
+            result["data"] = text[:20000]
+            result["truncated"] = len(text) > 20000
+        if response.status_code == 401:
+            result["error"] = "Home Assistant token 无效或已过期"
+        return result
+
     def draft(self):
         try:
             draft = json.loads((self.data_dir / "draft.json").read_text())
@@ -204,15 +271,15 @@ class HomeAssistant:
     def entity_metadata(self, item, attributes=None):
         attributes = attributes or {}
         eid = item["entity_id"]
-        name = item.get("name") or attributes.get("friendly_name") or eid
+        name = str(item.get("name") or attributes.get("friendly_name") or eid)
         aliases = [value.strip() for value in str(item.get("alias") or "").split("/") if value.strip()]
         return {
             "entity_id": eid, "name": name,
-            "friendly_name": attributes.get("friendly_name") or name,
+            "friendly_name": str(attributes.get("friendly_name") or name),
             "display_name": aliases[0] if aliases else name,
             "domain": eid.split(".")[0],
-            "area": item.get("area", ""), "alias": item.get("alias", ""),
-            "group": item.get("group", ""), "policy": item.get("policy"),
+            "area": str(item.get("area") or ""), "alias": str(item.get("alias") or ""),
+            "group": str(item.get("group") or ""), "policy": item.get("policy"),
         }
 
     def catalog(self):
@@ -249,6 +316,8 @@ class HomeAssistant:
                                                 ("entity_id", "name", "friendly_name", "area", "alias", "group")).casefold():
                 continue
             value = state.get("state")
+            if value is not None and not isinstance(value, str):
+                raise PluginError("Home Assistant 返回了非字符串实体状态")
             item.update(state=value, state_text={
                 "on": "开启", "off": "关闭", "unknown": "未知", "unavailable": "不可用",
             }.get(value, value))

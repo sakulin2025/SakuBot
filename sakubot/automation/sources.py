@@ -20,14 +20,16 @@ class Sources:
         self.retry = {}
         self.lock = asyncio.Lock()
 
-    def declare(self, owner, key, name, parameters, event_schema, *, subscribe=None, options=None, match=None, validate=None, legacy_ids=()):
+    def declare(self, owner, key, name, parameters, event_schema, *, id_description="", subscribe=None, options=None, match=None, validate=None, legacy_ids=()):
         if not isinstance(key,str) or not re.fullmatch(r'[A-Za-z0-9_.*:-]{1,128}',key):
             raise ValueError('触发源名称无效')
         full = owner + '.' + key
         if full in self.sources:
             raise ValueError('触发源 ID 已存在')
+        from sakubot.trigger_schema import documented
+        parameters, event_schema = documented(parameters, event_schema, full, id_description)
         self.sources[full] = {'id':full,'plugin_id':owner,'name':name,'parameters':schema(parameters),
-            'event_schema':schema(event_schema),'subscribe':subscribe,'options':options,'match':match,'validate':validate,'generation':uuid.uuid4().hex}
+            'event_schema':event_schema,'id_description':id_description,'subscribe':subscribe,'options':options,'match':match,'validate':validate,'generation':uuid.uuid4().hex}
         # A declaration upgrade preserves binding IDs, actions and parameter filters.
         for binding in self.scripts.repo.list('bindings'):
             if binding['source'] in {owner + '.' + value for value in legacy_ids}:

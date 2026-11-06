@@ -1,6 +1,6 @@
 # 事件与脚本自动化
 
-入口：系统功能 → 脚本。系统运行器随框架启动，无需插件开关，不依赖主 Agent 是否启用。
+入口：系统功能 → 事件与脚本。系统运行器随框架启动，无需插件开关，不依赖主 Agent 是否启用。
 
 ## 程序、绑定与执行
 
@@ -13,8 +13,10 @@
 ## SDK
 
 ```python
-async def main(ctx):
-    result = await ctx.call("utilities", "calculate", {"expression": "1+1"})
+from script_types import ScriptContext
+
+async def main(ctx: ScriptContext) -> object:
+    result = await ctx.tools.utilities.calculate(expression="1+1")
     ctx.log("完成", result=result)
     old = ctx.state.get("last")
     ctx.state.set("last", result)
@@ -40,18 +42,28 @@ async def main(ctx):
 ## 插件触发源 API
 
 ```python
+from sakubot.trigger_schema import field, event_schema
+
 self.trigger_source(
-    "sample_changed", "样本变化",
+    "sample_changed.*", "样本变化",
     parameters={"type": "object", "properties": {
-        "device_id": {"type": "string", "title": "设备"}
+        "device_id": field("string", "设备 ID；留空匹配全部设备", title="设备")
     }},
-    event_schema={"type": "object", "properties": {
-        "device_id": {"type": "string"}, "value": {"type": "number"}
-    }},
+    event_schema=event_schema(
+        "设备温度样本发生变化后触发，首次观测只建立基线。",
+        {"device_id": field("string", "发生变化的设备唯一 ID"),
+         "value": field("number", "本次温度，单位：摄氏度", **{"x-unit": "celsius"}),
+         "observed_at": field("number", "观测时间，Unix 秒，UTC 基准", **{"x-unit": "seconds"})},
+        {"device_id": "sensor-1", "value": 24.5, "observed_at": 1793926800},
+        required=("device_id", "value", "observed_at"),
+    ),
+    id_description="sample_changed.<device_id>；星号为设备唯一 ID，例如 sample_changed.sensor-1。",
     options=self.device_options,
     match=lambda event, params: not params.get("device_id") or event["device_id"] == params["device_id"],
 )
-await self.emit_trigger("sample_changed", {"device_id": "abc", "value": 42}, uid="sample:123")
+await self.emit_trigger("sample_changed.sensor-1", {
+    "device_id": "sensor-1", "value": 24.5, "observed_at": 1793926800,
+}, uid="sample:123")
 ```
 
 `options()` 返回字段名到 `{value,label}` 数组的映射。`validate(params)` 做本地校验，不执行脚本。对于需要按需连接的来源，提供 `subscribe(params, emit)`，返回可调用的清理函数（可异步）；相同来源与参数共享一份订阅。订阅通过 emit 发布到对应参数组，不必自行再次广播。
@@ -78,7 +90,7 @@ Agent 工具：script_manage、script_run、script_execution、script_binding、
 
 ## 软声明与泛触发
 
-声明用于 Schema、动态选项和按需订阅，不是事件白名单。绑定可保存尚未安装插件、尚未声明或暂时不存在的来源，参数先按 JSON 对象保存；来源出现后自动使用其 Schema 校验与订阅，不匹配时显示待配置。来源名称允许 `*`，例如 `mattermost.slash.*` 接收所有 Slash 指令，`mattermost.slash.weather` 仅接收 /weather。脚本的 ctx.event.source 始终保留实际事件名。
+声明用于 Schema、动态选项和按需订阅，不是事件白名单。绑定可保存尚未安装插件、尚未声明或暂时不存在的来源，参数先按 JSON 对象保存；来源出现后自动使用其 Schema 校验与订阅，不匹配时显示待配置。来源名称允许 `*`，例如 `mattermost.slash.*` 接收所有 Slash 指令，`mattermost.slash.weather` 仅接收 /weather。脚本的 ctx.event["source"] 始终保留实际事件名。
 
 泛触发声明可使用 `trigger_source('slash.*', ...)`，实际发布时使用 `emit_trigger('slash.weather', payload)`。未声明的名称也能发布，框架按软绑定匹配。通配绑定本身不会凭空建立远端订阅；没有插件生产事件时永远不会触发，这是允许的。
 
@@ -137,3 +149,38 @@ Slash 指令登记负责远端资源、令牌和接收状态；事件动作以�
 以上事件族均加 `. *`（去掉中间空格）注册，例如 `ha_control.entity_state_changed.*`；可绑定全体、多组筛选或具体来源 `ha_control.entity_state_changed.switch.lamp`。具名来源仍一个动作，泛来源可以保存多个动作。通配符按大小写匹配；MAC 使用 ScanElf 返回的标准大写格式。HA 仍只观察已配置的房间与实体，实体筛选留空表示全部允许实体。人数阈值事件在参数 threshold 中设置，只有跨过阈值才命中；开关服沿用连续失败确认，首次基线不触发变化提醒。
 
 `Plugin.trigger_source(..., legacy_ids=('old_event',))` 可将该插件旧事件绑定迁至新声明，保留绑定 ID、动作、开关与参数；迁移不执行动作。参数不兼容时原绑定保留并记日志。通用订阅可共享物理连接，按实际对象发布 `emit_trigger('family.' + object_id, data, uid=...)`；不要直接发布带星号的事件名称。
+
+
+## 事件变量文档规范
+
+`trigger_source()` 在注册阶段执行文档校验，声明与运行时业务数据校验分别进行。缺少以下内容会拒绝注册并给出字段路径：
+
+- `parameters.properties` 与 `event_schema.properties` 的每个变量必须包含类型和非空 `description`；递归覆盖嵌套属性、数组元素、动态键 Schema、组合类型的分支。
+- `event_schema.description` 说明何时触发、首次观测、去重和状态判断等业务语义。
+- `id_description` 为必填，说明实际事件 ID；泛事件还必须说明星号对应的动态标识并给例子。
+- `event_schema.examples` 至少有一个完整 payload 对象，涵盖根级全部已声明字段（包括可选字段），且须通过该事件 Schema 校验。示例不是实际事件，也不会触发动作。
+- 枚举以 `x-enum-descriptions` 字典逐项说明取值，键使用对应值的字符串形式；数值须在说明中注明单位，推荐另加 `x-unit`。时间注明 ISO 8601/Unix 秒/毫秒、时区或时钟基准。可空字段解释 null 含义，筛选参数解释留空和默认值。
+- 平台动态对象在说明中注明来源、已知关键字段及未知键的语义，不能靠伪造固定字段列表表达未知协议数据。当前不支持 `$ref`，请内联可读字段定义。
+
+`field(type, description, **constraints)` 与 `event_schema(description, properties, example, required=())` 为公共辅助函数，也可直接填写等价 JSON Schema。框架验证说明存在与结构有效性；说明是否准确仍由插件作者负责。
+
+脚本业务变量位于 `ctx.event["data"]`；`ctx.event["id"]` 是生产者去重标识，`ctx.event["source"]` 是实际完整事件名（无星号），`ctx.event["at"]` 是框架分发时的 Unix 秒（UTC 基准）。页面“事件变量”会同时显示这些封装字段；“事件示例”展示的是 data 的 payload。Agent 通过 `script_binding(action="sources")` 按需获取相同的字段文档，不自动注入所有事件定义。
+
+本规范是已声明事件的开发约束，不改变软声明机制：尚不存在的来源仍允许保存绑定；未声明来源没有可推断的字段文档。旧插件升级时需补齐说明、示例和 id_description，无需重建已有绑定或执行历史。插件可将定义保存在自己的 `event_docs.py`，导出时随程序一起打包。
+
+
+## Python 类型契约与静态保存检查
+
+插件可用 `typing.TypedDict` 声明参数、事件数据与结果结构，用 `Annotated[T, "字段说明"]` 或 `Annotated[T, {"description": "说明", ...JSONSchema约束}]` 提供说明和单位。`NotRequired` 表示键可缺失，`T | None` 表示值可为 null，两者不同。事件封装 `Event[T]` 是泛型 TypedDict，运行时仍是 dict。
+
+`Plugin.trigger_source(..., parameters_type=Params, event_type=Payload, description="何时触发", examples=[完整样本], id_description="泛ID规则")` 从类型生成并校验 Schema。`Plugin.typed_tool(name, description, Arguments, Result, handler)` 同时声明参数与结果，并在调用入口和返回时验证。函数式注册支持 TypedDict/Annotated 注解；原始 `tool()` 也可提供 result_type。旧 Schema 插件保留兼容路径，未声明结果类型不伪造字段。
+
+现有触发源已迁移到各插件的 `event_types.py`，由该 Python 类型生成 `event_docs.py` 中的 Schema，避免维护两份独立定义。
+
+Agent 调用 `script_development` 获得专属 SDK、字典/实例约定和示例。SDK 包含 ScriptContext、EventData、ScriptParams、ctx.tools 的带参数和返回类型方法。tool_plugins 可缩小范围；SDK 按 offset/limit 分页，后续页须携带 sdk_hash。检查器根据同一份注册数据生成类型，不导入或执行脚本。
+
+`script_manage(action="check")` 只返回诊断；`save` 每次检查 Python 语法与 Pyright 类型。错误或警告默认返回 saved=false，不产生新版本。`hard=true` 加非空 hard_reason 仅可绕过类型诊断；语法错误、入口结构错误和检查器故障不可绕过。成功版本保存 validation 诊断与强制原因、sdk_hash 和版本专属 `.types.py`。修改启停等元数据也会进入保存检查。旧版本照常运行，不在升级时批量重写或触发执行。
+
+运行前校验 event 的字典封装，以及保存时的事件来源与数据 Schema。手动执行已声明事件类型的脚本需通过 script_run 的 event 参数提供完整样本；页面提供事件样本输入框。
+
+静态检查无法证明网络请求必然成功、业务计算合理或工具无副作用；动态工具调用、未知来源/返回类型和显式 Any 都不能当作静态安全保证。Pyright 不可用时普通和强制保存均被阻止。

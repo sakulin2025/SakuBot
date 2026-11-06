@@ -1,4 +1,5 @@
 """Persistent balance baselines; automation owns all downstream actions."""
+from .event_docs import PARAMETERS, EVENT, ID_DESCRIPTION
 import asyncio
 import hashlib
 from decimal import Decimal, InvalidOperation
@@ -13,13 +14,7 @@ class BalancePolling:
         self.settings_form(self.fields, validate=self.validate_polling, on_saved=self.settings_saved)
         self.trigger_source(
             'balance_low.*', '余额跌至预警值',
-            object_schema({'provider_id': {'type': 'string', 'title': '供应商 ID'},
-                           'currency': {'type': 'string', 'title': '币种'}}),
-            object_schema({'provider_id': {'type': 'string'}, 'provider_name': {'type': 'string'},
-                           'currency': {'type': 'string'}, 'previous_balance': {'type': 'string'},
-                           'balance': {'type': 'string'}, 'threshold': {'type': 'string'},
-                           'fetched_at': {'type': 'string'}},
-                          ('provider_id', 'currency', 'previous_balance', 'balance', 'threshold', 'fetched_at')), legacy_ids=('balance_low',))
+            PARAMETERS, EVENT, id_description=ID_DESCRIPTION, legacy_ids=('balance_low',))
 
     def validate_polling(self, values):
         try:

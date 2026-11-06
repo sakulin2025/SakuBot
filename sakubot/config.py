@@ -126,6 +126,17 @@ class AgentPreferences(BaseModel):
         return value
 
 
+class ProgressReminderSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool = False
+    tool_threshold: int = Field(5, ge=1, le=1000)
+    seconds_threshold: float = Field(30, ge=1, le=86400)
+    mode: Literal['remind', 'require'] = 'remind'
+    prompt: str = Field(
+        '请使用 message_send 向当前主会话源简短说明刚刚完成了什么，以及接下来准备做什么。无需罗列工具，不要泄露当前会话源不应获知的信息。',
+        min_length=1, max_length=10000)
+
+
 class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid")
     enabled: bool = False
@@ -151,6 +162,7 @@ class Settings(BaseModel):
     def wake_prompt_valid(cls, value):
         return validate_template(value)
 
+    progress_reminder: ProgressReminderSettings = Field(default_factory=ProgressReminderSettings)
     compression_enabled: bool = True
     compression_threshold: float = Field(0.8, ge=0.1, le=0.95)
     conversation: ConversationSettings = Field(default_factory=ConversationSettings)

@@ -1,3 +1,6 @@
+from .tool_arguments import ARGUMENTS
+from .tool_types import R_spreadsheet_create, R_spreadsheet_errors, R_spreadsheet_read, R_spreadsheet_recalculate, R_spreadsheet_render, R_spreadsheet_update
+from .tool_types import RESULTS
 import csv
 import itertools
 import tempfile
@@ -47,13 +50,15 @@ def assign(cell, value):
 
 
 class Extension(Plugin):
+    tool_result_types = RESULTS
+    tool_argument_types = ARGUMENTS
     name = 'spreadsheets'
 
     def setup(self):
         for name in ('read', 'create', 'update', 'recalculate', 'errors', 'render'):
             self.function(getattr(self, name), name='spreadsheet_' + name)
 
-    def read(self, path: str, sheet: str = '', range: str = 'A1:L25'):
+    def read(self, path: str, sheet: str = '', range: str = 'A1:L25') -> R_spreadsheet_read:
         """读取 XLSX/XLSM 的工作表列表、指定区域的值、公式与已有缓存；不触发重算，缓存为空不等于零。支持 UTF-8 CSV/TSV，其他旧格式先 spreadsheet_recalculate 转为 XLSX。range 为单个 A1 范围，每次最多2000格、100行、50列。"""
         from openpyxl import load_workbook
         from openpyxl.utils.cell import range_boundaries
@@ -90,7 +95,7 @@ class Extension(Plugin):
             if cached:
                 cached.close()
 
-    def create(self, output: str, sheets: list[dict]):
+    def create(self, output: str, sheets: list[dict]) -> R_spreadsheet_create:
         """创建 XLSX 新文件。sheets 每项包含 name、rows 二维数组，可选 header=true、freeze='A2'、widths=[列宽]。值可为数字、布尔、null、文本，日期用 {date:ISO无时区时间}，公式用 {formula:'=SUM(B2:B5)'}；普通字符串即便以=开头也保持文本。默认基础排版，复杂图表、格式、验证规则按 Skill 使用 openpyxl。公式需再调用 spreadsheet_recalculate 才有计算缓存。"""
         from openpyxl import Workbook
         from openpyxl.styles import Font, PatternFill, Alignment
@@ -138,7 +143,7 @@ class Extension(Plugin):
         save_new(target, book.save)
         return {**result(self, target), 'recalculated': False}
 
-    def update(self, path: str, output: str, sheet: str, cells: dict, number_formats: dict = None):
+    def update(self, path: str, output: str, sheet: str, cells: dict, number_formats: dict = None) -> R_spreadsheet_update:
         """修改指定工作表的单元格与数字格式，保存新文件。cells 为坐标到值的字典，如 {B2:12,C2:{formula:'=B2*2'}}；number_formats 可指定 {B2:'0.00%'}。支持 XLSX/XLSM，宏文件保留 VBA 但不执行宏。openpyxl 不保证保留所有绘图或不支持的扩展，复杂原件先读 Skill，勿承诺无损。修改后需重算。"""
         from openpyxl import load_workbook
         from openpyxl.utils.cell import coordinate_to_tuple
@@ -168,7 +173,7 @@ class Extension(Plugin):
             book.close()
         return {**result(self, target), 'recalculated': False}
 
-    async def recalculate(self, path: str, output: str):
+    async def recalculate(self, path: str, output: str) -> R_spreadsheet_recalculate:
         """通过 LibreOffice 重新计算并导出 XLSX 新文件，也可将 XLS/ODS 转为 XLSX。原件不变，不运行宏或更新外链，不保证 Excel 专有函数、数据表或插件公式兼容。输出后用 spreadsheet_errors 与 spreadsheet_read 检查实际缓存，不能将缓存缺失视为零。宏工作簿不通过此工具转换，避免丢失 VBA。"""
         file = source(self, path, {'.xlsx', '.xls', '.ods'})
         target = destination(self, output, {'.xlsx'})
@@ -192,7 +197,7 @@ class Extension(Plugin):
                     writer.writestr(entry, data)
             return await convert(self, dirty, target, 'xlsx:Calc MS Excel 2007 XML')
 
-    def errors(self, path: str, max_cells: int = 100000):
+    def errors(self, path: str, max_cells: int = 100000) -> R_spreadsheet_errors:
         """扫描 XLSX/XLSM 已保存缓存中的 Excel 错误和公式缺失缓存，最多1000000格，返回扫描是否完整。只读，不负责计算；先对修改过的文件重算。没有错误并不代表公式业务逻辑正确，缺失缓存也不代表零。"""
         from openpyxl import load_workbook
         file = source(self, path, {'.xlsx', '.xlsm'})
@@ -228,7 +233,7 @@ class Extension(Plugin):
             if cached:
                 cached.close()
 
-    async def render(self, invocation, path: str, pages: list[int] = None):
+    async def render(self, invocation, path: str, pages: list[int] = None) -> R_spreadsheet_render:
         """按工作簿打印设置导出 PDF，再渲染指定页 PNG；原件不变。默认第一页，每次最多4页，有图像能力的模型获得前两页的一次性视觉观察。全表可能跨多页，检查 total_pages 后继续分页。指定区域预览请按 Skill 在临时副本设置 print_area，不能为预览改变交付文件。"""
         file = source(self, path, {'.xlsx', '.xlsm', '.xls', '.ods'})
         folder = self.workspace.path('output/previews/' + uuid.uuid4().hex)

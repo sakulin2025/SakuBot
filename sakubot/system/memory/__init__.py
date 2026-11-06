@@ -1,3 +1,6 @@
+from .tool_arguments import ARGUMENTS
+from .tool_types import R_event_search, R_memory_search, R_memory_write
+from .tool_types import RESULTS
 import asyncio
 import hashlib
 import io
@@ -12,6 +15,8 @@ from sakubot.store import encode
 
 
 class Extension(Plugin):
+    tool_result_types = RESULTS
+    tool_argument_types = ARGUMENTS
     name = 'memory'
 
     def availability(self):
@@ -36,11 +41,11 @@ class Extension(Plugin):
                 ('models', self.embedding_models, ('GET',)), ('search', self.page_search, ('POST',)), ('document', self.upload, ('PUT',))]:
             self.api(name, handler, methods=methods)
         self.tool('memory_search', '按语义检索长期记忆和上传文档。可用自然语言描述需要查找的事实。',
-            object_schema({'query': text('要检索的内容'), 'limit': {'type': 'integer', 'minimum': 1, 'maximum': 20}}, ('query',)), self.search)
+            None, self.search)
         self.tool('memory_write', '主动保存或删除长期记忆。只记录明确事实、稳定偏好和用户要求；key 是可复用的唯一名称，delete=true 删除。',
-            object_schema({'key': text(), 'text': text(), 'source': text(), 'delete': {'type': 'boolean'}}, ('key',)), self.write)
+            None, self.write)
         self.tool('event_search', '检索历史事件，可指定来源会话、关键词和序号。',
-            object_schema({'query': text(), 'target': text(), 'before': {'type': 'integer', 'minimum': 0}, 'limit': {'type': 'integer', 'minimum': 1, 'maximum': 50}}), self.events)
+            None, self.events)
 
     async def start(self):
         self.background(self.worker())
@@ -164,7 +169,7 @@ class Extension(Plugin):
     async def page_search(self, request):
         return await self.call_tool('memory_search', await request.json())
 
-    async def search(self, inv, args):
+    async def search(self, inv, args) -> R_memory_search:
         query = args.get('query', '').strip()
         if not query or len(query) > 20000:
             raise ValueError('请输入检索内容')
@@ -185,7 +190,7 @@ class Extension(Plugin):
         found.sort(key=lambda row: row['score'], reverse=True)
         return found[:args.get('limit', 5)]
 
-    async def write(self, inv, args):
+    async def write(self, inv, args) -> R_memory_write:
         key = args['key'].strip()
         if not key or len(key) > 200:
             raise ValueError('记忆名称需为 1 到 200 字符')
@@ -309,7 +314,7 @@ class Extension(Plugin):
                 self.runtime.store.db.execute('INSERT OR REPLACE INTO memory_vectors VALUES (?,?,?,?)', (key, signature, self.digest(value), encode(vector)))
         return {'name': name, 'chunks': len(entries)}
 
-    async def events(self, inv, args):
+    async def events(self, inv, args) -> R_event_search:
         before = args.get('before') or 9223372036854775807
         query, target = args.get('query', ''), args.get('target', '')
         rows = self.runtime.store.rows("SELECT * FROM events WHERE id<? AND instr(text,?)>0 AND (?='' OR target=?) ORDER BY id DESC LIMIT ?", (before, query, target, target, args.get('limit', 20)))

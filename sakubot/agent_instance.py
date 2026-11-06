@@ -114,15 +114,22 @@ class AgentHandle:
         self.instance.plugin_context_enabled = enabled
         return self
 
-    def tool(self, name, description, parameters, handler):
+    def tool(self, name, description, parameters, handler, *, arguments_type=None, result_type=None):
         instance = self.instance
         if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", name):
             raise ValueError("函数名无效")
         existing = instance.tools.get(name)
         if existing and existing.plugin_id != self.owner:
             raise ValueError("临时函数名称重复")
+        if arguments_type is not None:
+            from .contracts import schema_from_type
+            parameters = schema_from_type(arguments_type)
         jsonschema.Draft202012Validator.check_schema(parameters)
-        instance.tools[name] = Tool(name, description, parameters, handler, plugin_id=self.owner)
+        result_schema = None
+        if result_type is not None:
+            from .contracts import schema_from_type
+            result_schema = schema_from_type(result_type)
+        instance.tools[name] = Tool(name, description, parameters, handler, plugin_id=self.owner, result_schema=result_schema)
         return self
 
     def inject(self, content, role="user", *, temporary=False):

@@ -55,13 +55,19 @@ class PluginConfig(dict):
 
 
 def schema_for(annotation):
+    if typing.is_typeddict(annotation) or typing.get_origin(annotation) is typing.Annotated:
+        from .contracts import schema_from_type
+        return schema_from_type(annotation)
     origin, arguments = typing.get_origin(annotation), typing.get_args(annotation)
+    if origin in (typing.Literal, typing.Required, typing.NotRequired):
+        from .contracts import schema_from_type
+        return schema_from_type(annotation, described=False)
     if origin in (typing.Union, types.UnionType):
         return {'anyOf': [schema_for(item) for item in arguments]}
     if annotation in (str, int, float, bool, type(None)):
         return {'type': {str: 'string', int: 'integer', float: 'number', bool: 'boolean', type(None): 'null'}[annotation]}
     if annotation is dict or origin is dict:
-        return {'type': 'object', 'additionalProperties': True}
+        return {'type': 'object', 'additionalProperties': schema_for(arguments[1]) if len(arguments)==2 else True}
     if annotation is list or origin is list:
         return {'type': 'array', 'items': schema_for(arguments[0]) if arguments else {}}
     return {}
@@ -69,7 +75,7 @@ def schema_for(annotation):
 
 def register_function(plugin, handler, name=None, description=None):
     signature = inspect.signature(handler)
-    hints = typing.get_type_hints(handler)
+    hints = typing.get_type_hints(handler, include_extras=True)
     doc = inspect.getdoc(handler) or ''
     docs = dict(re.findall(r'^\s+(\w+)\([^)]*\):\s*(.+)$', doc, re.MULTILINE))
     properties, required = {}, []
@@ -94,7 +100,8 @@ def register_function(plugin, handler, name=None, description=None):
         # Functions may deliberately return text; no implicit JSON decoding.
         return result
     plugin.tool(name or handler.__name__, description or doc.split('Args:')[0].strip(),
-        {'type': 'object', 'properties': properties, 'required': required, 'additionalProperties': False}, invoke)
+        {'type': 'object', 'properties': properties, 'required': required, 'additionalProperties': False}, invoke,
+        result_schema=schema_for(hints['return']) if 'return' in hints else None)
     return handler
 
 

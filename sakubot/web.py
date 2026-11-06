@@ -163,7 +163,7 @@ async def patch_config(request: Request):
         "model": {"main_model_id", "lightweight_model_id"},
         "runtime": {"enabled"},
         "conversation": {"conversation"},
-        "settings": {"wake_prompt_template", "main_persona_id", "max_steps", "context_chars", "agent_concurrency", "compression_enabled", "compression_threshold", "conversation"},
+        "settings": {"progress_reminder", "wake_prompt_template", "main_persona_id", "max_steps", "context_chars", "agent_concurrency", "compression_enabled", "compression_threshold", "conversation"},
     }
     section = data.get("section")
     values = data.get("values")

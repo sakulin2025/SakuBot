@@ -1,3 +1,6 @@
+from .tool_arguments import ARGUMENTS
+from .tool_types import R_schedule_manage
+from .tool_types import RESULTS
 import asyncio
 import json
 import re
@@ -12,6 +15,8 @@ from sakubot.store import encode
 
 
 class Extension(Plugin):
+    tool_result_types = RESULTS
+    tool_argument_types = ARGUMENTS
     name = "timers"
 
     def setup(self):
@@ -38,15 +43,7 @@ class Extension(Plugin):
         self.api("script-options", self.script_options)
         self.api("schedules", self.page_manage, methods=("POST",))
         self.tool("schedule_manage", "管理主会话定时任务。mode=wake 唤醒主智能体，context 加入上下文，notify 显示固定通知，script 执行脚本而不调用模型。script 模式提供 script_id 和 script_params，无需 content。时间可选带时区的 at、interval_seconds 间隔或 daily_time 每天当地时间，三选一。send_result_to_source 控制唤醒结果或通知是否发送到当前主对话源；网页始终显示。每天任务指定 IANA timezone，默认 Asia/Shanghai；停机期间重复任务只触发一次。",
-            object_schema({"action": {"type": "string", "enum": ["list", "save", "delete"]},
-                           "id": text("更新或删除的任务 ID"), "name": text(), "content": text(),
-                           "script_id": text("script 模式的脚本 ID"), "script_params": {"type":"object"},
-                           "mode": {"type": "string", "enum": ["context", "wake", "notify", "script"]},
-                           "at": text("一次性时间，需带时区，例如 2026-10-26T09:00:00+08:00"),
-                           "interval_seconds": {"type": "integer", "minimum": 0, "maximum": 31536000},
-                           "daily_time": text("每日时间，格式 HH:MM"), "timezone": text("IANA 时区，例如 Asia/Shanghai"),
-                           "send_result_to_source": {"type": "boolean", "description": "是否发送结果或通知到主对话源，默认 true"},
-                           "enabled": {"type": "boolean"}, "include_context": {"type": "boolean"}}, ("action",)), self.manage)
+            None, self.manage)
 
     def script_references(self, identifier):
         return bool(self.runtime.store.one("SELECT id FROM schedules WHERE json_extract(data,'$.mode')='script' AND json_extract(data,'$.script_id')=? LIMIT 1", (identifier,)))
@@ -83,7 +80,7 @@ class Extension(Plugin):
                 return local.timestamp()
         raise ValueError('无法计算下一次每日触发时间')
 
-    async def manage(self, inv, args):
+    async def manage(self, inv, args) -> R_schedule_manage:
         store = self.runtime.store
         if args["action"] == "list":
             return store.list_records("schedules")

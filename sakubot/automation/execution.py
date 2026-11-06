@@ -37,6 +37,8 @@ class Executor:
                 await execute(self.service, row, payload)
                 return
             script = self.repo.read(row['script_id'],row['version'])
+            from .script_contracts import validate_event
+            validate_event(script, payload['event'])
             directory = self.repo.data_root / row['script_id']
             directory.mkdir(parents=True,exist_ok=True)
             boot = {'run_id':row['id'],'script_id':row['script_id'],'params':payload['params'],'event':payload['event'],

@@ -1,3 +1,6 @@
+from .tool_arguments import ARGUMENTS
+from .tool_types import R_minecraft_alerts, R_minecraft_servers, R_minecraft_status
+from .tool_types import RESULTS
 import asyncio
 import json
 from pathlib import Path
@@ -11,6 +14,8 @@ from .polling import Polling, KINDS
 
 
 class Extension(Polling, Plugin):
+    tool_result_types = RESULTS
+    tool_argument_types = ARGUMENTS
     name = 'minecraft_status'
 
     def setup(self):
@@ -149,7 +154,7 @@ class Extension(Polling, Plugin):
             return cached or (observation.get('result') if observation.get('signature') == list(self.client.key(record)) else None)
         return {'items': [{**self.public(r), 'status': status(r)} for r in records.values()], **await self.alert_state(records=records, polls=polls)}
 
-    async def servers_tool(self, action: str='list', server: str='', details: dict=None):
+    async def servers_tool(self, action: str='list', server: str='', details: dict=None) -> R_minecraft_servers:
         """用户管理 Minecraft 服务器的持久条目，与可视化页面共用。保存和编辑不查询服务器。用户提供或确认的信息才记入条目。查询结果始终带名称、别名、描述和地址。
 
                 Args:
@@ -160,9 +165,9 @@ class Extension(Polling, Plugin):
         try:
             return await self.manage_records(action, server, details)
         except PluginError as exc:
-            return str(exc)
+            raise RuntimeError(str(exc)) from None
 
-    async def alerts_tool(self, action: str='list', server: str='', rule_id: str='', details: dict=None):
+    async def alerts_tool(self, action: str='list', server: str='', rule_id: str='', details: dict=None) -> R_minecraft_alerts:
         """用户设置 Minecraft 后台轮询和主动事件。默认每5分钟检查所有已保存条目；首次采样建立基线，规则只在变化时触发，持续满足不会重复触发。命中后唤起主 Agent，在统一主上下文中生成回复。规则与基线持久保存。关服默认连续2轮不可达才提醒，可能是网络异常。新规则不填 target 默认 main，不猜其他群号。保存规则不立即查询或唤起 AI。
 
                 Args:
@@ -175,9 +180,9 @@ class Extension(Polling, Plugin):
             result = await self.manage_alerts(action, server, rule_id, details, default_target='main')
             return result
         except PluginError as exc:
-            return str(exc)
+            raise RuntimeError(str(exc)) from None
 
-    async def status_tool(self, server: str='', servers: list=None, address: str='', edition: str='java', refresh: bool=False):
+    async def status_tool(self, server: str='', servers: list=None, address: str='', edition: str='java', refresh: bool=False) -> R_minecraft_status:
         """用户按需主动查询 Minecraft 服务器基本信息：在线响应、版本、MOTD、在线/最大人数、延迟及服务器自报玩家样本；基岩版还可能返回地图、游戏模式。按目录中的名称和别名识别目标，不猜地址。结果始终带本地名称、别名和描述。只读状态查询，不登录玩家、不执行指令。状态缓存30秒，checked_at 是实际查询时间；不可达不能直接断言已关服，玩家样本可能不完整或为自定义文字。
 
                 Args:
@@ -190,7 +195,7 @@ class Extension(Polling, Plugin):
         try:
             return await self.query_servers(server, servers, address, edition, refresh)
         except PluginError as exc:
-            return str(exc)
+            raise RuntimeError(str(exc)) from None
 
     def settings_saved(self):
         self.poll_wakeup.set()

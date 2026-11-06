@@ -44,7 +44,7 @@ function jsonUpdate(key: string, value: string) {
         ><option value="">—</option>
         <option
           v-for="item in options?.[field.key] ||
-          field.enum.map((v: any) => ({ value: v, label: v }))"
+          field.enum.map((v: any) => ({ value: v, label: field['x-enum-descriptions']?.[String(v)] || v }))"
           :key="String(item.value)"
           :value="item.value"
         >
@@ -80,7 +80,7 @@ function jsonUpdate(key: string, value: string) {
         :min="field.minimum"
         :max="field.maximum"
         :required="schema.required?.includes(field.key)"
-        :placeholder="field.title || field.key"
+        :placeholder="field.description || field.title || field.key"
         @update:model-value="
           update(
             field.key,

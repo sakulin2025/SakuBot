@@ -11,6 +11,7 @@ import {
   formatDate,
 } from "@sakubot/ui";
 import Parameters from "./Parameters.vue";
+import SourceDocumentation from "./SourceDocumentation.vue";
 import EventBindings from "./EventBindings.vue";
 import { matches } from "./event-catalog";
 const host = usePluginHost();
@@ -38,8 +39,10 @@ const script = reactive({
   id: "",
   name: "",
   description: "",
-  code: 'async def main(ctx):\n    ctx.log("执行完成")\n    return {"ok": True}\n',
+  code: 'from script_types import ScriptContext\n\nasync def main(ctx: ScriptContext) -> object:\n    ctx.log("执行完成")\n    return {"ok": True}\n',
   parameters: JSON.stringify(emptySchema, null, 2),
+  event_sources_text: "",
+  tool_plugins_text: "",
   expected_version: "",
   timeout: 120,
   enabled: true,
@@ -65,6 +68,7 @@ const binding = reactive({
   send_result_to_source: true,
 });
 const manual = reactive({ id: "", params: {} as any });
+const manualEvent = ref('');
 const source = computed(
   () =>
     catalog.value.sources.find((s: any) => s.id === binding.source) ||
@@ -124,6 +128,7 @@ function defaults(schema: any) {
 async function edit(row?: any) {
   error.value = "";
   versions.value = [];
+  diagnostics.value = []; canForce.value = false; forceReason.value = "";
   try {
     const value = row
       ? await api("script", { action: "get", id: row.id })
@@ -134,8 +139,10 @@ async function edit(row?: any) {
       description: value?.description || "",
       code:
         value?.code ||
-        'async def main(ctx):\n    ctx.log("执行完成")\n    return {"ok": True}\n',
+        'from script_types import ScriptContext\n\nasync def main(ctx: ScriptContext) -> object:\n    ctx.log("执行完成")\n    return {"ok": True}\n',
       parameters: JSON.stringify(value?.parameters || emptySchema, null, 2),
+      event_sources_text: (value?.event_sources || catalog.value.bindings.filter((b: any) => b.script_id === value?.id).map((b: any) => b.source)).join('\n'),
+      tool_plugins_text: (value?.tool_plugins || []).join('\n'),
       expected_version: value?.version || "",
       timeout: value?.timeout || 120,
       enabled: value?.enabled ?? true,
@@ -168,33 +175,75 @@ async function version(value: string) {
     host.toast(failure(e), true);
   }
 }
-async function saveScript() {
-  busy.value = true;
-  error.value = "";
+const diagnostics = ref<any[]>([])
+const canForce = ref(false)
+const forceOpen = ref(false)
+const forceReason = ref('')
+const sdkOpen = ref(false)
+const sdkText = ref('')
+function scriptPayload() {
+  const { event_sources_text, tool_plugins_text, ...rest } = script
+  const lines = (value: string) => [...new Set(value.split('\n').map(s => s.trim()).filter(Boolean))]
+  return { ...rest, parameters: JSON.parse(script.parameters), event_sources: lines(event_sources_text),
+    tool_plugins: tool_plugins_text.trim() ? lines(tool_plugins_text) : undefined }
+}
+async function getSDK() {
+  busy.value = true
   try {
-    await api("script", {
-      action: "save",
-      ...script,
-      parameters: JSON.parse(script.parameters),
-    });
-    editing.value = false;
-    await load();
-    host.toast("已保存");
-  } catch (e) {
-    error.value = failure(e);
-  } finally {
-    busy.value = false;
-  }
+    const input = scriptPayload()
+    const result = await api('development', { sources: input.event_sources, parameters: input.parameters, tool_plugins: input.tool_plugins })
+    let full = result.sdk
+    let next = result.next_offset
+    while (next !== null && next !== undefined) {
+      const page = await api('development', { sources: input.event_sources, parameters: input.parameters, tool_plugins: input.tool_plugins, offset:next, sdk_hash:result.sdk_hash })
+      full += page.sdk
+      next = page.next_offset
+    }
+    sdkText.value = full
+    sdkOpen.value = true
+  } catch (e) { error.value = failure(e) }
+  finally { busy.value = false }
+}
+async function checkScript() {
+  busy.value = true
+  try {
+    const result = await api('script', { action: 'check', ...scriptPayload() })
+    diagnostics.value = result.diagnostics || []
+    canForce.value = !result.ok && result.syntax_ok && result.checker_available
+    error.value = result.ok ? '' : '检查未通过'
+    if (result.ok) host.toast('检查通过')
+  } catch (e) { error.value = failure(e) }
+  finally { busy.value = false }
+}
+async function saveScript(hard = false) {
+  busy.value = true
+  error.value = ''
+  try {
+    const result = await api('script', { action:'save', ...scriptPayload(), hard, hard_reason:hard ? forceReason.value : '' })
+    diagnostics.value = result.diagnostics || []
+    if (result.saved === false) {
+      canForce.value = result.can_force
+      error.value = result.error
+      forceOpen.value = false
+      return
+    }
+    editing.value = false
+    forceOpen.value = false
+    await load()
+    host.toast('已保存')
+  } catch (e) { error.value = failure(e) }
+  finally { busy.value = false }
 }
 async function toggle(row: any, value: boolean) {
   try {
     const current = await api("script", { action: "get", id: row.id });
-    await api("script", {
+    const saved = await api("script", {
       action: "save",
       ...current,
       enabled: value,
       expected_version: current.version,
     });
+    if (saved.saved === false) { await edit(row); diagnostics.value = saved.diagnostics || []; canForce.value = saved.can_force; error.value = saved.error; return }
     await load();
   } catch (e) {
     host.toast(failure(e), true);
@@ -263,6 +312,7 @@ async function saveBinding() {
 }
 function run(row: any) {
   manual.id = row.id;
+  manualEvent.value = "";
   manual.params = defaults(row.parameters);
   error.value = "";
   runOpen.value = true;
@@ -271,7 +321,7 @@ async function execute() {
   busy.value = true;
   error.value = "";
   try {
-    await api("run", manual);
+    await api("run", { ...manual, ...(manualEvent.value.trim() ? {event:JSON.parse(manualEvent.value)} : {}) });
     runOpen.value = false;
     tab.value = "runs";
     await load();
@@ -470,7 +520,7 @@ onUnmounted(() => clearInterval(timer));
       </div></Teleport
     >
     <UiModal :open="editing" title="脚本" @close="!busy && (editing = false)"
-      ><form id="script-editor" class="form-stack" @submit.prevent="saveScript">
+      ><form id="script-editor" class="form-stack" @submit.prevent="saveScript()">
         <div class="field">
           <label>名称</label
           ><SInput
@@ -487,6 +537,10 @@ onUnmounted(() => clearInterval(timer));
             placeholder="脚本用途"
             maxlength="4000"
           />
+        </div>
+        <div class="form-row">
+          <div class="field"><label>事件来源</label><STextarea v-model="script.event_sources_text" rows="3" placeholder="每行一个事件 ID，例如 ha_control.entity_turned_on.*" /></div>
+          <div class="field"><label>工具插件</label><STextarea v-model="script.tool_plugins_text" rows="3" placeholder="每行一个插件 ID；留空包含全部可用工具" /></div>
         </div>
         <div v-if="versions.length" class="field">
           <label>历史版本</label
@@ -570,9 +624,10 @@ onUnmounted(() => clearInterval(timer));
         ><label class="checkbox-field"
           ><SCheckbox v-model="script.enabled" />启用触发</label
         ><span v-if="error" class="form-error">{{ error }}</span>
+        <div v-if="diagnostics.length" class="table-scroll"><STable><thead><tr><th>级别</th><th>位置</th><th>诊断</th></tr></thead><tbody><tr v-for="(d, index) in diagnostics" :key="index"><td><STag :label="d.severity === 'error' ? '错误' : '警告'" :status="d.severity === 'error' ? 'failed' : 'idle'" /></td><td>{{ d.line }}:{{ d.column }}</td><td>{{ d.message }}</td></tr></tbody></STable></div>
       </form>
       <template #footer
-        ><SButton :disabled="busy" @click="editing = false">取消</SButton
+        ><SButton :disabled="busy" @click="getSDK">SDK</SButton><SButton :disabled="busy" @click="checkScript">检查</SButton><SButton v-if="canForce" variant="danger" :disabled="busy" @click="forceOpen = true">强制保存</SButton><SButton :disabled="busy" @click="editing = false">取消</SButton
         ><SButton
           form="script-editor"
           type="submit"
@@ -582,6 +637,8 @@ onUnmounted(() => clearInterval(timer));
         ></template
       ></UiModal
     >
+    <UiModal :open="sdkOpen" title="脚本 SDK" @close="sdkOpen = false"><STextarea :model-value="sdkText" rows="24" readonly class="code-editor" /></UiModal>
+    <UiModal :open="forceOpen" title="强制保存" @close="!busy && (forceOpen = false)"><form id="script-force" @submit.prevent="saveScript(true)"><div class="field"><label>原因</label><STextarea v-model="forceReason" rows="4" maxlength="2000" required /></div></form><template #footer><SButton :disabled="busy" @click="forceOpen = false">取消</SButton><SButton form="script-force" type="submit" variant="danger" :loading="busy" :disabled="!forceReason.trim()">强制保存</SButton></template></UiModal>
     <UiModal
       :open="bindingOpen"
       title="触发绑定"
@@ -639,6 +696,7 @@ onUnmounted(() => clearInterval(timer));
           <label>来源参数 · JSON</label
           ><STextarea v-model="sourceParamsText" rows="3" />
         </div>
+        <SourceDocumentation v-if="source" :source="source" />
         <Parameters
           :schema="source?.parameters"
           v-model="binding.source_params"
@@ -702,7 +760,7 @@ onUnmounted(() => clearInterval(timer));
         <Parameters
           :schema="manualScript?.parameters"
           v-model="manual.params"
-        /><span v-if="error" class="form-error">{{ error }}</span>
+        /><div class="field"><label>事件样本</label><STextarea v-model="manualEvent" rows="6" placeholder='{"id":"manual-1","source":"插件.事件.对象","at":0,"data":{}}' /></div><span v-if="error" class="form-error">{{ error }}</span>
       </form>
       <template #footer
         ><SButton :disabled="busy" @click="runOpen = false">取消</SButton

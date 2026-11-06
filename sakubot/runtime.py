@@ -521,6 +521,8 @@ class Runtime:
 
     async def agent_loop(self, messages, inv, *, lightweight=False, max_steps=None):
         self.prepare_agent(inv)
+        from .progress_policy import ProgressPolicy
+        progress = ProgressPolicy(inv, self.config.settings.progress_reminder)
         usage = []
         for step in range(max_steps or self.config.settings.max_steps):
             if inv.instance:
@@ -611,17 +613,31 @@ class Runtime:
                 if step + 1 < (max_steps or self.config.settings.max_steps) and self.absorb_wakes(messages, inv):
                     continue
                 return message.get("content") or "", usage
-            for call in calls:
+            rejection = progress.rejection(calls)
+            require_first_send = bool(progress.enabled and progress.settings.mode == "require" and progress.due())
+            for call_index, call in enumerate(calls):
+                tool_started = time.monotonic()
+                result = None
                 inv.call_id = call["id"]
                 try:
                     function = call["function"]
-                    result = await self.registry.call(function["name"], function["arguments"], inv)
+                    result = await self.registry.call(function["name"], function["arguments"], inv, rejection=rejection)
                     content = encode(result)
                 except Exception as exc:
                     # Tool validation and deliberate ValueErrors may be displayed; never leak remote exception headers.
                     content = encode({"error": str(exc)[:500] if isinstance(exc, (ValueError, RuntimeError)) else type(exc).__name__,
                                       "note": "无自动重试；执行结果不明时先检查状态。"})
-                messages.append({"role": "tool", "tool_call_id": call["id"], "content": content[:20000]})
+                if not rejection:
+                    progress.completed(call['function']['name'], time.monotonic() - tool_started, result)
+                if require_first_send and call_index == 0 and not (isinstance(result, dict) and result.get('submitted') is True):
+                    rejection = '本工具未执行：本批首项 message_send 未成功提交进展消息，请先修正发送参数并重试。'
+                content = content[:20000]
+                if call_index == len(calls) - 1:
+                    reminder = progress.reminder()
+                    if reminder:
+                        # Ephemeral suffix: preserve raw tool results and stable history.
+                        inv.temporary_next.append({'role': 'system', 'content': reminder, '_temporary': True})
+                messages.append({"role": "tool", "tool_call_id": call["id"], "content": content})
                 self.save_trace(inv, messages, usage)
             from .wake_routing import flush_source_notices
             flush_source_notices(inv, messages)
@@ -638,6 +654,7 @@ class Runtime:
         self.store.execute("UPDATE runs SET trace=? WHERE id=?", (encode({"messages": messages, "usage": usage,
             "temporary_contexts": inv.metadata.get("temporary_contexts", []),
             "function_snapshots": inv.metadata.get("function_snapshots", []), "compressions": inv.metadata.get("compressions", []),
+            "progress_reporting": inv.metadata.get("progress_reporting", {}),
             "model_errors": inv.metadata.get("model_errors", []), "api_requests": inv.metadata.get("api_requests", []), "wake_goal": inv.metadata.get("wake_goal", ""),
             **({"result": inv.metadata["result"]} if "result" in inv.metadata else {}),
             "persona_id": inv.persona_id, "agent_id": inv.agent_id, "model_id": inv.model_id,
@@ -790,10 +807,11 @@ class Runtime:
                 "tools": [{"name": tool.name, "description": tool.description, "plugin_id": tool.plugin_id} for tool in self.registry.tools.values() if self.registry.availability(tool.plugin_id)["available"]]}
 
     def function_catalog(self, agent_id="main"):
+        from .contracts.schema import contract_kind
         profile = self.agents.profile(agent_id)
         _, model = self.config.settings.selected_model(model_id=profile["effective_model_id"])
         invocation = Invocation("catalog", self.main_target(),
             agent_id=agent_id, persona_id=profile["effective_persona_id"], instance=self.agents.get(agent_id))
         return [{"name": tool.name, "plugin_id": tool.plugin_id, "source_label": "系统" if required(tool.plugin_id) else tool.plugin_id, "description": tool.description,
-            "parameters": tool.parameters, "available": bool(model and model.capabilities.tools)}
+            "parameters": tool.parameters, "result_schema": tool.result_schema, "result_contract_kind": contract_kind(tool.result_schema), "available": bool(model and model.capabilities.tools)}
             for tool in self.registry.available(invocation)]

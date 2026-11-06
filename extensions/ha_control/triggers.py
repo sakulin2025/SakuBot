@@ -1,4 +1,5 @@
 """Generic HA events, sharing one disposable WebSocket across all bindings."""
+from .event_docs import PARAMETERS, EVENT, ID_DESCRIPTION
 import asyncio
 import json
 import time
@@ -35,16 +36,8 @@ def register(plugin):
             not params.get('from_state') or old.get('state') == params['from_state']) and (
             not params.get('to_state') or (new.get('state') == params['to_state'] and old.get('state') != new.get('state')))
 
-    parameters = object_schema({
-        'entity_id': {'type': 'string', 'title': '实体 · 留空全部'},
-        'domain': {'type': 'string', 'title': '实体类型 · 如 switch、light'},
-        'from_state': {'type': 'string', 'title': '变化前状态 · 留空不限'},
-        'to_state': {'type': 'string', 'title': '变化后状态 · 留空不限'},
-    })
-    event_schema = object_schema({'entity_id': {'type': 'string'}, 'old_state': {'type': ['object', 'null']},
-        'new_state': {'type': ['object', 'null']}, 'at': {'type': ['string', 'null']}}, ('entity_id',))
     for family, title in FAMILIES.items():
-        plugin.trigger_source(family + '.*', title, parameters, event_schema,
+        plugin.trigger_source(family + '.*', title, PARAMETERS, EVENT, id_description=ID_DESCRIPTION,
             subscribe=watcher.subscribe, options=options, match=match, validate=validate,
             legacy_ids=(family,) if family == 'entity_state_changed' else ())
 

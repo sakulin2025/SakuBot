@@ -1,8 +1,13 @@
 <script setup lang="ts">
-import { computed, ref, UiIcon } from '@sakubot/ui'
-import { eventCatalog, type EventNode } from './event-catalog'
+import { computed, ref, UiIcon, UiModal } from '@sakubot/ui'
+import SourceDocumentation from './SourceDocumentation.vue'
+import { eventCatalog, matches, type EventNode } from './event-catalog'
 const props = defineProps<{ catalog: any; query: string }>()
 const emit = defineEmits<{ edit: [binding: any]; create: [source: string]; remove: [binding: any] }>()
+const documentation = ref<any>(null)
+function showDocumentation(id: string) {
+  documentation.value = props.catalog.sources.find((s: any) => s.id === id) || props.catalog.sources.filter((s: any) => s.id.includes('*') && matches(s.id, id)).sort((a: any, b: any) => b.id.replaceAll('*', '').length - a.id.replaceAll('*', '').length)[0]
+}
 const expanded = ref(new Set<string>())
 const rows = computed(() => {
   const output: { node: EventNode; depth: number }[] = []
@@ -48,6 +53,7 @@ function target(binding: any) {
             <STag :label="!node.declared ? '未声明' : node.binding ? node.binding.reason || (!node.binding.enabled ? '已停用' : undefined) : node.bound ? '已绑定' : '未绑定'" :status="node.binding ? !node.binding.enabled ? 'disabled' : node.binding.available ? 'enabled' : 'unavailable' : node.bound ? 'enabled' : node.available ? 'idle' : 'unavailable'" />
           </td>
           <td><div class="row-actions">
+            <SButton v-if="node.declared" @click="showDocumentation(node.id)">变量</SButton>
             <template v-if="node.binding"><SButton class="icon-button" aria-label="编辑动作" @click="emit('edit', node.binding)"><UiIcon name="edit" :size="16" /></SButton><SButton class="icon-button" aria-label="删除绑定" @click="emit('remove', node.binding)"><UiIcon name="trash" :size="16" /></SButton></template>
             <SButton v-else-if="node.generic || !node.bound" class="icon-button" aria-label="绑定动作" @click="emit('create', node.id)"><UiIcon name="plus" :size="16" /></SButton>
           </div></td>
@@ -56,6 +62,7 @@ function target(binding: any) {
       </tbody>
     </STable>
   </div>
+  <UiModal :open="!!documentation" title="事件定义" @close="documentation = null"><SourceDocumentation :source="documentation" /></UiModal>
 </template>
 <style scoped>
 .event-table { min-width: 720px; }

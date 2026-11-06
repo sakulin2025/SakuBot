@@ -1,4 +1,5 @@
 """Server-scoped generic observations and state/player transition families."""
+from .event_docs import parameters, EVENT, ID_DESCRIPTION
 from sakubot.plugin import object_schema
 
 FAMILIES = {
@@ -28,16 +29,8 @@ def register(plugin):
             return True
         return match
 
-    schema = object_schema({'server_id': {'type': 'string'}, 'server': {'type': 'object'},
-        'previous': {'type': 'object'}, 'current': {'type': 'object'},
-        'changes': {'type': 'array', 'items': {'type': 'string'}}}, ('server_id', 'previous', 'current', 'changes'))
     for family, title in FAMILIES.items():
-        fields = {'server_id': {'type': 'string', 'title': '服务器 · 留空全部'}}
-        if family == 'observation':
-            fields['change'] = {'type': 'string', 'title': '触发条件', 'enum': ['observation', 'status', 'players'], 'default': 'observation'}
-        if family in ('players_reached', 'players_below'):
-            fields['threshold'] = {'type': 'integer', 'title': '人数阈值', 'minimum': 1, 'default': 1}
-        plugin.trigger_source(family + '.*', title, object_schema(fields), schema, options=options,
+        plugin.trigger_source(family + '.*', title, parameters(family), EVENT, id_description=ID_DESCRIPTION, options=options,
             match=matcher(family), legacy_ids=('observation',) if family == 'observation' else ())
 
 

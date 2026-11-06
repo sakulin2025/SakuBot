@@ -11,6 +11,7 @@ const values = reactive({
   max_steps: 16,
   context_chars: 48000,
   agent_concurrency: 3,
+  progress_reminder: { enabled: false, tool_threshold: 5, seconds_threshold: 30, mode: 'remind', prompt: '请使用 message_send 向当前主会话源简短说明刚刚完成了什么，以及接下来准备做什么。无需罗列工具，不要泄露当前会话源不应获知的信息。' },
   compression_enabled: true,
   threshold: 80,
 })
@@ -124,6 +125,7 @@ watch(
       max_steps: config.max_steps,
       context_chars: config.context_chars,
       agent_concurrency: config.agent_concurrency,
+      progress_reminder: { ...values.progress_reminder, ...config.progress_reminder },
       compression_enabled: config.compression_enabled,
       threshold: config.compression_threshold * 100,
     })
@@ -141,6 +143,7 @@ async function save() {
         max_steps: values.max_steps,
         context_chars: values.context_chars,
         agent_concurrency: values.agent_concurrency,
+        progress_reminder: { ...values.progress_reminder },
         compression_enabled: values.compression_enabled,
         compression_threshold: values.threshold / 100,
         ...(routingDirty.value ? { conversation: { ...routing, targets: [...routing.targets] } } : {}),
@@ -221,6 +224,28 @@ async function changeToken() {
           </div>
         </SCard>
         <WakePromptEditor v-model="values.wake_prompt_template" @update:model-value="dirty = true" />
+        <SCard title="汇报进度提醒" class="settings-section">
+          <div class="form-body">
+            <div class="settings-row">
+              <label id="progress-enabled">汇报进度提醒</label>
+              <SSwitch v-model="values.progress_reminder.enabled" aria-labelledby="progress-enabled" @change="dirty = true" />
+            </div>
+            <template v-if="values.progress_reminder.enabled">
+              <SFormItem label="提醒工具调用量阈值" for="progress-count">
+                <SInput id="progress-count" v-model.number="values.progress_reminder.tool_threshold" type="number" min="1" max="1000" required />
+              </SFormItem>
+              <SFormItem label="累计工具耗时阈值（秒）" for="progress-seconds">
+                <SInput id="progress-seconds" v-model.number="values.progress_reminder.seconds_threshold" type="number" min="1" max="86400" required />
+              </SFormItem>
+              <SFormItem label="要求模式" for="progress-mode">
+                <SSelect id="progress-mode" v-model="values.progress_reminder.mode"><option value="remind">提醒</option><option value="require">强制</option></SSelect>
+              </SFormItem>
+              <SFormItem label="提示词" for="progress-prompt">
+                <STextarea id="progress-prompt" v-model="values.progress_reminder.prompt" :rows="4" maxlength="10000" required />
+              </SFormItem>
+            </template>
+          </div>
+        </SCard>
         <SCard id="compression" title="上下文压缩" class="settings-section">
           <div class="form-body">
             <div class="settings-row">

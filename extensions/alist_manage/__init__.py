@@ -1,3 +1,6 @@
+from .tool_arguments import ARGUMENTS
+from .tool_types import R_alist_browse, R_alist_scan_folders, R_alist_write
+from .tool_types import RESULTS
 import asyncio
 import json
 from pathlib import Path
@@ -8,6 +11,8 @@ from .client import AList, PluginError
 
 
 class Extension(Plugin):
+    tool_result_types = RESULTS
+    tool_argument_types = ARGUMENTS
     name = 'alist_manage'
 
     def setup(self):
@@ -28,7 +33,7 @@ class Extension(Plugin):
             if set(data['value'])-{'ignore','download','add','delete'} or any(type(v) is not bool for v in data['value'].values()):raise ValueError('目录开关无效')
             item.update(data['value']);self.config.save();return {'saved':True}
 
-    async def scan(self):
+    async def scan(self) -> R_alist_scan_folders:
         """用户扫描 AList 第一层文件夹并填入插件配置页，保留已有权限，新目录默认忽略。"""
         try:
             async with self.lock:
@@ -37,9 +42,9 @@ class Extension(Plugin):
                 self.config.save()
             return f'已同步 {len(rules)} 个第一层目录。请到 AList 文件管理插件的配置页面调整忽略、下载、添加、删除开关。'
         except PluginError as exc:
-            return str(exc)
+            raise RuntimeError(str(exc)) from None
 
-    async def browse(self, path: str='/', action: str='list', page: int=1):
+    async def browse(self, path: str='/', action: str='list', page: int=1) -> R_alist_browse:
         """浏览 AList 文件。仅 list/info 返回元数据；download 才返回下载链接，需所在第一层目录开放下载权限。禁止绕过插件调用旧脚本。
 
                 Args:
@@ -56,9 +61,9 @@ class Extension(Plugin):
                 raise PluginError('action 只能是 list/info/download')
             return data
         except PluginError as exc:
-            return str(exc)
+            raise RuntimeError(str(exc)) from None
 
-    async def write(self, invocation, action: str, path: str, target: str='', source_url: str='', confirmed: bool=False):
+    async def write(self, invocation, action: str, path: str, target: str='', source_url: str='', confirmed: bool=False) -> R_alist_write:
         """管理 AList 文件。先 confirmed=false 预览路径和后果，得到用户明确同意后才能 confirmed=true 执行同一操作。添加禁止覆盖；移动/重命名须有删除及添加权限，复制须有来源下载及目标添加权限。
 
                 Args:
@@ -83,7 +88,7 @@ class Extension(Plugin):
                 data = await asyncio.to_thread(self.client.write, action, path, target, source_url)
             return data
         except PluginError as exc:
-            return str(exc)
+            raise RuntimeError(str(exc)) from None
 
     def settings_saved(self):
         self.client.token = ''

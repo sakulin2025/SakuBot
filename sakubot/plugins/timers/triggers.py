@@ -1,4 +1,5 @@
 """Reusable persisted schedules for script bindings, independent of Agent wakes."""
+from .event_docs import PARAMETERS, EVENT, ID_DESCRIPTION
 import asyncio
 import hashlib
 import time
@@ -8,13 +9,6 @@ from sakubot.store import encode
 
 
 def register(plugin):
-    parameters = object_schema({
-        'timing': {'type':'string','title':'触发方式','enum':['interval','daily','once'],'default':'interval'},
-        'interval_seconds': {'type':'integer','title':'间隔 · 秒','minimum':30,'maximum':31536000,'default':300},
-        'daily_time': {'type':'string','title':'每日时间','format':'time','default':'09:00'},
-        'timezone': {'type':'string','title':'时区','default':'Asia/Shanghai'},
-        'at': {'type':'string','title':'一次性时间 · ISO 8601'}}, ('timing',))
-
     def calculate(params, after):
         timing=params['timing']
         if timing=='interval':
@@ -54,6 +48,5 @@ def register(plugin):
             await asyncio.gather(task,return_exceptions=True)
         return close
 
-    plugin.trigger_source('schedule.*','定时触发',parameters,
-        object_schema({'scheduled_at':{'type':'number'},'observed_at':{'type':'number'}},('scheduled_at','observed_at')),
+    plugin.trigger_source('schedule.*','定时触发',PARAMETERS, EVENT, id_description=ID_DESCRIPTION,
         subscribe=subscribe,validate=lambda params:calculate(params,time.time()),legacy_ids=('schedule',))

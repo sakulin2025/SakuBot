@@ -778,3 +778,33 @@ QQ 的 `main_sessions` 为 `{type: "group" | "private", number: "数字号码"}`
 `receive_main` 在接收时快照来源信任，运行时还检查当前信任。升级前无快照的外部消息按不可信处理。每个不可信来源消息在模型请求中附加 `source_risk_warning` 临时系统消息，不进入持久历史；模板是 `conversation.untrusted_source_template`。变量 `source.id/name/trusted` 对应实际输入而非当前响应源；空渲染或错误回退默认风险警告。
 
 信任状态只用于来源风险提示和信任管理工具的执行约束，不是第三方插件进程或任意 Shell 的隔离机制。
+
+
+### 主智能体进度汇报策略
+
+运行设置的 `progress_reminder` 只影响主智能体，每次 wake 固定配置并独立计数，吸收消息不重置。默认关闭，次数阈值 5，累计工具执行时间阈值 30 秒。模型推理耗时不计入工具执行耗时。
+
+批次开始前，只检查已有计数和耗时。未达到阈值时允许完整执行本批，即使本批超过阈值；批次结束后达到任一阈值，向下一次模型请求的工具结果之后加入临时进度提示。提醒模式始终允许执行；强制模式在批次开始时已达阈值且首项不是 `message_send` 时，整批返回未执行错误。首项发送失败时，其余调用也不执行。成功返回 `submitted: true` 的 `message_send` 重置次数和耗时；这表示提交成功，不保证所有远端已收到。失败的实际调用也计数，被策略拦截的调用不计数。沿用最大步骤与单轮超时限制，不无限重试。
+
+策略独立实现在 `progress_policy.py`，仅接入工具批次边界，不影响工具结果配对、安全位置吸收和其他智能体。提醒不永久进入主上下文，累计状态随运行轨迹保存。
+
+
+### 事件声明必须附带变量文档
+
+`trigger_source(..., id_description="...")` 必须给出事件 ID 规则、`event_schema.description`、至少一个有效完整 `event_schema.examples`。绑定参数与事件字段须递归声明类型和 `description`，枚举逐项提供 `x-enum-descriptions`；单位、时间格式与时区、空值和默认筛选语义写清楚。框架在声明阶段拒绝不完整文档，具体 API 和完整示例见 [事件变量文档规范](scripts.md#事件变量文档规范)。定义由插件维护，页面和 Agent 共用，不由核心根据字段名猜测。
+
+
+### 类型化事件和工具
+
+优先使用 typing 的 TypedDict、Annotated、NotRequired、Literal 定义参数、事件数据与返回结构。以 Python 类型为单一来源，通过 `sakubot.contracts.schema_from_type()` 生成 JSON Schema；现有触发源示例见各插件 event_types.py。`trigger_source` 支持 parameters_type/event_type，`typed_tool` 要求明确参数和结果类型并校验两端数据。字段说明、枚举含义和事件示例仍适用事件文档规范。
+
+脚本 SDK 和保存诊断详见 [Python 类型契约与静态保存检查](scripts.md#python-类型契约与静态保存检查)。旧工具未声明的返回结构明确标为 object，不猜测 Schema；新增工具应提供完整结果类型，既方便 Agent 阅读，也方便脚本静态检查。
+
+
+### 工具契约的维护位置
+
+现有插件的参数契约集中在自己的 `tool_arguments.py`（`ARGUMENTS`），返回契约在 `tool_types.py`（`RESULTS`），事件契约在 `event_types.py`。类声明 `tool_argument_types = ARGUMENTS`、`tool_result_types = RESULTS` 后，公共注册 API 从 Python 类型生成 Schema，供运行时校验、函数目录与脚本 SDK 共用；不要再修改已移除的内联参数 Schema。`self.tool(name, description, None, handler)` 中的 None 表示使用该类声明的参数契约，不表示接受任意参数。新插件也可直接用 `typed_tool()`。
+
+通用 REST/OneBot 原样透传、服务相关天气数据、设备固件属性等真实动态字段使用注明语义的 `DynamicObject`/`DynamicJSON`，不能为了通过静态检查编造固定字段。多 action 工具声明真实返回联合类型；旧接口的错误字符串也必须包含在联合中，调用方先区分成功与失败结果。
+
+临时工具可通过 `agent.tool(..., arguments_type=Args, result_type=Result)` 声明输入和返回类型，团队成员的报告、进度、待确认工具均已接入。函数目录及 script_tools 返回 result_schema、result_contract_kind（fixed/mixed/dynamic/missing）；只有读取元数据，不会执行工具。覆盖详情见 [插件契约检查表](plugin-contract-coverage.md)。

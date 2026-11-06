@@ -1,3 +1,6 @@
+from .tool_arguments import ARGUMENTS
+from .tool_types import R_qweather_geo, R_qweather_weather
+from .tool_types import RESULTS
 import asyncio
 import json
 from pathlib import Path
@@ -7,6 +10,8 @@ from .client import QWeather, PluginError
 
 
 class Extension(Plugin):
+    tool_result_types = RESULTS
+    tool_argument_types = ARGUMENTS
     name = 'qweather'
 
     def setup(self):
@@ -33,7 +38,7 @@ class Extension(Plugin):
         self.brief = await self.client.query(refresh=True)
         return self.brief
 
-    async def geo_tool(self, location: str='', adm: str='', country: str='', limit: int=10, refresh: bool=False):
+    async def geo_tool(self, location: str='', adm: str='', country: str='', limit: int=10, refresh: bool=False) -> R_qweather_geo:
         """用户通过和风 GeoAPI 检索城市、行政区、Location ID、经纬度和时区。支持城市名、ID及 经度,纬度 反查，留空使用默认城市。先检索再选准确ID，重名时结合上级行政区，不猜所在地。返回候选原始信息和缓存时间。自然聊天不主动附来源，用户询问时再如实说明。
 
                 Args:
@@ -46,9 +51,9 @@ class Extension(Plugin):
         try:
             return await self.client.geo(location, adm, country, limit, refresh)
         except PluginError as exc:
-            return str(exc)
+            raise RuntimeError(str(exc)) from None
 
-    async def weather_tool(self, service: str='overview', location: str='', adm: str='', days: int=3, hours: int=24, index_types: str='3,5', refresh: bool=False):
+    async def weather_tool(self, service: str='overview', location: str='', adm: str='', days: int=3, hours: int=24, index_types: str='3,5', refresh: bool=False) -> R_qweather_weather:
         """用户查询和风天气原生服务，自动经GeoAPI定位。默认城市可留空。overview=实时+3天预报；now=实时；daily=每日；hourly=逐小时；minutely=未来2小时分钟降水（中国）；warning=官方天气预警；air=空气质量；indices=今日生活指数。普通天气优先短期预报和缓存节省额度。返回实际地点、获取时间、原生单位、缓存标记及来源信息。v1湿度/云量/降水概率为0到1的小数；不要混淆实时与预报。重名返回needs_selection和候选，选准ID再查。无预警仅在接口成功且为空时成立。来源元数据用于追溯，不需要在自然聊天中主动复述供应商、链接或归因声明；用户询问来源时依据source如实回答。
 
                 Args:
@@ -63,7 +68,7 @@ class Extension(Plugin):
         try:
             return await self.client.query(service, location, adm, days, hours, index_types, refresh)
         except PluginError as exc:
-            return str(exc)
+            raise RuntimeError(str(exc)) from None
 
     def settings_saved(self):
         self.client.cache.clear()

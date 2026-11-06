@@ -75,9 +75,9 @@ class Projects:
         setup = "        self.function(self.read, name='" + name + "_read')\n"
         if with_page:
             setup += "        self.management(" + repr(label) + ", [settings_section([field('value', '内容')], id='entry', label='内容')], self.view, self.manage)\n"
-        code = ("from sakubot.plugin import Plugin\nfrom sakubot.plugin_support import field, settings_section\n\n\n"
+        code = ("from typing import Annotated, TypedDict\nfrom sakubot.plugin import Plugin\nfrom sakubot.plugin_support import field, settings_section\n\nclass EntryResult(TypedDict):\n    value: Annotated[str, '已保存的插件内容']\n\n\n"
                 "class Extension(Plugin):\n    name = " + repr(name) + "\n\n    def setup(self):\n" + setup +
-                "\n    async def read(self):\n        \"\"\"读取插件内容。\"\"\"\n        return self.state.get('entry', {'value': ''})\n"
+                "\n    async def read(self) -> EntryResult:\n        \"\"\"读取插件内容。\"\"\"\n        return self.state.get('entry', {'value': ''})\n"
                 "\n    def view(self):\n        return {'data': {'entry': self.state.get('entry', {'value': ''})}}\n"
                 "\n    async def manage(self, data):\n        value = data['value']['value']\n        if not isinstance(value, str) or len(value) > 10000:\n            raise ValueError('内容须为不超过 10000 字的文本')\n        self.state.set('entry', {'value': value})\n        return {'saved': True}\n")
         atomic(root/'__init__.py', code)

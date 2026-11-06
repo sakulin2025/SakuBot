@@ -1,4 +1,5 @@
 """Mattermost Slash command ingress with service token verification."""
+from .event_docs import PARAMETERS, EVENT, ID_DESCRIPTION
 import json
 import re
 import uuid
@@ -23,11 +24,7 @@ def register(plugin):
         rejection_times[key] = now
         plugin.runtime.store.log('warning', plugin.id, 'mattermost.slash.rejected',
             data={'reason': reason, 'command': key[1]})
-    plugin.trigger_source('slash.*','Slash 指令',object_schema({
-        'team_id':{'type':'string','title':'团队 ID · 留空不限'},
-        'user_id':{'type':'string','title':'发送者 ID · 留空不限'},
-        'channel_id':{'type':'string','title':'频道 ID · 留空不限'}}),
-        {'type':'object','properties':{'command':{'type':'string'},'text':{'type':'string'},'user_id':{'type':'string'},'channel_id':{'type':'string'}},'required':['command']},
+    plugin.trigger_source('slash.*','Slash 指令',PARAMETERS, EVENT, id_description=ID_DESCRIPTION,
         match=lambda event,params:all(not params.get(key) or params[key]==event.get(key) for key in ('team_id','user_id','channel_id')))
 
     async def slash(request):

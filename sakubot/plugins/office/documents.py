@@ -1,3 +1,6 @@
+from .tool_arguments import ARGUMENTS
+from .tool_types import R_document_convert, R_document_create, R_document_read, R_document_render, R_document_replace
+from .tool_types import RESULTS
 import uuid
 
 from sakubot.plugin import Plugin
@@ -16,13 +19,15 @@ def body_paragraphs(parent):
 
 
 class Extension(Plugin):
+    tool_result_types = RESULTS
+    tool_argument_types = ARGUMENTS
     name = 'documents'
 
     def setup(self):
         for name in ('read', 'create', 'replace', 'convert', 'render'):
             self.function(getattr(self, name), name='document_' + name)
 
-    def read(self, path: str, offset: int = 0, limit: int = 30):
+    def read(self, path: str, offset: int = 0, limit: int = 30) -> R_document_read:
         """按正文顺序读取 DOCX 段落和表格，分页返回样式与表格行列信息。offset 从0开始；不把文字提取当作版式检查。旧 .doc 或 .odt 先 document_convert 为 DOCX。批注、修订和页眉页脚需按 Skill 使用 OOXML 读取，不保证出现在正文提取里。"""
         from docx import Document
         from docx.text.paragraph import Paragraph
@@ -44,7 +49,7 @@ class Extension(Plugin):
                     'truncated': len(block.rows) > 30 or len(block.columns) > 12 or any(len(cell.text) > 1000 for row in block.rows[:30] for cell in row.cells[:12])})
         return bounded({'path': path, 'blocks': rows, 'total_blocks': total, 'next_offset': offset + len(rows) if offset + len(rows) < total else None})
 
-    def create(self, output: str, title: str, blocks: list[dict]):
+    def create(self, output: str, title: str, blocks: list[dict]) -> R_document_create:
         """创建带中文字体、语义标题、正文和表格的 DOCX 新文件。blocks 的 type 为 paragraph/heading/bullet/table/page_break；text 是文字，heading 可带 level=1到3，table 用 rows 二维数组。不会覆盖原件；完成后 document_render 预览，不要声称仅保存就验证排版。复杂样式、图片、页眉等按 Skill 用 python-docx 脚本。"""
         from docx import Document
         from docx.shared import Cm, Pt, RGBColor
@@ -100,7 +105,7 @@ class Extension(Plugin):
         save_new(target, doc.save)
         return result(self, target)
 
-    def replace(self, path: str, output: str, changes: list[dict]):
+    def replace(self, path: str, output: str, changes: list[dict]) -> R_document_replace:
         """按原文唯一匹配修改 DOCX 正文及表格段落，保存新文件，保留原件。changes 每项为 old/new；每个 old 必须在该步恰好出现一次，允许跨普通文字 run，替换文字继承起始 run 格式。不跨段落，不处理超链接、批注或修订；复杂编辑先读 Skill，用 OOXML，不要整体覆盖 paragraph.text 破坏格式。"""
         from docx import Document
         doc = Document(source(self, path, {'.docx'}))
@@ -133,14 +138,14 @@ class Extension(Plugin):
         save_new(target, doc.save)
         return result(self, target)
 
-    async def convert(self, path: str, output: str):
+    async def convert(self, path: str, output: str) -> R_document_convert:
         """用独立 LibreOffice 实例转换 DOC/DOCX/ODT/RTF，输出 PDF、DOCX 或 UTF-8 TXT 新文件。保留原件，不运行宏、不更新外链，不连接 Google Docs。转换可能改变复杂排版，最终用预览检查。"""
         file = source(self, path, {'.doc', '.docx', '.odt', '.rtf'})
         target = destination(self, output, {'.pdf', '.docx', '.txt'})
         format = {'.pdf': 'pdf:writer_pdf_Export', '.docx': 'docx:Office Open XML Text', '.txt': 'txt:Text (encoded):UTF8'}[target.suffix.lower()]
         return await convert(self, file, target, format)
 
-    async def render(self, invocation, path: str, pages: list[int] = None):
+    async def render(self, invocation, path: str, pages: list[int] = None) -> R_document_render:
         """先把 Word 文档转换成临时 PDF，再生成指定页 PNG 预览。默认第1页，每次最多4页；有图像能力的当前模型会收到前两页的临时视觉观察；没有图像能力则只返回路径与附件，不声称已目视检查。"""
         file = source(self, path, {'.doc', '.docx', '.odt', '.rtf'})
         folder = self.workspace.path('output/previews/' + uuid.uuid4().hex)
