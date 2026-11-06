@@ -1,0 +1,44 @@
+{
+  "workspace_list": {
+    "returns": "返回值: object\n返回值.path: string；所列目录相对路径\n返回值.version: string；当前目录自身的版本\n返回值.items: array；本页子条目\n返回值.items[]: object\n返回值.items[].name: string；文件或目录名\n返回值.items[].path: string；工作空间相对路径\n返回值.items[].type: string；条目类型 file 或 directory 等实际分类\n返回值.items[].size: integer；文件或目录的文件系统大小，字节；目录值由文件系统决定\n返回值.items[].version: string；条目版本，修改/移动/删除时使用\n返回值.items[].modified: number（可省略）；修改时间，Unix 秒\n返回值.items[].mtime: number（可省略）；修改时间，Unix 秒\n返回值.total: integer；匹配条目总数\n返回值.offset: integer（可省略）；从0开始的偏移\n返回值.has_more: boolean；是否还有条目"
+  },
+  "workspace_read": {
+    "returns": "返回值: object\n返回值.path: string（可省略）；工作空间相对路径\n返回值.version: string；读取时文件版本\n返回值.size: integer；原文件字节数\n返回值.binary: boolean；是否为二进制文件\n返回值.content: string；该页原始正文；二进制时为空\n返回值.numbered_content: string（可省略）；带1起始行号的正文\n返回值.offset: integer（可省略）；0起始行偏移\n返回值.next_offset: integer（可省略）；下一页偏移\n返回值.total_lines: integer（可省略）；总行数\n返回值.has_more: boolean；是否还有正文"
+  },
+  "workspace_write": {
+    "returns": "返回值: object\n返回值.name: string；文件或目录名\n返回值.path: string；工作空间相对路径\n返回值.type: string；条目类型 file 或 directory 等实际分类\n返回值.size: integer；文件或目录的文件系统大小，字节；目录值由文件系统决定\n返回值.version: string；条目版本，修改/移动/删除时使用\n返回值.modified: number（可省略）；修改时间，Unix 秒\n返回值.mtime: number（可省略）；修改时间，Unix 秒"
+  },
+  "workspace_edit": {
+    "returns": "返回值: object\n返回值.name: string（可省略）；文件名\n返回值.path: string；修改后的相对路径\n返回值.type: string（可省略）；条目类型\n返回值.size: integer（可省略）；字节数\n返回值.version: string；新版本\n返回值.modified: number（可省略）；修改时间，Unix 秒\n返回值.rebased: boolean（可省略）；是否在版本漂移后成功重新定位\n返回值.hunks: integer（可省略）；应用的修改块数"
+  },
+  "workspace_patch": {
+    "returns": "返回值: object\n返回值.name: string（可省略）；文件名\n返回值.path: string；修改后的相对路径\n返回值.type: string（可省略）；条目类型\n返回值.size: integer（可省略）；字节数\n返回值.version: string；新版本\n返回值.modified: number（可省略）；修改时间，Unix 秒\n返回值.rebased: boolean（可省略）；是否在版本漂移后成功重新定位\n返回值.hunks: integer（可省略）；应用的修改块数"
+  },
+  "workspace_mkdir": {
+    "returns": "返回值: object\n返回值.name: string；文件或目录名\n返回值.path: string；工作空间相对路径\n返回值.type: string；条目类型 file 或 directory 等实际分类\n返回值.size: integer；文件或目录的文件系统大小，字节；目录值由文件系统决定\n返回值.version: string；条目版本，修改/移动/删除时使用\n返回值.modified: number（可省略）；修改时间，Unix 秒\n返回值.mtime: number（可省略）；修改时间，Unix 秒"
+  },
+  "workspace_move": {
+    "returns": "返回值: object\n返回值.name: string；文件或目录名\n返回值.path: string；工作空间相对路径\n返回值.type: string；条目类型 file 或 directory 等实际分类\n返回值.size: integer；文件或目录的文件系统大小，字节；目录值由文件系统决定\n返回值.version: string；条目版本，修改/移动/删除时使用\n返回值.modified: number（可省略）；修改时间，Unix 秒\n返回值.mtime: number（可省略）；修改时间，Unix 秒"
+  },
+  "workspace_remove": {
+    "returns": "返回值: object\n返回值.removed: string；已删除的相对路径"
+  },
+  "workspace_shell": {
+    "returns": "返回值: object\n返回值.exit_code（分支1）: integer\n返回值.exit_code（分支2）: null\n返回值.timed_out: boolean；是否超时\n返回值.output: string；合并标准输出和错误输出\n返回值.output_bytes: integer；实际读取的输出字节数\n返回值.truncated: boolean；输出是否截断\n返回值.duration_ms: integer；执行耗时，毫秒\n返回值.cwd: string（可省略）；命令执行目录"
+  },
+  "workspace_shell_start": {
+    "returns": "返回值: object\n返回值.id: string；后台任务 ID\n返回值.command: string；实际命令\n返回值.cwd: string；执行目录\n返回值.description: string；任务用途\n返回值.timeout: integer；超时秒数\n返回值.status: string；running/completed/failed/timed_out/cancelled/interrupted\n返回值.started_at: number；启动时间，Unix 秒\n返回值.finished_at（分支1）: number\n返回值.finished_at（分支2）: null\n返回值.output: string（可省略）；已保留的输出；列表中可省略\n返回值.output_bytes: integer；已读取字节数\n返回值.truncated: boolean；输出是否截断\n返回值.exit_code（分支1）: integer\n返回值.exit_code（分支2）: null\n返回值.timed_out: boolean；是否超时\n返回值.completion（分支1）: object（可省略）；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值.completion（分支1） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值.completion（分支2）: null（可省略）\n返回值.notified: boolean（可省略）；是否已提交完成通知"
+  },
+  "workspace_shell_status": {
+    "returns": "返回值: object\n返回值.id: string；后台任务 ID\n返回值.command: string；实际命令\n返回值.cwd: string；执行目录\n返回值.description: string；任务用途\n返回值.timeout: integer；超时秒数\n返回值.status: string；running/completed/failed/timed_out/cancelled/interrupted\n返回值.started_at: number；启动时间，Unix 秒\n返回值.finished_at（分支1）: number\n返回值.finished_at（分支2）: null\n返回值.output: string（可省略）；已保留的输出；列表中可省略\n返回值.output_bytes: integer；已读取字节数\n返回值.truncated: boolean；输出是否截断\n返回值.exit_code（分支1）: integer\n返回值.exit_code（分支2）: null\n返回值.timed_out: boolean；是否超时\n返回值.completion（分支1）: object（可省略）；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值.completion（分支1） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值.completion（分支2）: null（可省略）\n返回值.notified: boolean（可省略）；是否已提交完成通知"
+  },
+  "workspace_shell_stop": {
+    "returns": "返回值: object\n返回值.id: string；后台任务 ID\n返回值.command: string；实际命令\n返回值.cwd: string；执行目录\n返回值.description: string；任务用途\n返回值.timeout: integer；超时秒数\n返回值.status: string；running/completed/failed/timed_out/cancelled/interrupted\n返回值.started_at: number；启动时间，Unix 秒\n返回值.finished_at（分支1）: number\n返回值.finished_at（分支2）: null\n返回值.output: string（可省略）；已保留的输出；列表中可省略\n返回值.output_bytes: integer；已读取字节数\n返回值.truncated: boolean；输出是否截断\n返回值.exit_code（分支1）: integer\n返回值.exit_code（分支2）: null\n返回值.timed_out: boolean；是否超时\n返回值.completion（分支1）: object（可省略）；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值.completion（分支1） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值.completion（分支2）: null（可省略）\n返回值.notified: boolean（可省略）；是否已提交完成通知"
+  },
+  "workspace_shell_list": {
+    "returns": "返回值: object\n返回值.items: array；后台任务列表，最新在前\n返回值.items[]: object\n返回值.items[].id: string；后台任务 ID\n返回值.items[].command: string；实际命令\n返回值.items[].cwd: string；执行目录\n返回值.items[].description: string；任务用途\n返回值.items[].timeout: integer；超时秒数\n返回值.items[].status: string；running/completed/failed/timed_out/cancelled/interrupted\n返回值.items[].started_at: number；启动时间，Unix 秒\n返回值.items[].finished_at（分支1）: number\n返回值.items[].finished_at（分支2）: null\n返回值.items[].output: string（可省略）；已保留的输出；列表中可省略\n返回值.items[].output_bytes: integer；已读取字节数\n返回值.items[].truncated: boolean；输出是否截断\n返回值.items[].exit_code（分支1）: integer\n返回值.items[].exit_code（分支2）: null\n返回值.items[].timed_out: boolean；是否超时\n返回值.items[].completion（分支1）: object（可省略）；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值.items[].completion（分支1） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值.items[].completion（分支2）: null（可省略）\n返回值.items[].notified: boolean（可省略）；是否已提交完成通知"
+  },
+  "workspace_publish": {
+    "returns": "返回值: object\n返回值.url: string；附件地址\n返回值.name: string；显示文件名\n返回值.mime: string；MIME 类型\n返回值.expires: number；附件过期 Unix 秒\n返回值.kind: string；发送内容类型\n返回值.sent: boolean；是否提交发送"
+  }
+}

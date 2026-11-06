@@ -9,8 +9,6 @@ def rename_delivery_tools(value):
 
 def install(runtime, invocation):
     from .plugin import Tool, object_schema
-    from .contracts import schema_from_type
-    from .contracts.common import DeliveryStatus
 
     async def set_delivery(inv, enabled):
         inv.send_result_to_source = enabled
@@ -29,4 +27,4 @@ def install(runtime, invocation):
         ('message_enable_delivery', '开启本轮向当前主会话源自动投递最终回复及支持的过程事件。目的地不一定是主人私聊；先核对当前源和内容的保密边界。只影响当前轮，网页始终可见。原工具名 report_to_owner 已更名，请使用本函数。', enable),
         ('message_disable_delivery', '关闭本轮向主会话源自动投递最终回复及过程事件；网页始终可见，不撤回已发送内容，也不阻止显式消息发送。原工具名 cancel_report 已更名，请使用本函数。', disable),
     ):
-        invocation.temporary_tools[name] = Tool(name, description, object_schema(), handler, plugin_id='messaging', result_schema=schema_from_type(DeliveryStatus))
+        invocation.temporary_tools[name] = Tool(name, description, object_schema(), handler, plugin_id='messaging')

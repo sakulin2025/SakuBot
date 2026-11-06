@@ -1,0 +1,23 @@
+{
+  "freereps_workouts": {
+    "returns": "返回值: object\n返回值.items: array；本页训练\n返回值.items[]: object\n返回值.items[].id: string（可省略）；训练 UUID\n返回值.items[].name（分支1）: string（可省略）\n返回值.items[].name（分支2）: null（可省略）\n返回值.items[].source（分支1）: string（可省略）\n返回值.items[].source（分支2）: null（可省略）\n返回值.items[].sources（分支1）: array（可省略）\n返回值.items[].sources（分支1）[]: 任意JSON\n返回值.items[].sources（分支2）: null（可省略）\n返回值.items[].start_time（分支1）: string（可省略）\n返回值.items[].start_time（分支2）: null（可省略）\n返回值.items[].end_time（分支1）: string（可省略）\n返回值.items[].end_time（分支2）: null（可省略）\n返回值.items[].duration_sec（分支1）: number（可省略）\n返回值.items[].duration_sec（分支2）: null（可省略）\n返回值.items[].distance（分支1）: number（可省略）\n返回值.items[].distance（分支2）: null（可省略）\n返回值.items[].distance_units（分支1）: string（可省略）\n返回值.items[].distance_units（分支2）: null（可省略）\n返回值.total: integer；匹配总数\n返回值.offset: integer；0起始偏移\n返回值.has_more: boolean；是否有更多"
+  },
+  "freereps_workout_detail": {
+    "returns": "返回值: object\n返回值.id: string（可省略）；训练 UUID\n返回值.name: string（可省略）；训练名\n返回值.workout: object（可省略）；训练记录\n返回值.workout.id: string（可省略）；训练 UUID\n返回值.workout.name（分支1）: string（可省略）\n返回值.workout.name（分支2）: null（可省略）\n返回值.workout.source（分支1）: string（可省略）\n返回值.workout.source（分支2）: null（可省略）\n返回值.workout.sources（分支1）: array（可省略）\n返回值.workout.sources（分支1）[]: 任意JSON\n返回值.workout.sources（分支2）: null（可省略）\n返回值.workout.start_time（分支1）: string（可省略）\n返回值.workout.start_time（分支2）: null（可省略）\n返回值.workout.end_time（分支1）: string（可省略）\n返回值.workout.end_time（分支2）: null（可省略）\n返回值.workout.duration_sec（分支1）: number（可省略）\n返回值.workout.duration_sec（分支2）: null（可省略）\n返回值.workout.distance（分支1）: number（可省略）\n返回值.workout.distance（分支2）: null（可省略）\n返回值.workout.distance_units（分支1）: string（可省略）\n返回值.workout.distance_units（分支2）: null（可省略）\n返回值.detail（分支1）: object（可省略）；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值.detail（分支1） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值.detail（分支2）: null（可省略）\n返回值.detail_unavailable: boolean（可省略）；上游详情是否不存在\n返回值.sets（分支1）: array（可省略）\n返回值.sets（分支1）[]: object；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值.sets（分支1）[] 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值.sets（分支2）: object（可省略）；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值.sets（分支2） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值.sets（分支3）: null（可省略）\n返回值.sets_unavailable: boolean（可省略）；组明细是否不存在\n返回值.records: array（可省略）；平台记录明细\n返回值.records[]: object；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值.records[] 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。"
+  },
+  "freereps_activity": {
+    "returns": "返回值（分支1）: object\n返回值（分支1） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支2）: array\n返回值（分支2）[]: 任意JSON\n返回值（分支3）: string\n返回值（分支4）: integer\n返回值（分支5）: number\n返回值（分支6）: boolean\n返回值（分支7）: null"
+  },
+  "freereps_metrics": {
+    "returns": "返回值（分支1）: object\n返回值（分支1） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支2）: array\n返回值（分支2）[]: 任意JSON\n返回值（分支3）: string\n返回值（分支4）: integer\n返回值（分支5）: number\n返回值（分支6）: boolean\n返回值（分支7）: null"
+  },
+  "freereps_sleep": {
+    "returns": "返回值（分支1）: object\n返回值（分支1） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支2）: array\n返回值（分支2）[]: 任意JSON\n返回值（分支3）: string\n返回值（分支4）: integer\n返回值（分支5）: number\n返回值（分支6）: boolean\n返回值（分支7）: null"
+  },
+  "freereps_status": {
+    "returns": "返回值: object；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。"
+  },
+  "freereps_workout_report": {
+    "returns": "返回值: object\n返回值.path: string；工作空间报告 PNG 路径\n返回值.format: string；png\n返回值.timezone: string；图表时间的 IANA 时区\n返回值.delivery: string；发布方式说明"
+  }
+}

@@ -26,9 +26,8 @@ class Sources:
         full = owner + '.' + key
         if full in self.sources:
             raise ValueError('触发源 ID 已存在')
-        from sakubot.trigger_schema import documented
-        parameters, event_schema = documented(parameters, event_schema, full, id_description)
-        self.sources[full] = {'id':full,'plugin_id':owner,'name':name,'parameters':schema(parameters),
+        parameters, event_schema = parameters or {}, event_schema or {}
+        self.sources[full] = {'id':full,'plugin_id':owner,'name':name,'parameters':parameters,
             'event_schema':event_schema,'id_description':id_description,'subscribe':subscribe,'options':options,'match':match,'validate':validate,'generation':uuid.uuid4().hex}
         # A declaration upgrade preserves binding IDs, actions and parameter filters.
         for binding in self.scripts.repo.list('bindings'):
@@ -122,7 +121,6 @@ class Sources:
                         return []
                     return await self.emit(source['plugin_id'], topic or source['id'].split('.',1)[1], payload, uid=uid, subscription=params)
                 try:
-                    jsonschema.validate(params, source['parameters'])
                     result = source['subscribe'](params, emit)
                     cleanup = await result if inspect.isawaitable(result) else result
                     item['cleanup'] = cleanup
@@ -144,8 +142,6 @@ class Sources:
         source = self.resolve(full)
         if self.scripts.stopping or not self.scripts.runtime.registry.loaded(owner):
             return []
-        if source:
-            jsonschema.validate(payload, source['event_schema'])
         if not isinstance(payload,dict) or len(encode(payload).encode()) > 262144:
             raise ValueError('触发数据须为不超过 256 KiB 的对象')
         uid = uid or uuid.uuid4().hex

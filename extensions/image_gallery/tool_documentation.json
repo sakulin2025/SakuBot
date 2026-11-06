@@ -1,0 +1,11 @@
+{
+  "count_pending_images": {
+    "returns": "返回值: object\n返回值.pending: integer；待审核图片数"
+  },
+  "fetch_anime_image": {
+    "returns": "返回值: object\n返回值.id: string；图库图片 ID\n返回值.url: string；发布的框架附件地址\n返回值.name: string；附件文件名\n返回值.mime: string；图片 MIME\n返回值.expires: number；附件过期 Unix 秒\n返回值.path: string；工作空间图片相对路径\n返回值.at: number；取图 Unix 秒"
+  },
+  "gallery_send": {
+    "returns": "返回值: object\n返回值.sent: boolean；是否已提交发送\n返回值.url: string；框架附件 URL\n返回值.name: string；文件名\n返回值.mime: string；MIME\n返回值.expires: number；过期 Unix 秒"
+  }
+}

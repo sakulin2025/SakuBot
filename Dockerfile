@@ -36,7 +36,6 @@ RUN --mount=type=bind,from=frontend,source=/root/.npm,target=/tmp/npm-source,ro 
     cp -a /tmp/npm-source /tmp/sakubot-npm && cd /app/plugin-sdk && \
     npm ci --cache /tmp/sakubot-npm --prefer-offline --fetch-retries=3 --fetch-timeout=120000 --no-audit --no-fund && \
     rm -rf /tmp/sakubot-npm
-COPY --from=frontend /frontend/node_modules/pyright/ /app/script-checker/node_modules/pyright/
 COPY frontend/build-page.mjs /app/plugin-sdk/
 COPY frontend/src/ /app/plugin-sdk/src/
 COPY docs/ /app/plugin-sdk/docs/

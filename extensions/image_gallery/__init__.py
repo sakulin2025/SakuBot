@@ -1,6 +1,3 @@
-from .tool_arguments import ARGUMENTS
-from .tool_types import R_count_pending_images, R_fetch_anime_image, R_gallery_send
-from .tool_types import RESULTS
 import asyncio
 import time
 import uuid
@@ -11,8 +8,8 @@ from sakubot.plugin_support import field, collection, settings_section, fields_s
 
 
 class Extension(Plugin):
-    tool_result_types = RESULTS
-    tool_argument_types = ARGUMENTS
+    
+    
     name='image_gallery'
 
     def setup(self):
@@ -46,7 +43,7 @@ class Extension(Plugin):
                     return dict(response.headers),bytes(content)
         except httpx.HTTPError:raise ValueError('图库网络失败或超时') from None
 
-    async def pending(self) -> R_count_pending_images:
+    async def pending(self) :
         """查询图库待审核图片数量；用户问还有多少没审核、待审积压时使用，只返回数量。"""
         import json
         _,content=await self.get('/api/stats')
@@ -54,7 +51,7 @@ class Extension(Plugin):
         if type(count) is not int:raise ValueError('图库没有提供待审核数量')
         return {'pending':count}
 
-    async def fetch(self, orientation:str='') -> R_fetch_anime_image:
+    async def fetch(self, orientation:str='') :
         """随机获取审核通过的图片，返回图片 ID、共享工作空间路径和框架附件 URL。horizontal 横图、vertical 竖图，留空随机。主 Agent 可用 gallery_send 发送，协作 Agent 把结果交给主 Agent；不可把本地路径当远端 URL。图片 ID 可用于记忆和引用。"""
         orientation={'横':'horizontal','竖':'vertical'}.get(orientation,orientation)
         if orientation not in ('','horizontal','vertical'):raise ValueError('方向为 horizontal、vertical 或空')
@@ -77,7 +74,7 @@ class Extension(Plugin):
                 return result
             raise ValueError('图库未提供符合条件的新图片')
 
-    async def send(self,invocation,path:str) -> R_gallery_send:
+    async def send(self,invocation,path:str) :
         """发送共享工作空间内已取得的图库图片，仅主 Agent 使用。path 是 fetch_anime_image 返回的相对路径。"""
         target=self.workspace.path(path,allow_root=False)
         artifact=self.artifact(target)

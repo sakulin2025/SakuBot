@@ -1,0 +1,35 @@
+{
+  "team_members": {
+    "returns": "返回值: array\n返回值[]: object\n返回值[].id: string；完整智能体 ID\n返回值[].name: string；名称\n返回值[].description: string；职责\n返回值[].ready: boolean；是否可运行\n返回值[].busy: boolean；是否正在工作\n返回值[].persona_source: string；人格来源\n返回值[].persona_name: string；人格名称\n返回值[].model_name: string；生效模型名称"
+  },
+  "team_delegate": {
+    "returns": "返回值: object\n返回值.id: string；团队任务 ID\n返回值.agent_id: string；执行成员 ID\n返回值.agent_name: string；成员名称\n返回值.status: string；pending 等队列状态\n返回值.report: string；任务回报方式"
+  },
+  "team_tasks": {
+    "returns": "返回值（分支1）: object\n返回值（分支1）.id: string；任务 ID\n返回值（分支1）.status: string；任务状态\n返回值（分支1）.updated: number（可省略）；更新时间 Unix 秒\n返回值（分支1）.data: object（可省略）；任务目标、成员、进度及结果资料\n返回值（分支1）.data 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支1）.agent_id: string（可省略）；执行智能体 ID\n返回值（分支2）: array\n返回值（分支2）[]: object\n返回值（分支2）[].id: string；任务 ID\n返回值（分支2）[].status: string；任务状态\n返回值（分支2）[].updated: number（可省略）；更新时间 Unix 秒\n返回值（分支2）[].data: object（可省略）；任务目标、成员、进度及结果资料\n返回值（分支2）[].data 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支2）[].agent_id: string（可省略）；执行智能体 ID"
+  },
+  "team_create_member": {
+    "returns": "返回值: object\n返回值.id: string；成员本地 ID\n返回值.name: string；成员名称\n返回值.description: string；成员职责\n返回值.persona: object（可省略）；自管理人格，完整读取时可见\n返回值.persona.prompt: string；插件保存的自管理人格提示词\n返回值.persona.visible_plugins（分支1）: array（可省略）\n返回值.persona.visible_plugins（分支1）[]: string\n返回值.persona.visible_plugins（分支2）: null（可省略）\n返回值.model_id: string（可省略）；插件模型默认值\n返回值.agent: object（可省略）；框架实际生效的模型、状态和人格来源\n返回值.agent 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值.available_plugins: array（可省略）；可选插件 ID 和可用状态\n返回值.available_plugins[]: object；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值.available_plugins[] 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。"
+  },
+  "team_get_member": {
+    "returns": "返回值: object\n返回值.id: string；成员本地 ID\n返回值.name: string；成员名称\n返回值.description: string；成员职责\n返回值.persona: object（可省略）；自管理人格，完整读取时可见\n返回值.persona.prompt: string；插件保存的自管理人格提示词\n返回值.persona.visible_plugins（分支1）: array（可省略）\n返回值.persona.visible_plugins（分支1）[]: string\n返回值.persona.visible_plugins（分支2）: null（可省略）\n返回值.model_id: string（可省略）；插件模型默认值\n返回值.agent: object（可省略）；框架实际生效的模型、状态和人格来源\n返回值.agent 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值.available_plugins: array（可省略）；可选插件 ID 和可用状态\n返回值.available_plugins[]: object；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值.available_plugins[] 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。"
+  },
+  "team_update_member": {
+    "returns": "返回值: object\n返回值.id: string；成员本地 ID\n返回值.name: string；成员名称\n返回值.description: string；成员职责\n返回值.persona: object（可省略）；自管理人格，完整读取时可见\n返回值.persona.prompt: string；插件保存的自管理人格提示词\n返回值.persona.visible_plugins（分支1）: array（可省略）\n返回值.persona.visible_plugins（分支1）[]: string\n返回值.persona.visible_plugins（分支2）: null（可省略）\n返回值.model_id: string（可省略）；插件模型默认值\n返回值.agent: object（可省略）；框架实际生效的模型、状态和人格来源\n返回值.agent 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值.available_plugins: array（可省略）；可选插件 ID 和可用状态\n返回值.available_plugins[]: object；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值.available_plugins[] 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。"
+  },
+  "team_requests": {
+    "returns": "返回值: array\n返回值[]: object\n返回值[].id: string（可省略）；请求 ID\n返回值[].request_id: string（可省略）；答复的请求 ID\n返回值[].agent_id: string（可省略）；提问成员 ID\n返回值[].status: string；waiting/answered 等状态\n返回值[].kind: string（可省略）；question 或 confirmation\n返回值[].question: string（可省略）；问题正文\n返回值[].answer: string（可省略）；答复正文\n返回值[].approved（分支1）: boolean（可省略）\n返回值[].approved（分支2）: null（可省略）\n返回值[].options: array（可省略）；建议选项\n返回值[].options[]: string\n返回值[].created: number（可省略）；请求创建 Unix 秒"
+  },
+  "team_resolve": {
+    "returns": "返回值: object\n返回值.id: string（可省略）；请求 ID\n返回值.request_id: string（可省略）；答复的请求 ID\n返回值.agent_id: string（可省略）；提问成员 ID\n返回值.status: string；waiting/answered 等状态\n返回值.kind: string（可省略）；question 或 confirmation\n返回值.question: string（可省略）；问题正文\n返回值.answer: string（可省略）；答复正文\n返回值.approved（分支1）: boolean（可省略）\n返回值.approved（分支2）: null（可省略）\n返回值.options: array（可省略）；建议选项\n返回值.options[]: string\n返回值.created: number（可省略）；请求创建 Unix 秒"
+  },
+  "team_report_result": {
+    "returns": "返回值: object\n返回值.recorded: boolean；结果已记录"
+  },
+  "team_update_progress": {
+    "returns": "返回值: object\n返回值.recorded: boolean；进度已记录\n返回值.progress: string；实际保存的进度"
+  },
+  "team_wait_confirmation": {
+    "returns": "返回值: object\n返回值.request_id: string；已答复的待确认请求 ID\n返回值.kind: string；question 或 confirmation\n返回值.answer: string；主智能体给出的答复\n返回值.approved（分支1）: boolean\n返回值.approved（分支2）: null"
+  }
+}

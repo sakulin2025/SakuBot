@@ -1,7 +1,3 @@
-from .temporary_types import ReportArgs, ProgressArgs
-from .tool_arguments import ARGUMENTS
-from .tool_types import R_team_create_member, R_team_delegate, R_team_get_member, R_team_members, R_team_report_result, R_team_tasks, R_team_update_member, R_team_update_progress
-from .tool_types import RESULTS
 import asyncio
 import json
 import time
@@ -15,8 +11,8 @@ from .confirmations import Confirmations
 
 
 class Extension(Confirmations, Plugin):
-    tool_result_types = RESULTS
-    tool_argument_types = ARGUMENTS
+    
+    
     name = "team"
 
     def members(self):
@@ -62,20 +58,20 @@ class Extension(Confirmations, Plugin):
         self.api("tasks", self.page_tasks)
         self.api("tasks", self.page_task_action, methods=("POST",))
         self.tool("team_members", "查看专业团队的 Agent 名称、职责、ID 及可用状态。先选择适合任务的成员，再用 team_delegate 委派。返回人格来源、模型和当前状态；完整人格用 team_get_member 查看。可用 team_create_member 动态创建成员，无须重载插件。",
-            None, self.list_members)
+            {'type': 'object', 'properties': {}, 'required': [], 'additionalProperties': False}, self.list_members)
         self.tool("team_delegate", "把分析或调查委派给专业团队中的指定 Agent，立即返回任务 ID。独立任务可并行，完成后通过 wake 回报主 Agent。成员使用各自的人格、模型与可见插件函数。",
-            None, self.delegate)
+            {'type': 'object', 'properties': {'agent_id': {'type': 'string', 'description': 'team_members 返回的 Agent ID'}, 'goal': {'type': 'string', 'description': '任务目标与完成标准'}, 'context': {'type': 'string', 'description': '必需资料'}, 'resources': {'type': 'array', 'items': {'type': 'string', 'description': '一个列表元素；本任务占用的资源标识列表，冲突资源不能同时操作'}, 'maxItems': 10, 'description': '本任务占用的资源标识列表，冲突资源不能同时操作'}, 'timeout': {'type': 'integer', 'minimum': 30, 'maximum': 3600, 'description': '成员任务的执行超时秒数，不含等待确认时间'}}, 'required': ['agent_id', 'goal'], 'additionalProperties': False}, self.delegate)
         self.tool("team_tasks", "查看专业团队任务、最新进度和结果，或取消未完成任务。主 Agent 读到完成/失败结果后自动取消仍在排队的对应完成通知，无需再次处理。中断任务不会自动重新执行。",
-            None, self.manage)
+            {'type': 'object', 'properties': {'action': {'type': 'string', 'enum': ['list', 'get', 'cancel'], 'description': '本工具要执行的动作；仅接受枚举列出的操作'}, 'id': {'type': 'string', 'description': '团队任务 ID，不是智能体 ID'}}, 'required': ['action'], 'additionalProperties': False}, self.manage)
 
         visible_schema = {'anyOf': [{'type': 'array', 'items': {'type': 'string'}, 'maxItems': 100}, {'type': 'null'}],
             'description': '可见插件 ID；null 表示所有插件，空数组表示不提供插件工具。团队待确认和报告函数需要包含 team。'}
         self.tool('team_create_member', '创建持久化团队 Agent。提供独立的人格提示词，固定自管理人格；立即声明并可委派，不重载插件，不影响其他成员。先查看现有成员，避免重复创建。model_id 留空继承默认模型。',
-            None, self.create_member_tool)
+            {'type': 'object', 'properties': {'name': {'type': 'string', 'description': '成员名称'}, 'description': {'type': 'string', 'description': '职责和适用任务'}, 'prompt': {'type': 'string', 'description': '完整人格和工作方式，不要把一次性任务当成人格'}, 'visible_plugins': {'anyOf': [{'type': 'array', 'items': {'type': 'string', 'description': '一个列表元素；元素结构由该参数定义'}, 'maxItems': 100}, {'type': 'null'}], 'description': '可见插件 ID；null 表示所有插件，空数组表示不提供插件工具。团队待确认和报告函数需要包含 team。'}, 'model_id': {'type': 'string', 'description': '框架模型条目 ID，留空继承默认'}}, 'required': ['name', 'description', 'prompt'], 'additionalProperties': False}, self.create_member_tool)
         self.tool('team_get_member', '读取团队成员完整配置、插件持有的人格、可见插件及模型覆盖信息。编辑前先读取。',
-            None, self.get_member_tool)
+            {'type': 'object', 'properties': {'agent_id': {'type': 'string', 'description': '团队 Agent ID'}}, 'required': ['agent_id'], 'additionalProperties': False}, self.get_member_tool)
         self.tool('team_update_member', '修改现有团队成员，未传字段保持不变。人格或模型修改从下一次任务开始生效，保留当前运行和上下文；人格和可见插件由专业团队通过实例接口控制；Agent 管理中的模型覆盖仍优先。',
-            None, self.update_member_tool)
+            {'type': 'object', 'properties': {'agent_id': {'type': 'string', 'description': '团队 Agent ID'}, 'name': {'type': 'string', 'description': '更新后的成员显示名；省略保留'}, 'description': {'type': 'string', 'description': '更新后的职责描述；省略保留'}, 'prompt': {'type': 'string', 'description': '自管理人格完整内容'}, 'visible_plugins': {'anyOf': [{'type': 'array', 'items': {'type': 'string', 'description': '一个列表元素；元素结构由该参数定义'}, 'maxItems': 100}, {'type': 'null'}], 'description': '可见插件 ID；null 表示所有插件，空数组表示不提供插件工具。团队待确认和报告函数需要包含 team。'}, 'model_id': {'type': 'string', 'description': '框架模型条目 ID，空字符串继承默认'}}, 'required': ['agent_id'], 'additionalProperties': False}, self.update_member_tool)
 
     def configure_member(self, member):
         agent = self.get_agent(member['id'])
@@ -84,9 +80,9 @@ class Extension(Confirmations, Plugin):
 
     def bind_member(self, member):
         agent = self.configure_member(member)
-        agent.tool('team_report_result', '记录本次团队任务的最终成果', object_schema({'result': text()}, ('result',)), self.report_result, arguments_type=ReportArgs, result_type=RESULTS['team_report_result'])
+        agent.tool('team_report_result', '记录本次团队任务的最终成果', object_schema({'result': text()}, ('result',)), self.report_result)
         agent.tool('team_update_progress', '更新当前任务的简短进度，供主 Agent 查询。仅在阶段成果、阻碍或计划出现实质变化时使用，不必逐条复述工具调用，不要重复相同进度。不会单独唤醒主 Agent。',
-            object_schema({'progress': text('已完成什么、正在做什么或遇到的阻碍，最多2000字符')}, ('progress',)), self.update_progress, arguments_type=ProgressArgs, result_type=RESULTS['team_update_progress'])
+            object_schema({'progress': text('已完成什么、正在做什么或遇到的阻碍，最多2000字符')}, ('progress',)), self.update_progress)
         self.add_confirmation_tool(agent)
         agent.on('reset', self.agent_reset)
         agent.on('tool_call', self.agent_tool_call)
@@ -145,17 +141,17 @@ class Extension(Confirmations, Plugin):
             raise ValueError('团队成员不存在')
         return {**member, 'agent': self.runtime.agents.profile(self.id + ':' + identifier)}
 
-    async def get_member_tool(self, inv, args) -> R_team_get_member:
+    async def get_member_tool(self, inv, args) :
         return {**self.member_record(args['agent_id']), 'available_plugins': [
             {'id': plugin.id, 'available': self.runtime.registry.availability(plugin.id)['available']}
             for plugin in self.runtime.registry.plugins]}
 
-    async def create_member_tool(self, inv, args) -> R_team_create_member:
+    async def create_member_tool(self, inv, args) :
         return self.save_member_record({'name': args['name'], 'description': args['description'],
             'persona': {'prompt': args['prompt'], 'visible_plugins': args.get('visible_plugins')},
             'model_id': args.get('model_id', '')})
 
-    async def update_member_tool(self, inv, args) -> R_team_update_member:
+    async def update_member_tool(self, inv, args) :
         identifier = self.member_id(args['agent_id'])
         old = self.member_record(identifier)
         data = {key: value for key, value in args.items() if key in ('name', 'description', 'model_id')}
@@ -164,7 +160,7 @@ class Extension(Confirmations, Plugin):
             data['persona'] = {**(old.get('persona') or {}), **{key: args[key] for key in ('prompt', 'visible_plugins') if key in args}}
         return self.save_member_record(data)
 
-    async def report_result(self, invocation, args) -> R_team_report_result:
+    async def report_result(self, invocation, args) :
         invocation.metadata["data"]["report"] = args["result"]
         return {"recorded": True}
 
@@ -173,7 +169,7 @@ class Extension(Confirmations, Plugin):
         if inv.task_id and event["phase"] == "after":
             self.runtime.store.execute("UPDATE tasks SET data=json_set(data,'$.last_tool',?,'$.tool_calls',coalesce(json_extract(data,'$.tool_calls'),0)+1) WHERE id=?", (event["name"], inv.task_id))
 
-    async def update_progress(self, invocation, args) -> R_team_update_progress:
+    async def update_progress(self, invocation, args) :
         progress = args['progress'].strip()
         if not progress or len(progress) > 2000:
             raise ValueError('进度不能为空或超过2000字符')
@@ -227,14 +223,14 @@ class Extension(Confirmations, Plugin):
     async def page_task_action(self, request):
         return await self.call_tool("team_tasks", await request.json())
 
-    async def list_members(self, inv, args) -> R_team_members:
+    async def list_members(self, inv, args) :
         return [{key: row[key] for key in ('id', 'name', 'description', 'ready', 'busy', 'persona_source', 'persona_name', 'model_name')}
             for row in self.runtime.agents.list() if row['plugin_id'] == self.id]
 
     async def start(self):
         self.background(self.worker())
 
-    async def delegate(self, inv, args) -> R_team_delegate:
+    async def delegate(self, inv, args) :
         identifier = args["agent_id"]
         identifier = identifier if identifier.startswith(self.id + ":") else self.id + ":" + identifier
         profile = self.runtime.agents.snapshot(identifier)
@@ -263,7 +259,7 @@ class Extension(Confirmations, Plugin):
             row['data'].update(reported=True, observed_by_main=True)
         return rows
 
-    async def manage(self, inv, args) -> R_team_tasks:
+    async def manage(self, inv, args) :
         if args["action"] == "list":
             return self.acknowledge_results(self.tasks(), inv)
         row = self.runtime.store.one("SELECT * FROM tasks WHERE id=? AND json_extract(data,'$.plugin_id')=?", (args.get("id", ""), self.id))

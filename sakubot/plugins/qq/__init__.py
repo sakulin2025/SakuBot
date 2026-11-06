@@ -1,6 +1,3 @@
-from .tool_arguments import ARGUMENTS
-from .tool_types import R_people_lookup, R_qq_action, R_qq_api, R_qq_notices, R_qq_read, R_qq_recent, R_qq_send
-from .tool_types import RESULTS
 import hashlib
 import json
 import time
@@ -24,8 +21,8 @@ READ_ACTIONS = ["get_login_info", "get_friend_list", "get_group_list", "get_grou
 
 
 class Extension(MainSources, ExternalReplies, Plugin):
-    tool_result_types = RESULTS
-    tool_argument_types = ARGUMENTS
+    
+    
     name = "qq"
 
     def availability(self):
@@ -83,22 +80,22 @@ class Extension(MainSources, ExternalReplies, Plugin):
         self.sync_main_sources()
         self.api("people", self.people_records)
         self.tool('people_lookup', '通过 QQ ID 或昵称检索曾见过的人，返回稳定 ID、昵称和群名片。同名需区分 ID。',
-            None, self.people_lookup)
+            {'type': 'object', 'properties': {'query': {'type': 'string', 'description': 'QQ ID、昵称或历史群名片的检索词；同名必须按稳定 QQ ID 区分'}}, 'required': ['query'], 'additionalProperties': False}, self.people_lookup)
         self.tool("qq_send", "向指定 QQ 私聊或群聊发消息。默认本轮来源会话；主人的固定私聊可填 owner。发到已声明主会话源的相同最终文本不会重复投递到该源；其他源仍可接收。",
-                  None,
+                  {'type': 'object', 'properties': {'target': {'type': 'string', 'description': 'owner、main、private:QQ号、group:群号；留空使用本轮来源，main 使用当前 QQ 主会话源'}, 'text': {'type': 'string', 'description': '要发送的文字'}, 'segments': {'type': 'array', 'items': {'type': 'object', 'properties': {'type': {'type': 'string', 'description': '消息段类型，例如 text/image/at'}, 'data': {'type': 'object', 'additionalProperties': True, 'description': '按段类型定义的数据，例如 text.text、at.qq'}}, 'required': ['type', 'data'], 'additionalProperties': True, 'description': '一个列表元素；OneBot 消息段数组；每项包含 type 和按消息类型变化的 data，例如 type=text 时 data.text 为文字'}, 'maxItems': 30, 'description': 'OneBot 消息段数组；每项包含 type 和按消息类型变化的 data，例如 type=text 时 data.text 为文字'}}, 'required': [], 'additionalProperties': False},
                   self.send)
         self.tool("qq_read", "查询当前 OneBot 协议端的 QQ 资料。按真实 ID 识别人，不用昵称作为身份；params 使用对应 OneBot 接口参数。",
-                  None,
+                  {'type': 'object', 'properties': {'action': {'type': 'string', 'enum': ['get_login_info', 'get_friend_list', 'get_group_list', 'get_group_info', 'get_group_member_list', 'get_group_member_info', 'get_stranger_info'], 'description': '只读 OneBot 动作名称，必须来自枚举'}, 'params': {'type': 'object', 'additionalProperties': True, 'description': '所选 OneBot 动作的原生参数对象，例如 group_id/user_id；按 qq_api 文档填写'}}, 'required': ['action'], 'additionalProperties': False},
                   self.read)
         self.tool("qq_action", "操作 Agent 自己的 QQ 账号，调用当前协议端的 OneBot 接口。action/params 必须来自 qq_api 或已知接口；结果未知不自动重试，普通发送优先 qq_send。",
-                  None, self.action)
+                  {'type': 'object', 'properties': {'action': {'type': 'string', 'description': '当前协议端的 OneBot action 名称'}, 'params': {'type': 'object', 'additionalProperties': True, 'description': '所选 OneBot 动作的原生参数对象，具体结构查当前 NapCat/SnowLuma 文档，不包含认证令牌'}}, 'required': ['action'], 'additionalProperties': False}, self.action)
         self.tool("qq_recent", "按需查询归档的 QQ 消息，可指定群聊或私聊。归档消息不会自动加入主上下文。返回人员 ID、昵称和引用等元数据。",
-                  None,
+                  {'type': 'object', 'properties': {'target': {'type': 'string', 'description': '可选 private:QQ号 或 group:群号'}, 'limit': {'type': 'integer', 'minimum': 1, 'maximum': 100, 'description': '最多返回的已归档 QQ 消息条数，默认30，范围1至100'}}, 'required': [], 'additionalProperties': False},
                   self.recent)
         self.tool("qq_notices", "按需查询归档的 QQ 通知和好友、加群请求，可获取处理请求所需的 flag。不会自动加入主上下文。",
-                  None, self.notices)
+                  {'type': 'object', 'properties': {'before': {'type': 'integer', 'minimum': 1, 'description': '上一页 next_before 的本地通知 ID，首次省略'}, 'limit': {'type': 'integer', 'minimum': 1, 'maximum': 100, 'description': '最多返回的通知条数，默认30'}}, 'required': [], 'additionalProperties': False}, self.notices)
         self.tool("qq_api", "返回 QQ 原生 API 文档入口及常用参数说明。用于选择正确的账号操作接口。",
-                  None, self.api_documentation)
+                  {'type': 'object', 'properties': {}, 'required': [], 'additionalProperties': False}, self.api_documentation)
 
     async def start(self):
         self.isolate_archives()
@@ -230,14 +227,14 @@ class Extension(MainSources, ExternalReplies, Plugin):
         segment = {'type': 'record' if kind == 'audio' else kind, 'data': {'file': packet['url']}}
         return await self.client.send(target, '', packet['delivery_id'] + ':qq', [segment])
 
-    async def people_lookup(self, inv, args) -> R_people_lookup:
+    async def people_lookup(self, inv, args) :
         query = args['query'].casefold()
         return [row['data'] for row in self.runtime.store.list_records('people') if query in str(row['data']).casefold()][:50]
 
     async def people_records(self, request):
         return self.runtime.store.list_records("people")
 
-    async def send(self, inv, args) -> R_qq_send:
+    async def send(self, inv, args) :
         target = args.get("target") or inv.target
         if target == "owner":
             target = self.client.owner_target()
@@ -258,10 +255,10 @@ class Extension(MainSources, ExternalReplies, Plugin):
                                       **({"conversation_source": source} if not archived else {})})
         return result
 
-    async def read(self, inv, args) -> R_qq_read:
+    async def read(self, inv, args) :
         return await self.client.call(args["action"], args.get("params", {}))
 
-    async def action(self, inv, args) -> R_qq_action:
+    async def action(self, inv, args) :
         action = args["action"]
         if action in READ_ACTIONS:
             return await self.read(inv, args)
@@ -269,7 +266,7 @@ class Extension(MainSources, ExternalReplies, Plugin):
             raise ValueError("发送消息请使用 qq_send，以便记录目的地和避免重复回复")
         return await self.client.action(action, args.get("params", {}), inv.run_id + ":" + inv.call_id)
 
-    async def recent(self, inv, args) -> R_qq_recent:
+    async def recent(self, inv, args) :
         target = args.get("target") or inv.target
         if target == 'owner':
             target = self.client.owner_target()
@@ -277,14 +274,14 @@ class Extension(MainSources, ExternalReplies, Plugin):
             target = self.default_main_target(inv if not args.get("target") else None)
         return self.messages.list(target, args.get("limit", 30))
 
-    async def notices(self, inv, args) -> R_qq_notices:
+    async def notices(self, inv, args) :
         rows = self.runtime.store.rows("""SELECT id,at,data FROM logs WHERE source='qq'
             AND event='notification.archived' AND id<? ORDER BY id DESC LIMIT ?""",
             (args.get('before') or 9223372036854775807, args.get('limit', 30)))
         return {'items': [{**row, 'data': json.loads(row['data'])} for row in rows],
                 'next_before': rows[-1]['id'] if rows else None}
 
-    async def api_documentation(self, inv, args) -> R_qq_api:
+    async def api_documentation(self, inv, args) :
         return {"backend": self.settings.backend, "docs": "https://snowluma.github.io/zh/docs/api" if self.settings.backend == 'snowluma' else "https://napneko.github.io/api/", "read_actions": READ_ACTIONS,
                 "examples": {"get_group_member_info": {"group_id": 123, "user_id": 456},
                              "get_msg": {"message_id": 123}, "set_group_ban": {"group_id": 123, "user_id": 456, "duration": 600},

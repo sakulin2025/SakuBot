@@ -1,0 +1,11 @@
+{
+  "memory_search": {
+    "returns": "返回值: array\n返回值[]: object\n返回值[].key: string；记忆或文档块 ID\n返回值[].text: string；记忆正文或文档片段\n返回值[].source: string；数据来源\n返回值[].score: number；向量相似度\n返回值[].kind: string（可省略）；记忆或文档分类\n返回值[].updated: number（可省略）；更新时间，Unix 秒\n返回值[].id（分支1）: string（可省略）\n返回值[].id（分支2）: integer（可省略）"
+  },
+  "memory_write": {
+    "returns": "返回值（分支1）: object\n返回值（分支1）.saved: string；已保存的记忆 key\n返回值（分支2）: object\n返回值（分支2）.deleted: string；已删除的记忆 key"
+  },
+  "event_search": {
+    "returns": "返回值: object\n返回值.items: array；匹配的历史事件\n返回值.items[]: object\n返回值.items[].id: integer；历史事件 ID\n返回值.items[].kind: string（可省略）；事件类型\n返回值.items[].source: string（可省略）；来源\n返回值.items[].content: string（可省略）；事件内容\n返回值.items[].target: string（可省略）；目标\n返回值.items[].actor: string（可省略）；说话人标识\n返回值.items[].at: number（可省略）；事件 Unix 秒\n返回值.items[].meta（分支1）: string（可省略）\n返回值.items[].meta（分支2）: object（可省略）；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值.items[].meta（分支2） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值.items[].status: string（可省略）；处理状态\n返回值.next_before（分支1）: integer\n返回值.next_before（分支2）: null"
+  }
+}

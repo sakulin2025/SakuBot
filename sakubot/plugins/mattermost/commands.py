@@ -3,7 +3,7 @@
 The journal is written before remote mutations. Repair reads the remote state;
 it never blindly repeats a command creation or token rotation after a timeout.
 """
-from .tool_types import R_mattermost_command
+
 import asyncio
 import hashlib
 import json
@@ -53,7 +53,7 @@ class Commands:
             "传 team_id、trigger（不带 /）创建事件入口；可不传 script_id，再用 script_binding 绑定 wake 与 prompt。传 script_id 可绑定脚本；文本参数在事件 data.text。"
             '请求地址统一从 Mattermost 管理页的斜杠命令设置读取，无需提供令牌或请求地址。'
             '不自动执行指令或脚本，不返回令牌。未知结果先 repair，不重复创建。',
-            None, self.invoke)
+            {'type': 'object', 'properties': {'action': {'type': 'string', 'enum': ['list', 'get', 'save', 'enable', 'disable', 'repair', 'rotate_token', 'delete'], 'description': '本工具要执行的动作；仅接受枚举列出的操作'}, 'id': {'type': 'string', 'description': '本地指令 ID；新建时不填'}, 'team_id': {'type': 'string', 'description': '创建指令的 Mattermost 团队 ID'}, 'trigger': {'type': 'string', 'description': '指令名称，不带 /，字母、数字、下划线或连字符'}, 'display_name': {'type': 'string', 'description': '显示名称，最多 64 字'}, 'description': {'type': 'string', 'description': '自动补全描述，最多 256 字'}, 'hint': {'type': 'string', 'description': '自动补全参数提示，最多 128 字'}, 'script_id': {'type': 'string', 'description': '可选，设置脚本动作；留空保留框架现有动作'}, 'params': {'type': 'object', 'additionalProperties': True, 'description': '传给脚本的固定参数；Slash 参数来自事件 text'}, 'user_id': {'type': 'string', 'description': '可选，仅接受此用户；留空不限'}, 'channel_id': {'type': 'string', 'description': '可选，仅接受此频道；留空不限'}, 'enabled': {'type': 'boolean', 'description': '是否启用此托管命令；停用不删除远端记录'}, 'confirm': {'type': 'boolean', 'description': 'delete 时仅在明确确认删除远端指令和本地绑定后为true'}, 'remote': {'type': 'boolean', 'description': 'list 时同时查询团队的远端指令，需 team_id'}}, 'required': ['action'], 'additionalProperties': False}, self.invoke)
         self.plugin.api('commands', self.catalog_api)
         self.plugin.api('commands', self.action_api, methods=('POST',))
         self.plugin.api('command-settings', self.settings_api, methods=('POST',))
@@ -303,7 +303,7 @@ class Commands:
         self.plugin.state.set('slash_commands', records)
         return {'deleted': row['id']}
 
-    async def invoke(self, invocation, args) -> R_mattermost_command:
+    async def invoke(self, invocation, args) :
         if not isinstance(args, dict):
             raise ValueError('指令参数须为对象')
         action = args.get('action')

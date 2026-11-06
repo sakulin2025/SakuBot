@@ -18,7 +18,6 @@ def session_id(value):
     return match[1].capitalize() + ':' + match[2]
 
 
-
 class Messages:
     def __init__(self, plugin):
         self.plugin = plugin

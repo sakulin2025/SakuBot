@@ -807,11 +807,10 @@ class Runtime:
                 "tools": [{"name": tool.name, "description": tool.description, "plugin_id": tool.plugin_id} for tool in self.registry.tools.values() if self.registry.availability(tool.plugin_id)["available"]]}
 
     def function_catalog(self, agent_id="main"):
-        from .contracts.schema import contract_kind
         profile = self.agents.profile(agent_id)
         _, model = self.config.settings.selected_model(model_id=profile["effective_model_id"])
         invocation = Invocation("catalog", self.main_target(),
             agent_id=agent_id, persona_id=profile["effective_persona_id"], instance=self.agents.get(agent_id))
         return [{"name": tool.name, "plugin_id": tool.plugin_id, "source_label": "系统" if required(tool.plugin_id) else tool.plugin_id, "description": tool.description,
-            "parameters": tool.parameters, "result_schema": tool.result_schema, "result_contract_kind": contract_kind(tool.result_schema), "available": bool(model and model.capabilities.tools)}
+            "parameters": tool.parameters, "available": bool(model and model.capabilities.tools)}
             for tool in self.registry.available(invocation)]

@@ -1,0 +1,14 @@
+{
+  "message_sources": {
+    "returns": "返回值: object\n返回值.current: string；当前响应来源，未选择时为空\n返回值.items: array；已声明来源\n返回值.items[]: object\n返回值.items[].id: string；完整来源 ID\n返回值.items[].plugin_id: string；声明插件 ID\n返回值.items[].name: string；显示名称\n返回值.items[].trusted: boolean；当前信任状态\n返回值.items[].capabilities: array；支持的接收类型\n返回值.items[].capabilities[]: string\n返回值.items[].available: boolean；是否可用\n返回值.items[].reason: string；不可用原因，正常为空\n返回值.mode: string；响应路由模式\n返回值.targets: array；当前外部响应目标\n返回值.targets[]: string\n返回值.web_synced: boolean；网页是否同步\n返回值.changed: boolean（可省略）；是否改变了响应源\n返回值.send_result_to_source: boolean（可省略）；当前轮自动投递开关\n返回值.explicit_target: string（可省略）；当前轮显式投递目标"
+  },
+  "message_select_source": {
+    "returns": "返回值: object\n返回值.current: string；当前响应来源，未选择时为空\n返回值.items: array；已声明来源\n返回值.items[]: object\n返回值.items[].id: string；完整来源 ID\n返回值.items[].plugin_id: string；声明插件 ID\n返回值.items[].name: string；显示名称\n返回值.items[].trusted: boolean；当前信任状态\n返回值.items[].capabilities: array；支持的接收类型\n返回值.items[].capabilities[]: string\n返回值.items[].available: boolean；是否可用\n返回值.items[].reason: string；不可用原因，正常为空\n返回值.mode: string；响应路由模式\n返回值.targets: array；当前外部响应目标\n返回值.targets[]: string\n返回值.web_synced: boolean；网页是否同步\n返回值.changed: boolean（可省略）；是否改变了响应源\n返回值.send_result_to_source: boolean（可省略）；当前轮自动投递开关\n返回值.explicit_target: string（可省略）；当前轮显式投递目标"
+  },
+  "message_set_source_trust": {
+    "returns": "返回值: object\n返回值.current: string；当前响应来源，未选择时为空\n返回值.items: array；已声明来源\n返回值.items[]: object\n返回值.items[].id: string；完整来源 ID\n返回值.items[].plugin_id: string；声明插件 ID\n返回值.items[].name: string；显示名称\n返回值.items[].trusted: boolean；当前信任状态\n返回值.items[].capabilities: array；支持的接收类型\n返回值.items[].capabilities[]: string\n返回值.items[].available: boolean；是否可用\n返回值.items[].reason: string；不可用原因，正常为空\n返回值.mode: string；响应路由模式\n返回值.targets: array；当前外部响应目标\n返回值.targets[]: string\n返回值.web_synced: boolean；网页是否同步\n返回值.changed: boolean（可省略）；是否改变了响应源\n返回值.send_result_to_source: boolean（可省略）；当前轮自动投递开关\n返回值.explicit_target: string（可省略）；当前轮显式投递目标"
+  },
+  "message_send": {
+    "returns": "返回值: object\n返回值.submitted: boolean；消息是否提交；true 不保证所有远端已经送达\n返回值.response_id: string；本条主动消息的响应 ID\n返回值.parts: integer；提交的消息内容块数量"
+  }
+}

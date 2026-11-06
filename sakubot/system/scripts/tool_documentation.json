@@ -1,0 +1,14 @@
+{
+  "script_manage": {
+    "returns": "list/get/revisions 返回脚本资料；check 返回 ok、diagnostics；save 返回脚本资料和 saved=true；失败抛异常。"
+  },
+  "script_development": {
+    "returns": "documentation 为当前文档文本片段；documentation_hash 标识版本；total 为字符数；next_offset 为下一页偏移，无更多时 null。"
+  },
+  "script_tools": {
+    "returns": "工具列表，每项包含 name、description、parameters、plugin，及可选的插件返回说明。"
+  },
+  "script_run": {
+    "returns": "排队运行记录，含执行 id；使用 script_execution 查询进度和结果。"
+  }
+}

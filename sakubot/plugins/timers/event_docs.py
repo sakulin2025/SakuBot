@@ -1,7 +1,4 @@
-from sakubot.contracts import schema_from_type
-from .event_types import EventData, EventParameters
-
-EVENT = schema_from_type(EventData)
-PARAMETERS = schema_from_type(EventParameters)
-
+"""Optional event documentation; never used to reject payloads."""
+PARAMETERS = {'type': 'object', 'properties': {'timing': {'type': 'string', 'enum': ['interval', 'daily', 'once'], 'description': '定时触发方式', 'title': '触发方式', 'default': 'interval', 'x-enum-descriptions': {'interval': '固定间隔触发', 'daily': '指定时区每日触发', 'once': '指定绝对时间仅一次'}}, 'interval_seconds': {'type': 'integer', 'description': '间隔触发时使用，单位：秒', 'title': '间隔 · 秒', 'minimum': 30, 'maximum': 31536000, 'default': 300, 'x-unit': 'seconds'}, 'daily_time': {'type': 'string', 'description': '每日触发时使用，HH:MM，按 timezone 解释', 'title': '每日时间', 'format': 'time', 'default': '09:00'}, 'timezone': {'type': 'string', 'description': 'IANA 时区名称，供每日触发解释本地时间，例如 Asia/Shanghai', 'title': '时区', 'default': 'Asia/Shanghai'}, 'at': {'type': 'string', 'description': '一次性触发时间，ISO 8601，必须包含时区偏移或 Z', 'title': '一次性时间 · ISO 8601'}}, 'required': ['timing'], 'additionalProperties': True}
+EVENT = {'type': 'object', 'properties': {'scheduled_at': {'type': 'number', 'description': '计划触发时间，Unix 秒时间戳（UTC 基准）', 'x-unit': 'seconds'}, 'observed_at': {'type': 'number', 'description': '实际发现到期时间，Unix 秒时间戳（UTC 基准）', 'x-unit': 'seconds'}}, 'required': ['scheduled_at', 'observed_at'], 'additionalProperties': True, 'description': '按绑定的 interval/daily/once 计划到期产生事件；实际观测时间可能晚于计划时间，不自动重放已完成的一次性任务。', 'examples': [{'scheduled_at': 1793926800, 'observed_at': 1793926800.1}]}
 ID_DESCRIPTION = 'schedule.<timing>；星号为 interval、daily 或 once，例如 schedule.daily。'

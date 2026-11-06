@@ -60,6 +60,35 @@ class Repository:
         CREATE INDEX IF NOT EXISTS automation_script_runs ON automation_runs(script_id,queued);
         ''')
         self.store.execute("UPDATE automation_runs SET status='interrupted',finished=?,error='进程中断，未自动重放；外部操作可能已执行' WHERE status='running'", (time.time(),))
+        self.migrate_scripts()
+
+    def migrate_scripts(self):
+        from .migration import migrate_source
+        from .script_check import check
+        for old in self.list('scripts'):
+            if old.get('api_version') == 2:
+                continue
+            folder = self.root / old['id']
+            code = (folder/'revisions'/(old['version']+'.py')).read_text()
+            try:
+                migrated = migrate_source(code)
+            except (SyntaxError, ValueError, TypeError) as exc:
+                self.store.log('warning','scripts','script.migration.failed',data={'script_id':old['id'],'error':str(exc)[:300]})
+                continue
+            report = check(migrated)
+            if not report['ok']:
+                self.store.log('warning','scripts','script.migration.failed',data={'script_id':old['id'],'diagnostics':report['diagnostics']})
+                continue
+            version = hashlib.sha256((migrated + old['version'] + ':dict-api-v2').encode()).hexdigest()[:32]
+            item = {k:v for k,v in old.items() if k not in ('event_contracts','sdk_hash','validation')}
+            item.update(version=version, api_version=2, updated=time.time())
+            atomic(folder/'revisions'/(version+'.py'),migrated)
+            atomic(folder/'revisions'/(version+'.json'),encode(item))
+            atomic(folder/'main.py',migrated)
+            atomic(folder/'script.json',encode(item))
+            self.store.execute('INSERT OR REPLACE INTO automation_scripts VALUES (?,?)',(item['id'],encode(item)))
+            for snapshot in (folder/'revisions').glob('*.types.py'):
+                snapshot.unlink()
 
     def list(self, table):
         if table not in ('scripts', 'bindings'):
@@ -80,7 +109,9 @@ class Repository:
         manifest = self.root / key / 'revisions' / (version + '.json')
         if manifest.is_file():
             item = json.loads(manifest.read_text())
-        return {**item, 'version': version, 'code': (self.root / key / 'revisions' / (version + '.py')).read_text()}
+        from .migration import migrate_source
+        code = migrate_source((self.root / key / 'revisions' / (version + '.py')).read_text())
+        return {**item, 'version': version, 'code': code}
 
     async def save(self, data):
         if not isinstance(data, dict):
@@ -103,32 +134,18 @@ class Repository:
         except SyntaxError as exc:
             raise ValueError(f'代码语法错误，第 {exc.lineno} 行：{exc.msg}') from None
         if not any(isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == 'main' for node in tree.body):
-            raise ValueError('须定义 main(ctx)')
+            raise ValueError('须定义 main(ctx, event, tools)')
         params = schema(data.get('parameters', old.get('parameters', {'type':'object','properties':{}}) if old else {'type':'object','properties':{}}))
         sources = data.get('event_sources', old.get('event_sources', list(dict.fromkeys(row['source'] for row in self.list('bindings') if row.get('script_id')==key))) if old else [])
         plugins = data.get('tool_plugins', old.get('tool_plugins') if old else None)
         if (not isinstance(sources, list) or len(sources)>100 or any(not isinstance(v,str) or not re.fullmatch(r'[A-Za-z0-9_.*:-]{1,256}',v) for v in sources)
                 or (plugins is not None and (not isinstance(plugins,list) or any(not isinstance(v,str) or not re.fullmatch(r'[a-zA-Z_]\w*',v) for v in plugins)))):
             raise ValueError('event_sources 或 tool_plugins 格式无效')
-        hard = data.get('hard', False)
-        if type(hard) is not bool:
-            raise ValueError('hard 必须为布尔值')
-        from .script_check import check, ScriptDiagnosticsError
-        report = await check(self.runtime, code, sources=sources, parameters=params, tool_plugins=plugins)
-        reason = data.get('hard_reason','')
+        from .script_check import check
+        report = check(code)
         if not report['ok']:
-            if (not report.get('syntax_ok') or not report.get('checker_available') or not hard):
-                raise ScriptDiagnosticsError(report)
-            if not isinstance(reason,str) or not reason.strip() or len(reason)>2000:
-                raise ValueError('强制保存须提供 1～2000 字的 hard_reason')
-        # Checking yields to other requests; recheck optimistic version before any writes.
-        if old and self.get(key)['version'] != old['version']:
-            raise ValueError('检查期间脚本已被修改，请重新读取后保存')
-        if not old and self.store.one('SELECT id FROM automation_scripts WHERE id=?',(key,)):
-            raise ValueError('检查期间同名脚本已被创建，请重新读取')
-        contract = {'event_sources':sources, 'tool_plugins':plugins, 'event_contracts':report['event_contracts'],
-            'sdk_hash':report['sdk_hash'], 'validation':{'checker':report['checker'], 'checked_at':time.time(),
-                'forced':hard and not report['ok'], 'reason':reason if hard and not report['ok'] else '', 'diagnostics':report['diagnostics']}}
+            raise ValueError(report['diagnostics'][0]['message'])
+        contract = {'event_sources':sources, 'tool_plugins':plugins, 'api_version':2}
         description = data.get('description', old.get('description', '') if old else '')
         if not isinstance(description, str) or len(description) > 4000:
             raise ValueError('描述最多 4000 字')
@@ -143,19 +160,15 @@ class Repository:
             raise ValueError('失败处理或报告开关无效')
         if type(failure['failure_threshold']) is not int or not 1 <= failure['failure_threshold'] <= 100 or type(failure['cooldown_seconds']) is not int or not 30 <= failure['cooldown_seconds'] <= 2592000:
             raise ValueError('失败阈值或冷却时间无效')
-        version = hashlib.sha256((code + encode({'parameters':params,'name':name,'description':description,'timeout':timeout,'enabled':enabled,'concurrency':concurrency,'sdk_hash':report['sdk_hash'],'event_sources':sources,'tool_plugins':plugins,'forced':contract['validation']['forced'],'force_reason':contract['validation']['reason'],**failure})).encode()).hexdigest()[:32]
+        version = hashlib.sha256((code + encode({'parameters':params,'name':name,'description':description,'timeout':timeout,'enabled':enabled,'concurrency':concurrency,'event_sources':sources,'tool_plugins':plugins,**failure})).encode()).hexdigest()[:32]
         item = {'id':key,'name':name.strip(),'description':description,'parameters':params,'version':version,
                 'timeout':timeout,'enabled':enabled,'concurrency':concurrency,'updated':time.time(),**failure,**contract}
         folder = self.root / key
-        atomic(folder / 'revisions' / (version + '.types.py'), report['sdk'])
         atomic(folder / 'revisions' / (version + '.py'), code)
         atomic(folder / 'revisions' / (version + '.json'), encode(item))
         atomic(folder / 'main.py', code)
         atomic(folder / 'script.json', encode(item))
         self.store.execute('INSERT OR REPLACE INTO automation_scripts VALUES (?,?)', (key, encode(item)))
-        if contract['validation']['forced']:
-            self.store.log('warning','scripts','script.validation.forced',data={'script_id':key,'version':version,
-                'reason':reason,'diagnostics':report['diagnostics'],'sdk_hash':report['sdk_hash']})
         return item
 
     def revisions(self, key):

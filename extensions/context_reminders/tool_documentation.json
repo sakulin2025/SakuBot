@@ -1,0 +1,11 @@
+{
+  "add_context_reminder": {
+    "returns": "返回值: object\n返回值.id: string；提醒 ID\n返回值.target: string；背景记录的会话目标标识\n返回值.content: string；上下文内容，仅为背景数据\n返回值.created_at: number；创建 Unix 秒\n返回值.expires_at（分支1）: number（可省略）\n返回值.expires_at（分支2）: null（可省略）\n返回值.ttl_hours: number（可省略）；有效期小时"
+  },
+  "list_context_reminders": {
+    "returns": "返回值: array\n返回值[]: object\n返回值[].id: string；提醒 ID\n返回值[].target: string；背景记录的会话目标标识\n返回值[].content: string；上下文内容，仅为背景数据\n返回值[].created_at: number；创建 Unix 秒\n返回值[].expires_at（分支1）: number（可省略）\n返回值[].expires_at（分支2）: null（可省略）\n返回值[].ttl_hours: number（可省略）；有效期小时"
+  },
+  "remove_context_reminder": {
+    "returns": "返回值: object\n返回值.removed: string；被移除的提醒 ID"
+  }
+}

@@ -37,13 +37,14 @@ class Executor:
                 await execute(self.service, row, payload)
                 return
             script = self.repo.read(row['script_id'],row['version'])
-            from .script_contracts import validate_event
-            validate_event(script, payload['event'])
+            from .events import validate_event
+            validate_event(payload['event'])
             directory = self.repo.data_root / row['script_id']
             directory.mkdir(parents=True,exist_ok=True)
             boot = {'run_id':row['id'],'script_id':row['script_id'],'params':payload['params'],'event':payload['event'],
                 'state':self.repo.state(row['script_id']),'data_dir':str(directory),'workspace':str(self.runtime.workspace.root),
-                'code_path':str(self.repo.root / row['script_id'] / 'revisions' / (row['version']+'.py'))}
+                'code_path':str(self.repo.root / row['script_id'] / 'revisions' / (row['version']+'.py')),
+                'tools':[tool.name for tool in self.runtime.registry.available(Invocation(row['id'], 'main', agent_id='script:'+row['script_id'], origin='script'))]}
             env = {k:v for k,v in os.environ.items() if k in ('PATH','TZ','HOME','LANG','LC_ALL','USER','LOGNAME','SYSTEMROOT')}
             env.update(PYTHONUNBUFFERED='1',PYTHONDONTWRITEBYTECODE='1',PYTHONPATH=os.pathsep.join([str(Path(__file__).resolve().parents[2]), str(self.runtime.config.root / 'plugin_dependencies')]))
             process = await asyncio.create_subprocess_exec(sys.executable,'-P','-m','sakubot.automation.worker',
@@ -143,19 +144,14 @@ class Executor:
                 send_result_to_source=packet.get('send_result_to_source',True),include_context=packet.get('include_context',False))
         if op!='call':
             raise ValueError('脚本接口不存在')
-        owner,name=packet.get('plugin'),packet.get('tool')
+        name=packet.get('tool')
         tool=self.runtime.registry.tools.get(name)
-        if not tool or tool.plugin_id!=owner:
+        if not tool:
             raise ValueError('插件工具不存在')
-        if owner=='scripts' and name in ('script_run','script_manage','script_binding'):
-            raise ValueError('脚本不能通过工具修改或递归运行脚本，请由 Agent 管理')
         inv=Invocation(run_id=row['id'],target='main',agent_id='script:'+row['script_id'],origin='script',call_id=uuid.uuid4().hex,
             metadata={'script_id':row['script_id'],'script_run_id':row['id'],'script_chain':payload.get('chain',[])})
         token=current_chain.set(payload.get('chain',[]))
         try:
-            result=await self.runtime.registry.call(name,packet.get('arguments',{}),inv)
-            if isinstance(result,dict) and (result.get('success') is False or result.get('error')):
-                raise RuntimeError(encode(result))
-            return result
+            return await self.runtime.registry.call(name,packet.get('arguments',{}),inv)
         finally:
             current_chain.reset(token)

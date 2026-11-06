@@ -1,6 +1,3 @@
-from .tool_arguments import ARGUMENTS
-from .tool_types import R_pdf_create, R_pdf_form, R_pdf_merge, R_pdf_read, R_pdf_render
-from .tool_types import RESULTS
 from xml.sax.saxutils import escape
 
 from sakubot.plugin import Plugin
@@ -8,15 +5,15 @@ from sakubot.office_support import source, destination, save_new, result, bounde
 
 
 class Extension(Plugin):
-    tool_result_types = RESULTS
-    tool_argument_types = ARGUMENTS
+    
+    
     name = 'pdf'
 
     def setup(self):
         for name in ('read', 'create', 'render', 'merge', 'form'):
             self.function(getattr(self, name), name='pdf_' + name)
 
-    def read(self, path: str, start_page: int = 1, page_count: int = 3, tables: bool = False) -> R_pdf_read:
+    def read(self, path: str, start_page: int = 1, page_count: int = 3, tables: bool = False) :
         """读取工作空间 PDF 的文字、页数和可选表格。页码从1开始，一次最多5页；扫描件没有文本时需要渲染识别，不能据此断言空白。表格提取不保证视觉布局。"""
         import pdfplumber
         file = source(self, path, {'.pdf'})
@@ -35,7 +32,7 @@ class Extension(Plugin):
             return bounded({'path': path, 'total_pages': len(pdf.pages), 'pages': rows,
                 'next_page': start_page + len(rows) if start_page + len(rows) <= len(pdf.pages) else None})
 
-    def create(self, output: str, title: str, blocks: list[dict]) -> R_pdf_create:
+    def create(self, output: str, title: str, blocks: list[dict]) :
         """创建排版 PDF，新文件保存在工作空间，不覆盖原件。blocks 中 type 支持 paragraph/heading/bullet/table/page_break；文字放 text，heading 可带 level=1或2，table 放 rows 二维数组。支持中文字体。完成后用 pdf_render 检查排版，最终用消息插件发送文件。
 
         Args:
@@ -94,11 +91,11 @@ class Extension(Plugin):
             leftMargin=52, rightMargin=52, topMargin=48, bottomMargin=48, title=title).build(story))
         return result(self, target)
 
-    async def render(self, invocation, path: str, pages: list[int] = None) -> R_pdf_render:
+    async def render(self, invocation, path: str, pages: list[int] = None) :
         """将 PDF 指定页面渲染为 PNG，返回预览附件与路径，每次最多4页。默认第1页。当前模型有图像能力时前两页作为一次性视觉观察进入下一次请求；vision.queued=false 时未进行目视检查。"""
         return await render_pdf(self, invocation, source(self, path, {'.pdf'}), pages if pages is not None else [1])
 
-    def merge(self, paths: list[str], output: str) -> R_pdf_merge:
+    def merge(self, paths: list[str], output: str) :
         """按给定顺序合并1到20个工作空间 PDF，输出新文件；不会覆盖原件。交互表单、签名或复杂书签应先读取 Skill，不保证合并后签名仍有效。"""
         from pypdf import PdfWriter
         if not 1 <= len(paths) <= 20:
@@ -110,7 +107,7 @@ class Extension(Plugin):
             save_new(target, lambda staging: writer.write(str(staging)))
         return result(self, target)
 
-    def form(self, path: str, output: str = '', values: dict = None) -> R_pdf_form:
+    def form(self, path: str, output: str = '', values: dict = None) :
         """读取普通 AcroForm 字段；提供 values 和新 output 时填写并保留交互性。values 的键必须是实际字段名，复选框使用字段导出值如 /Yes。拒绝已签名、XFA 或缺失字段结构的表单，不自动扁平化或修复。填写后核对字段值及外观，仍需 pdf_render 目视检查。"""
         from pypdf import PdfReader, PdfWriter
         file = source(self, path, {'.pdf'})

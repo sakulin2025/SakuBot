@@ -55,34 +55,39 @@ class PluginConfig(dict):
 
 
 def schema_for(annotation):
-    if typing.is_typeddict(annotation) or typing.get_origin(annotation) is typing.Annotated:
-        from .contracts import schema_from_type
-        return schema_from_type(annotation)
+    """Best-effort model calling hints, never a plugin typing requirement."""
     origin, arguments = typing.get_origin(annotation), typing.get_args(annotation)
-    if origin in (typing.Literal, typing.Required, typing.NotRequired):
-        from .contracts import schema_from_type
-        return schema_from_type(annotation, described=False)
+    if origin is typing.Annotated:
+        return schema_for(arguments[0])
     if origin in (typing.Union, types.UnionType):
         return {'anyOf': [schema_for(item) for item in arguments]}
+    if origin is typing.Literal:
+        return {'enum': list(arguments)}
     if annotation in (str, int, float, bool, type(None)):
-        return {'type': {str: 'string', int: 'integer', float: 'number', bool: 'boolean', type(None): 'null'}[annotation]}
+        return {'type': {str:'string', int:'integer', float:'number', bool:'boolean', type(None):'null'}[annotation]}
     if annotation is dict or origin is dict:
-        return {'type': 'object', 'additionalProperties': schema_for(arguments[1]) if len(arguments)==2 else True}
+        return {'type':'object', 'additionalProperties':True}
     if annotation is list or origin is list:
-        return {'type': 'array', 'items': schema_for(arguments[0]) if arguments else {}}
+        return {'type':'array','items':schema_for(arguments[0]) if arguments else {}}
     return {}
 
 
 def register_function(plugin, handler, name=None, description=None):
     signature = inspect.signature(handler)
-    hints = typing.get_type_hints(handler, include_extras=True)
+    try:
+        hints = typing.get_type_hints(handler, include_extras=True)
+    except Exception:
+        hints = {}
     doc = inspect.getdoc(handler) or ''
-    docs = dict(re.findall(r'^\s+(\w+)\([^)]*\):\s*(.+)$', doc, re.MULTILINE))
+    docs = dict(re.findall(r'^\s+(\w+)(?:\([^)]*\))?:\s*(.+)$', doc, re.MULTILINE))
     properties, required = {}, []
     for key, value in signature.parameters.items():
         if key == 'invocation':
             continue
-        item = schema_for(hints.get(key, str))
+        if value.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+            continue
+        hint = hints.get(key, type(value.default) if value.default is not inspect.Parameter.empty and value.default is not None else object)
+        item = schema_for(hint)
         if key in docs:
             item['description'] = docs[key]
         if value.default is inspect.Parameter.empty:
@@ -100,8 +105,7 @@ def register_function(plugin, handler, name=None, description=None):
         # Functions may deliberately return text; no implicit JSON decoding.
         return result
     plugin.tool(name or handler.__name__, description or doc.split('Args:')[0].strip(),
-        {'type': 'object', 'properties': properties, 'required': required, 'additionalProperties': False}, invoke,
-        result_schema=schema_for(hints['return']) if 'return' in hints else None)
+        {'type': 'object', 'properties': properties, 'required': required, 'additionalProperties': any(p.kind == inspect.Parameter.VAR_KEYWORD for p in signature.parameters.values())}, invoke)
     return handler
 
 

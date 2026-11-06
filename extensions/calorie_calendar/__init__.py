@@ -1,6 +1,3 @@
-from .tool_arguments import ARGUMENTS
-from .tool_types import R_calorie_confirm, R_calorie_record, R_calorie_report
-from .tool_types import RESULTS
 from .event_docs import PARAMETERS, EVENT, ID_DESCRIPTION
 import calendar
 import math
@@ -31,8 +28,8 @@ def today():
 
 
 class Extension(Plugin):
-    tool_result_types = RESULTS
-    tool_argument_types = ARGUMENTS
+    
+    
     name = 'calorie_calendar'
 
     def setup(self):
@@ -58,11 +55,11 @@ class Extension(Plugin):
         self.api('entry/{identifier}', self.delete_api, methods=('DELETE',))
         self.api('confirm', self.confirm_api, methods=('POST',))
         self.tool('calorie_record', '按日期添加、修改或删除热量摄入/消耗记录。早餐、午餐、晚餐、基础代谢、活动消耗是每天各一条的特殊标签；其他标签可重复。增删改记录不会改变日期确认状态。',
-            None, self.record_tool)
+            {'type': 'object', 'properties': {'action': {'type': 'string', 'enum': ['add', 'update', 'delete'], 'description': '本工具要执行的动作；仅接受枚举列出的操作'}, 'id': {'type': 'string', 'description': '修改或删除时提供记录 ID'}, 'date': {'type': 'string', 'description': '日期 YYYY-MM-DD，新增时可留空表示今天'}, 'kind': {'type': 'string', 'enum': ['intake', 'expenditure'], 'description': 'intake 表示摄入，expenditure 表示消耗'}, 'label': {'type': 'string', 'description': '餐次、消耗类型或自定义标签'}, 'kcal': {'type': 'number', 'minimum': 0, 'maximum': 100000, 'description': '本条记录热量，单位千卡 kcal，必须为非负数'}, 'estimated': {'type': 'boolean', 'description': '是否为估算值；使用可靠营养标签或设备实测时通常为false'}, 'note': {'type': 'string', 'description': '详情描述：具体食物、份量、估算依据或修正说明；追加食物时保留并更新已有详情'}, 'source': {'type': 'string', 'description': '数据来源，例如用户、设备、品牌营养表或估算'}}, 'required': ['action'], 'additionalProperties': False}, self.record_tool)
         self.tool('calorie_report', '查询日期区间的热量记录及统计；汇总仅包括已确认日期。可只传 date 查询某日，也可传 start、end 查询最长 366 天。',
-            None, self.report_tool)
+            {'type': 'object', 'properties': {'date': {'type': 'string', 'description': '单日 YYYY-MM-DD'}, 'start': {'type': 'string', 'description': '开始日期 YYYY-MM-DD'}, 'end': {'type': 'string', 'description': '结束日期 YYYY-MM-DD'}}, 'required': [], 'additionalProperties': False}, self.report_tool)
         self.tool('calorie_confirm', '确认或取消确认某天热量记录。只有已确认的日期计入累计统计；增删改记录不会改变确认状态。',
-            None, self.confirm_tool)
+            {'type': 'object', 'properties': {'date': {'type': 'string', 'description': '日期 YYYY-MM-DD，留空表示今天'}, 'confirmed': {'type': 'boolean', 'description': '是否将该日标为信息完整并纳入统计；后续修改记录不会自动改变此标志'}}, 'required': ['confirmed'], 'additionalProperties': False}, self.confirm_tool)
 
     async def stop(self):
         await super().stop()
@@ -202,7 +199,7 @@ class Extension(Plugin):
         data = await request.json()
         return self.confirm(data.get('date'), data.get('confirmed'))
 
-    async def record_tool(self, inv, args) -> R_calorie_record:
+    async def record_tool(self, inv, args) :
         action = args['action']
         payload = {k: v for k, v in args.items() if k != 'action'}
         if action in ('update', 'delete') and not payload.get('id'):
@@ -211,7 +208,7 @@ class Extension(Plugin):
             raise ValueError('新增记录不应指定 ID')
         return self.delete_entry(payload['id']) if action == 'delete' else self.save_entry(payload)
 
-    async def report_tool(self, inv, args) -> R_calorie_report:
+    async def report_tool(self, inv, args) :
         if args.get('date'):
             return self.day(args['date'])
         start = day_value(args.get('start') or today())
@@ -221,5 +218,5 @@ class Extension(Plugin):
         rows = self.totals(start, end)
         return {'start': start, 'end': end, 'days': rows, 'total': self.aggregate(rows)}
 
-    async def confirm_tool(self, inv, args) -> R_calorie_confirm:
+    async def confirm_tool(self, inv, args) :
         return self.confirm(args.get('date'), args['confirmed'])

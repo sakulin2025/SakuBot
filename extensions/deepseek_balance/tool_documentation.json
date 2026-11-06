@@ -1,0 +1,5 @@
+{
+  "deepseek_balance": {
+    "returns": "返回值: object\n返回值.provider_id: string；框架供应商 ID\n返回值.is_available: boolean；余额是否足够继续调用\n返回值.balance_infos: array；按币种分别列出的余额\n返回值.balance_infos[]: object\n返回值.balance_infos[].currency（分支1）: string\n返回值.balance_infos[].currency（分支2）: null\n返回值.balance_infos[].total_balance（分支1）: string\n返回值.balance_infos[].total_balance（分支2）: null\n返回值.balance_infos[].granted_balance（分支1）: string\n返回值.balance_infos[].granted_balance（分支2）: null\n返回值.balance_infos[].topped_up_balance（分支1）: string\n返回值.balance_infos[].topped_up_balance（分支2）: null\n返回值.fetched_at: string；查询时间，ISO8601 含时区"
+  }
+}

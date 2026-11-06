@@ -1,5 +1,5 @@
 """Remote ScanElf device administration; local memory remains a separate service."""
-from .tool_types import R_scanelf_device_manage
+
 from .client import PluginError, normalize_mac
 
 
@@ -47,7 +47,7 @@ class Management:
         self.last_devices = [row for row in self.managed_devices if not row.get('ignored')]
         return {'saved': True, 'device': result}
 
-    async def device_manage(self, action: str='list', device: str='', details: dict=None, limit: int=50, offset: int=0) -> R_scanelf_device_manage:
+    async def device_manage(self, action: str='list', device: str='', details: dict=None, limit: int=50, offset: int=0) :
         """管理 ScanElf 上游设备，直接修改 ScanElf，而非 SakuBot 本地别名。支持新增、改名、标签、收藏、常驻、忽略和恢复。list 明确返回全部设备（包括忽略），get 查询单设备。add 只创建离线档案，不伪造扫描状态或历史；update 仅更新提供的字段，ignored=false 恢复设备。无删除历史功能。只有用户提供或确认的信息才写入，不猜 MAC、设备归属或标签。网络中断可能已写入，先 get 确认再决定重试。设备描述仍用 scanelf_device_memory。
 
         Args:

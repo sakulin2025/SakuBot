@@ -1,0 +1,11 @@
+{
+  "skill_list": {
+    "returns": "返回值: object\n返回值.items: array；本页技能条目\n返回值.items[]: object\n返回值.items[].id: string；完整技能 ID\n返回值.items[].name: string；名称\n返回值.items[].description: string；使用场景\n返回值.items[].plugin_id: string；来源插件，独立技能可能为空\n返回值.items[].source: string；来源标签\n返回值.items[].version: string；正文版本哈希\n返回值.items[].content: string（可省略）；含 frontmatter 的完整 SKILL.md\n返回值.items[].body: string（可省略）；去掉 frontmatter 的正文\n返回值.items[].directory: string（可省略）；技能所在目录\n返回值.items[].files: array（可省略）；附属文件相对路径\n返回值.items[].files[]: string\n返回值.total: integer；匹配总数\n返回值.has_more: boolean；是否还有条目"
+  },
+  "skill_read": {
+    "returns": "返回值: object\n返回值.id: string；完整技能 ID\n返回值.name: string；名称\n返回值.description: string；使用场景\n返回值.plugin_id: string；来源插件，独立技能可能为空\n返回值.source: string；来源标签\n返回值.version: string；正文版本哈希\n返回值.content: string（可省略）；含 frontmatter 的完整 SKILL.md\n返回值.body: string（可省略）；去掉 frontmatter 的正文\n返回值.directory: string（可省略）；技能所在目录\n返回值.files: array（可省略）；附属文件相对路径\n返回值.files[]: string"
+  },
+  "skill_read_file": {
+    "returns": "返回值: object\n返回值.id: string；技能 ID\n返回值.path: string；技能内相对路径\n返回值.version: string；文件版本\n返回值.size: integer；字节数\n返回值.binary: boolean；是否二进制\n返回值.content: string；本页正文\n返回值.has_more: boolean；是否还有正文\n返回值.offset: integer（可省略）；本页行偏移\n返回值.next_offset: integer（可省略）；下一页偏移\n返回值.total_lines: integer（可省略）；总行数"
+  }
+}

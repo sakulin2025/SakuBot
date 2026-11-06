@@ -1,0 +1,20 @@
+{
+  "audio_terminal_devices": {
+    "returns": "返回值: object\n返回值.connected: boolean；终端服务是否连接\n返回值.error: string；连接错误，正常为空\n返回值.observed_at: number；最近观测时间，Unix 毫秒\n返回值.items: array；设备资料\n返回值.items[]: object\n返回值.items[].id: string（可省略）；设备 ID\n返回值.items[].device_id: string（可省略）；设备 ID\n返回值.items[].name: string（可省略）；设备显示名\n返回值.items[].online（分支1）: boolean（可省略）\n返回值.items[].online（分支2）: null（可省略）\n返回值.items[].events_connected: boolean（可省略）；设备事件流是否连接\n返回值.items[].events_error: string（可省略）；事件流错误"
+  },
+  "audio_terminal_status": {
+    "returns": "返回值: object\n返回值.device_id: string；查询设备 ID\n返回值.status: object；设备/固件状态动态字段，包括音量、唤醒或播放状态等，具体以固件为准\n返回值.status 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。"
+  },
+  "audio_terminal_control": {
+    "returns": "返回值: object\n返回值.ok: boolean（可省略）；请求是否被接受，不等于播放结束\n返回值.device_id: string（可省略）；设备 ID\n返回值.result（分支1）: object（可省略）\n返回值.result（分支1） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值.result（分支2）: array（可省略）\n返回值.result（分支2）[]: 任意JSON\n返回值.result（分支3）: string（可省略）\n返回值.result（分支4）: integer（可省略）\n返回值.result（分支5）: number（可省略）\n返回值.result（分支6）: boolean（可省略）\n返回值.result（分支7）: null（可省略）\n返回值.already_stopped: boolean（可省略）；是否原本已停止\n返回值.request_id: string（可省略）；播放请求 ID\n返回值.playback_id: integer（可省略）；固件返回的整数播放 ID\n返回值.duration_seconds: number（可省略）；播放音频时长，秒\n返回值.completed: boolean（可省略）；仅接受播放时为 false，播放完成以事件为准\n返回值.status: string（可省略）；原始服务确认状态"
+  },
+  "audio_terminal_stop": {
+    "returns": "返回值: object\n返回值.ok: boolean（可省略）；请求是否被接受，不等于播放结束\n返回值.device_id: string（可省略）；设备 ID\n返回值.result（分支1）: object（可省略）\n返回值.result（分支1） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值.result（分支2）: array（可省略）\n返回值.result（分支2）[]: 任意JSON\n返回值.result（分支3）: string（可省略）\n返回值.result（分支4）: integer（可省略）\n返回值.result（分支5）: number（可省略）\n返回值.result（分支6）: boolean（可省略）\n返回值.result（分支7）: null（可省略）\n返回值.already_stopped: boolean（可省略）；是否原本已停止\n返回值.request_id: string（可省略）；播放请求 ID\n返回值.playback_id: integer（可省略）；固件返回的整数播放 ID\n返回值.duration_seconds: number（可省略）；播放音频时长，秒\n返回值.completed: boolean（可省略）；仅接受播放时为 false，播放完成以事件为准\n返回值.status: string（可省略）；原始服务确认状态"
+  },
+  "audio_terminal_play": {
+    "returns": "返回值: object\n返回值.ok: boolean（可省略）；请求是否被接受，不等于播放结束\n返回值.device_id: string（可省略）；设备 ID\n返回值.result（分支1）: object（可省略）\n返回值.result（分支1） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值.result（分支2）: array（可省略）\n返回值.result（分支2）[]: 任意JSON\n返回值.result（分支3）: string（可省略）\n返回值.result（分支4）: integer（可省略）\n返回值.result（分支5）: number（可省略）\n返回值.result（分支6）: boolean（可省略）\n返回值.result（分支7）: null（可省略）\n返回值.already_stopped: boolean（可省略）；是否原本已停止\n返回值.request_id: string（可省略）；播放请求 ID\n返回值.playback_id: integer（可省略）；固件返回的整数播放 ID\n返回值.duration_seconds: number（可省略）；播放音频时长，秒\n返回值.completed: boolean（可省略）；仅接受播放时为 false，播放完成以事件为准\n返回值.status: string（可省略）；原始服务确认状态"
+  },
+  "audio_terminal_events": {
+    "returns": "返回值: object\n返回值.items: array；最近事件，最新在前\n返回值.items[]: object\n返回值.items[].id: string；去重 ID\n返回值.items[].device_id: string；设备 ID\n返回值.items[].event: string；原始事件名\n返回值.items[].received_at: number；接收 Unix 毫秒\n返回值.items[].timestamp_ms（分支1）: number\n返回值.items[].timestamp_ms（分支2）: null\n返回值.items[].data: object；按 event 类型变化的事件载荷\n返回值.items[].data 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值.total_retained: integer；保留的匹配事件数\n返回值.limit: integer；本次条数上限"
+  }
+}

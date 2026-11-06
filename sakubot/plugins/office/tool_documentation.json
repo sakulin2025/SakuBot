@@ -1,0 +1,50 @@
+{
+  "pdf_create": {
+    "returns": "返回值: object\n返回值.path: string；产物工作空间相对路径\n返回值.bytes: integer；文件字节数\n返回值.artifact: object（可省略）；文件不超过发布上限时附带附件信息\n返回值.artifact.url: string；框架附件 URL，有时效，不是工作空间路径\n返回值.artifact.name: string；文件显示名称\n返回值.artifact.mime: string；MIME 内容类型\n返回值.artifact.expires: number；附件过期时间，Unix 秒，UTC 基准\n返回值.recalculated: boolean（可省略）；是否已完成表格重算"
+  },
+  "pdf_merge": {
+    "returns": "返回值: object\n返回值.path: string；产物工作空间相对路径\n返回值.bytes: integer；文件字节数\n返回值.artifact: object（可省略）；文件不超过发布上限时附带附件信息\n返回值.artifact.url: string；框架附件 URL，有时效，不是工作空间路径\n返回值.artifact.name: string；文件显示名称\n返回值.artifact.mime: string；MIME 内容类型\n返回值.artifact.expires: number；附件过期时间，Unix 秒，UTC 基准\n返回值.recalculated: boolean（可省略）；是否已完成表格重算"
+  },
+  "document_create": {
+    "returns": "返回值: object\n返回值.path: string；产物工作空间相对路径\n返回值.bytes: integer；文件字节数\n返回值.artifact: object（可省略）；文件不超过发布上限时附带附件信息\n返回值.artifact.url: string；框架附件 URL，有时效，不是工作空间路径\n返回值.artifact.name: string；文件显示名称\n返回值.artifact.mime: string；MIME 内容类型\n返回值.artifact.expires: number；附件过期时间，Unix 秒，UTC 基准\n返回值.recalculated: boolean（可省略）；是否已完成表格重算"
+  },
+  "document_replace": {
+    "returns": "返回值: object\n返回值.path: string；产物工作空间相对路径\n返回值.bytes: integer；文件字节数\n返回值.artifact: object（可省略）；文件不超过发布上限时附带附件信息\n返回值.artifact.url: string；框架附件 URL，有时效，不是工作空间路径\n返回值.artifact.name: string；文件显示名称\n返回值.artifact.mime: string；MIME 内容类型\n返回值.artifact.expires: number；附件过期时间，Unix 秒，UTC 基准\n返回值.recalculated: boolean（可省略）；是否已完成表格重算"
+  },
+  "document_convert": {
+    "returns": "返回值: object\n返回值.path: string；产物工作空间相对路径\n返回值.bytes: integer；文件字节数\n返回值.artifact: object（可省略）；文件不超过发布上限时附带附件信息\n返回值.artifact.url: string；框架附件 URL，有时效，不是工作空间路径\n返回值.artifact.name: string；文件显示名称\n返回值.artifact.mime: string；MIME 内容类型\n返回值.artifact.expires: number；附件过期时间，Unix 秒，UTC 基准\n返回值.recalculated: boolean（可省略）；是否已完成表格重算"
+  },
+  "spreadsheet_create": {
+    "returns": "返回值: object\n返回值.path: string；产物工作空间相对路径\n返回值.bytes: integer；文件字节数\n返回值.artifact: object（可省略）；文件不超过发布上限时附带附件信息\n返回值.artifact.url: string；框架附件 URL，有时效，不是工作空间路径\n返回值.artifact.name: string；文件显示名称\n返回值.artifact.mime: string；MIME 内容类型\n返回值.artifact.expires: number；附件过期时间，Unix 秒，UTC 基准\n返回值.recalculated: boolean（可省略）；是否已完成表格重算"
+  },
+  "spreadsheet_update": {
+    "returns": "返回值: object\n返回值.path: string；产物工作空间相对路径\n返回值.bytes: integer；文件字节数\n返回值.artifact: object（可省略）；文件不超过发布上限时附带附件信息\n返回值.artifact.url: string；框架附件 URL，有时效，不是工作空间路径\n返回值.artifact.name: string；文件显示名称\n返回值.artifact.mime: string；MIME 内容类型\n返回值.artifact.expires: number；附件过期时间，Unix 秒，UTC 基准\n返回值.recalculated: boolean（可省略）；是否已完成表格重算"
+  },
+  "spreadsheet_recalculate": {
+    "returns": "返回值: object\n返回值.path: string；产物工作空间相对路径\n返回值.bytes: integer；文件字节数\n返回值.artifact: object（可省略）；文件不超过发布上限时附带附件信息\n返回值.artifact.url: string；框架附件 URL，有时效，不是工作空间路径\n返回值.artifact.name: string；文件显示名称\n返回值.artifact.mime: string；MIME 内容类型\n返回值.artifact.expires: number；附件过期时间，Unix 秒，UTC 基准\n返回值.recalculated: boolean（可省略）；是否已完成表格重算"
+  },
+  "pdf_render": {
+    "returns": "返回值: object\n返回值.total_pages: integer；文档总页数\n返回值.previews: array；本次渲染的页面\n返回值.previews[]: object\n返回值.previews[].page: integer；1起始页码\n返回值.previews[].path: string；预览图片路径\n返回值.previews[].bytes: integer；图片字节数\n返回值.previews[].artifact: object（可省略）；可发布的预览附件\n返回值.previews[].artifact.url: string；框架附件 URL，有时效，不是工作空间路径\n返回值.previews[].artifact.name: string；文件显示名称\n返回值.previews[].artifact.mime: string；MIME 内容类型\n返回值.previews[].artifact.expires: number；附件过期时间，Unix 秒，UTC 基准\n返回值.vision: object；是否已把图片提交给当前视觉模型；queued=false 时含原因\n返回值.vision 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值.pdf: object（可省略）；先转换得到的 PDF 资料\n返回值.pdf.path: string；产物工作空间相对路径\n返回值.pdf.bytes: integer；文件字节数\n返回值.pdf.artifact: object（可省略）；文件不超过发布上限时附带附件信息\n返回值.pdf.artifact.url: string；框架附件 URL，有时效，不是工作空间路径\n返回值.pdf.artifact.name: string；文件显示名称\n返回值.pdf.artifact.mime: string；MIME 内容类型\n返回值.pdf.artifact.expires: number；附件过期时间，Unix 秒，UTC 基准\n返回值.pdf.recalculated: boolean（可省略）；是否已完成表格重算"
+  },
+  "document_render": {
+    "returns": "返回值: object\n返回值.total_pages: integer；文档总页数\n返回值.previews: array；本次渲染的页面\n返回值.previews[]: object\n返回值.previews[].page: integer；1起始页码\n返回值.previews[].path: string；预览图片路径\n返回值.previews[].bytes: integer；图片字节数\n返回值.previews[].artifact: object（可省略）；可发布的预览附件\n返回值.previews[].artifact.url: string；框架附件 URL，有时效，不是工作空间路径\n返回值.previews[].artifact.name: string；文件显示名称\n返回值.previews[].artifact.mime: string；MIME 内容类型\n返回值.previews[].artifact.expires: number；附件过期时间，Unix 秒，UTC 基准\n返回值.vision: object；是否已把图片提交给当前视觉模型；queued=false 时含原因\n返回值.vision 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值.pdf: object（可省略）；先转换得到的 PDF 资料\n返回值.pdf.path: string；产物工作空间相对路径\n返回值.pdf.bytes: integer；文件字节数\n返回值.pdf.artifact: object（可省略）；文件不超过发布上限时附带附件信息\n返回值.pdf.artifact.url: string；框架附件 URL，有时效，不是工作空间路径\n返回值.pdf.artifact.name: string；文件显示名称\n返回值.pdf.artifact.mime: string；MIME 内容类型\n返回值.pdf.artifact.expires: number；附件过期时间，Unix 秒，UTC 基准\n返回值.pdf.recalculated: boolean（可省略）；是否已完成表格重算"
+  },
+  "spreadsheet_render": {
+    "returns": "返回值: object\n返回值.total_pages: integer；文档总页数\n返回值.previews: array；本次渲染的页面\n返回值.previews[]: object\n返回值.previews[].page: integer；1起始页码\n返回值.previews[].path: string；预览图片路径\n返回值.previews[].bytes: integer；图片字节数\n返回值.previews[].artifact: object（可省略）；可发布的预览附件\n返回值.previews[].artifact.url: string；框架附件 URL，有时效，不是工作空间路径\n返回值.previews[].artifact.name: string；文件显示名称\n返回值.previews[].artifact.mime: string；MIME 内容类型\n返回值.previews[].artifact.expires: number；附件过期时间，Unix 秒，UTC 基准\n返回值.vision: object；是否已把图片提交给当前视觉模型；queued=false 时含原因\n返回值.vision 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值.pdf: object（可省略）；先转换得到的 PDF 资料\n返回值.pdf.path: string；产物工作空间相对路径\n返回值.pdf.bytes: integer；文件字节数\n返回值.pdf.artifact: object（可省略）；文件不超过发布上限时附带附件信息\n返回值.pdf.artifact.url: string；框架附件 URL，有时效，不是工作空间路径\n返回值.pdf.artifact.name: string；文件显示名称\n返回值.pdf.artifact.mime: string；MIME 内容类型\n返回值.pdf.artifact.expires: number；附件过期时间，Unix 秒，UTC 基准\n返回值.pdf.recalculated: boolean（可省略）；是否已完成表格重算"
+  },
+  "pdf_read": {
+    "returns": "返回值: object\n返回值.path: string；源 PDF 路径\n返回值.total_pages: integer；总页数\n返回值.pages: array；本页读取的页面\n返回值.pages[]: object\n返回值.pages[].page: integer；1起始页码\n返回值.pages[].text: string；提取文本，扫描件可能为空\n返回值.pages[].tables: array（可省略）；抽取的表格：表格/行/单元格，单元格可能为空\n返回值.pages[].tables[]: array\n返回值.pages[].tables[][]: array\n返回值.pages[].tables[][][]（分支1）: string\n返回值.pages[].tables[][][]（分支2）: null\n返回值.next_page（分支1）: integer\n返回值.next_page（分支2）: null"
+  },
+  "pdf_form": {
+    "returns": "返回值（分支1）: object\n返回值（分支1）.path: string；产物工作空间相对路径\n返回值（分支1）.bytes: integer；文件字节数\n返回值（分支1）.artifact: object（可省略）；文件不超过发布上限时附带附件信息\n返回值（分支1）.artifact.url: string；框架附件 URL，有时效，不是工作空间路径\n返回值（分支1）.artifact.name: string；文件显示名称\n返回值（分支1）.artifact.mime: string；MIME 内容类型\n返回值（分支1）.artifact.expires: number；附件过期时间，Unix 秒，UTC 基准\n返回值（分支1）.recalculated: boolean（可省略）；是否已完成表格重算\n返回值（分支2）: object\n返回值（分支2）.fields: array；PDF 表单字段\n返回值（分支2）.fields[]: object\n返回值（分支2）.fields[].name: string；表单字段名\n返回值（分支2）.fields[].type: string；PDF /FT 字段类型\n返回值（分支2）.fields[].value: string；当前文本值\n返回值（分支2）.fields[].options: array；可选项\n返回值（分支2）.fields[].options[]: string"
+  },
+  "document_read": {
+    "returns": "返回值: object\n返回值.path: string；文档路径\n返回值.blocks: array；本页正文块\n返回值.blocks[]: object\n返回值.blocks[].index: integer；正文块序号\n返回值.blocks[].type: string；paragraph/table\n返回值.blocks[].style: string（可省略）；段落样式名\n返回值.blocks[].text: string（可省略）；段落文字\n返回值.blocks[].rows_total: integer（可省略）；表格总行数\n返回值.blocks[].columns_total: integer（可省略）；表格总列数\n返回值.blocks[].rows: array（可省略）；表格单元格文字\n返回值.blocks[].rows[]: array\n返回值.blocks[].rows[][]: string\n返回值.blocks[].truncated: boolean；该块是否截断\n返回值.total_blocks: integer；正文块总数\n返回值.next_offset（分支1）: integer\n返回值.next_offset（分支2）: null"
+  },
+  "spreadsheet_read": {
+    "returns": "返回值: object\n返回值.path: string；表格路径\n返回值.range: string；A1 读取范围\n返回值.rows（分支1）: array\n返回值.rows（分支1）[]: array\n返回值.rows（分支1）[][]: object\n返回值.rows（分支1）[][].value（分支1）: string\n返回值.rows（分支1）[][].value（分支2）: number\n返回值.rows（分支1）[][].value（分支3）: integer\n返回值.rows（分支1）[][].value（分支4）: boolean\n返回值.rows（分支1）[][].value（分支5）: null\n返回值.rows（分支1）[][].value（分支6）: object；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值.rows（分支1）[][].value（分支6） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值.rows（分支1）[][].formula（分支1）: string（可省略）\n返回值.rows（分支1）[][].formula（分支2）: object（可省略）；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值.rows（分支1）[][].formula（分支2） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值.rows（分支2）: array\n返回值.rows（分支2）[]: array\n返回值.rows（分支2）[][]: string\n返回值.sheets: array（可省略）；工作表名列表\n返回值.sheets[]: string\n返回值.sheet: string（可省略）；实际工作表名\n返回值.dimensions: object（可省略）；工作表范围\n返回值.dimensions.rows: integer；最大行数\n返回值.dimensions.columns: integer；最大列数\n返回值.values_are_text: boolean（可省略）；CSV/TSV 模式为true"
+  },
+  "spreadsheet_errors": {
+    "returns": "返回值: object\n返回值.scanned_cells: integer；已扫描单元格数\n返回值.complete: boolean；是否扫描完毕\n返回值.formula_cache_missing: integer；公式缓存缺失数量\n返回值.formula_blank_string_results: integer；公式空字符串结果数\n返回值.errors: array；错误列表\n返回值.errors[]: object\n返回值.errors[].sheet: string（可省略）；工作表名\n返回值.errors[].cell: string（可省略）；单元格坐标\n返回值.errors[].value: string（可省略）；错误文本\n返回值.errors[].error: string（可省略）；Excel 错误文本，例如 #DIV/0!\n返回值.errors[].formula（分支1）: string（可省略）\n返回值.errors[].formula（分支2）: object（可省略）；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值.errors[].formula（分支2） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值.errors_capped: boolean；错误列表是否达到100项上限"
+  }
+}

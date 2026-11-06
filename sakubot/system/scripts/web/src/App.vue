@@ -39,7 +39,7 @@ const script = reactive({
   id: "",
   name: "",
   description: "",
-  code: 'from script_types import ScriptContext\n\nasync def main(ctx: ScriptContext) -> object:\n    ctx.log("执行完成")\n    return {"ok": True}\n',
+  code: 'async def main(ctx, event, tools):\n    tools["script_log"]("执行完成")\n    return {"ok": True}\n',
   parameters: JSON.stringify(emptySchema, null, 2),
   event_sources_text: "",
   tool_plugins_text: "",
@@ -128,7 +128,7 @@ function defaults(schema: any) {
 async function edit(row?: any) {
   error.value = "";
   versions.value = [];
-  diagnostics.value = []; canForce.value = false; forceReason.value = "";
+  diagnostics.value = [];
   try {
     const value = row
       ? await api("script", { action: "get", id: row.id })
@@ -139,7 +139,7 @@ async function edit(row?: any) {
       description: value?.description || "",
       code:
         value?.code ||
-        'from script_types import ScriptContext\n\nasync def main(ctx: ScriptContext) -> object:\n    ctx.log("执行完成")\n    return {"ok": True}\n',
+        'async def main(ctx, event, tools):\n    tools["script_log"]("执行完成")\n    return {"ok": True}\n',
       parameters: JSON.stringify(value?.parameters || emptySchema, null, 2),
       event_sources_text: (value?.event_sources || catalog.value.bindings.filter((b: any) => b.script_id === value?.id).map((b: any) => b.source)).join('\n'),
       tool_plugins_text: (value?.tool_plugins || []).join('\n'),
@@ -176,31 +176,28 @@ async function version(value: string) {
   }
 }
 const diagnostics = ref<any[]>([])
-const canForce = ref(false)
-const forceOpen = ref(false)
-const forceReason = ref('')
-const sdkOpen = ref(false)
-const sdkText = ref('')
+const documentationOpen = ref(false)
+const documentationText = ref('')
 function scriptPayload() {
   const { event_sources_text, tool_plugins_text, ...rest } = script
   const lines = (value: string) => [...new Set(value.split('\n').map(s => s.trim()).filter(Boolean))]
   return { ...rest, parameters: JSON.parse(script.parameters), event_sources: lines(event_sources_text),
     tool_plugins: tool_plugins_text.trim() ? lines(tool_plugins_text) : undefined }
 }
-async function getSDK() {
+async function getDocumentation() {
   busy.value = true
   try {
     const input = scriptPayload()
     const result = await api('development', { sources: input.event_sources, parameters: input.parameters, tool_plugins: input.tool_plugins })
-    let full = result.sdk
+    let full = result.documentation
     let next = result.next_offset
     while (next !== null && next !== undefined) {
-      const page = await api('development', { sources: input.event_sources, parameters: input.parameters, tool_plugins: input.tool_plugins, offset:next, sdk_hash:result.sdk_hash })
-      full += page.sdk
+      const page = await api('development', { sources: input.event_sources, parameters: input.parameters, tool_plugins: input.tool_plugins, offset:next, documentation_hash:result.documentation_hash })
+      full += page.documentation
       next = page.next_offset
     }
-    sdkText.value = full
-    sdkOpen.value = true
+    documentationText.value = full
+    documentationOpen.value = true
   } catch (e) { error.value = failure(e) }
   finally { busy.value = false }
 }
@@ -209,26 +206,22 @@ async function checkScript() {
   try {
     const result = await api('script', { action: 'check', ...scriptPayload() })
     diagnostics.value = result.diagnostics || []
-    canForce.value = !result.ok && result.syntax_ok && result.checker_available
     error.value = result.ok ? '' : '检查未通过'
     if (result.ok) host.toast('检查通过')
   } catch (e) { error.value = failure(e) }
   finally { busy.value = false }
 }
-async function saveScript(hard = false) {
+async function saveScript() {
   busy.value = true
   error.value = ''
   try {
-    const result = await api('script', { action:'save', ...scriptPayload(), hard, hard_reason:hard ? forceReason.value : '' })
+    const result = await api('script', { action:'save', ...scriptPayload() })
     diagnostics.value = result.diagnostics || []
     if (result.saved === false) {
-      canForce.value = result.can_force
       error.value = result.error
-      forceOpen.value = false
       return
     }
     editing.value = false
-    forceOpen.value = false
     await load()
     host.toast('已保存')
   } catch (e) { error.value = failure(e) }
@@ -243,7 +236,7 @@ async function toggle(row: any, value: boolean) {
       enabled: value,
       expected_version: current.version,
     });
-    if (saved.saved === false) { await edit(row); diagnostics.value = saved.diagnostics || []; canForce.value = saved.can_force; error.value = saved.error; return }
+    if (saved.saved === false) { await edit(row); diagnostics.value = saved.diagnostics || []; error.value = saved.error; return }
     await load();
   } catch (e) {
     host.toast(failure(e), true);
@@ -627,7 +620,7 @@ onUnmounted(() => clearInterval(timer));
         <div v-if="diagnostics.length" class="table-scroll"><STable><thead><tr><th>级别</th><th>位置</th><th>诊断</th></tr></thead><tbody><tr v-for="(d, index) in diagnostics" :key="index"><td><STag :label="d.severity === 'error' ? '错误' : '警告'" :status="d.severity === 'error' ? 'failed' : 'idle'" /></td><td>{{ d.line }}:{{ d.column }}</td><td>{{ d.message }}</td></tr></tbody></STable></div>
       </form>
       <template #footer
-        ><SButton :disabled="busy" @click="getSDK">SDK</SButton><SButton :disabled="busy" @click="checkScript">检查</SButton><SButton v-if="canForce" variant="danger" :disabled="busy" @click="forceOpen = true">强制保存</SButton><SButton :disabled="busy" @click="editing = false">取消</SButton
+        ><SButton :disabled="busy" @click="getDocumentation">开发文档</SButton><SButton :disabled="busy" @click="checkScript">检查</SButton><SButton :disabled="busy" @click="editing = false">取消</SButton
         ><SButton
           form="script-editor"
           type="submit"
@@ -637,8 +630,7 @@ onUnmounted(() => clearInterval(timer));
         ></template
       ></UiModal
     >
-    <UiModal :open="sdkOpen" title="脚本 SDK" @close="sdkOpen = false"><STextarea :model-value="sdkText" rows="24" readonly class="code-editor" /></UiModal>
-    <UiModal :open="forceOpen" title="强制保存" @close="!busy && (forceOpen = false)"><form id="script-force" @submit.prevent="saveScript(true)"><div class="field"><label>原因</label><STextarea v-model="forceReason" rows="4" maxlength="2000" required /></div></form><template #footer><SButton :disabled="busy" @click="forceOpen = false">取消</SButton><SButton form="script-force" type="submit" variant="danger" :loading="busy" :disabled="!forceReason.trim()">强制保存</SButton></template></UiModal>
+    <UiModal :open="documentationOpen" title="开发文档" @close="documentationOpen = false"><STextarea :model-value="documentationText" rows="24" readonly class="code-editor" /></UiModal>
     <UiModal
       :open="bindingOpen"
       title="触发绑定"

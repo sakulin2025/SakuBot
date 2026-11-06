@@ -1,6 +1,3 @@
-from .tool_arguments import ARGUMENTS
-from .tool_types import R_freereps_activity, R_freereps_metrics, R_freereps_sleep, R_freereps_status, R_freereps_workout_detail, R_freereps_workout_report, R_freereps_workouts
-from .tool_types import RESULTS
 from .event_docs import PARAMETERS, EVENT, ID_DESCRIPTION
 import asyncio
 import uuid
@@ -13,8 +10,8 @@ from .report import make_report
 
 
 class Extension(Polling, Plugin):
-    tool_result_types = RESULTS
-    tool_argument_types = ARGUMENTS
+    
+    
     name = 'freereps_activity'
 
     def setup(self):
@@ -82,7 +79,7 @@ class Extension(Polling, Plugin):
             raise ValueError('操作无效')
         raise ValueError('操作无效')
 
-    async def workouts(self, start: str='', end: str='', workout_type: str='', limit: int=30, offset: int=0) -> R_freereps_workouts:
+    async def workouts(self, start: str='', end: str='', workout_type: str='', limit: int=30, offset: int=0) :
         """按时间和训练类型查询 FreeReps 训练记录。新记录的到达时间不等于训练结束时间。返回分页与训练 ID；类型筛选需使用 FreeReps 实际类型名称。
 
         Args:
@@ -97,7 +94,7 @@ class Extension(Polling, Plugin):
         rows = await self.client.workouts(start, end, workout_type)
         return {'items': rows[offset:offset + limit], 'total': len(rows), 'offset': offset, 'has_more': offset + limit < len(rows)}
 
-    async def detail(self, id: str, include_sets: bool=True, start: str='', end: str='') -> R_freereps_workout_detail:
+    async def detail(self, id: str, include_sets: bool=True, start: str='', end: str='') :
         """查询训练详情和力量训练组。部分由力量训练合成的列表条目没有常规训练详情，返回 unavailable，不代表训练不存在。详情可能包含敏感路线，按需提供。
 
         Args:
@@ -120,11 +117,11 @@ class Extension(Polling, Plugin):
                 result[label + '_unavailable'] = True
         return result
 
-    async def activity(self, start: str='', end: str='') -> R_freereps_activity:
+    async def activity(self, start: str='', end: str='') :
         """查询指定时间的每日活动汇总；未同步不代表没有活动。日期格式 YYYY-MM-DD。"""
         return await self.client.get('activity-summaries', date_range(start, end))
 
-    async def workout_report(self, id: str) -> R_freereps_workout_report:
+    async def workout_report(self, id: str) :
         """为一条训练生成 PNG 长图，保存到共享工作空间。按需显示概览、GPS 轨迹背景、心率和速度或配速；不含地图底图。结果包含工作空间相对路径，可用 workspace_publish 发送。
 
         Args:
@@ -138,7 +135,7 @@ class Extension(Polling, Plugin):
         return {'path': path, 'format': 'png', 'timezone': 'Asia/Shanghai', **sections,
             'delivery': '使用 workspace_publish 发布或发送图片。GPS 轨迹不含地图底图。'}
 
-    async def metrics(self, metric: str='', start: str='', end: str='', mode: str='latest') -> R_freereps_metrics:
+    async def metrics(self, metric: str='', start: str='', end: str='', mode: str='latest') :
         """查询最新健康指标、指定指标的记录或统计。mode 为 latest、available、history、stats；单位和缺失值须按返回结果解释。"""
         if mode in ('latest', 'available'):
             return await self.client.get('metrics/' + mode)
@@ -148,11 +145,11 @@ class Extension(Polling, Plugin):
         params['name' if mode == 'history' else 'metric'] = metric.strip()
         return await self.client.get('metrics' if mode == 'history' else 'metrics/stats', params)
 
-    async def sleep(self, start: str='', end: str='') -> R_freereps_sleep:
+    async def sleep(self, start: str='', end: str='') :
         """查询指定时间内睡眠记录和阶段；结果缺失不等于未睡眠。日期格式 YYYY-MM-DD。"""
         return await self.client.get('sleep', date_range(start, end))
 
-    async def status(self, include_sources: bool=False) -> R_freereps_status:
+    async def status(self, include_sources: bool=False) :
         """查询 FreeReps 版本、轮询与基线状态，不主动注入健康数据。"""
         version = await self.client.get('version')
         state = self.state.get('monitor', {})

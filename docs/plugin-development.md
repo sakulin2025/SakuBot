@@ -789,22 +789,10 @@ QQ 的 `main_sessions` 为 `{type: "group" | "private", number: "数字号码"}`
 策略独立实现在 `progress_policy.py`，仅接入工具批次边界，不影响工具结果配对、安全位置吸收和其他智能体。提醒不永久进入主上下文，累计状态随运行轨迹保存。
 
 
-### 事件声明必须附带变量文档
+### 简单工具与软事件
 
-`trigger_source(..., id_description="...")` 必须给出事件 ID 规则、`event_schema.description`、至少一个有效完整 `event_schema.examples`。绑定参数与事件字段须递归声明类型和 `description`，枚举逐项提供 `x-enum-descriptions`；单位、时间格式与时区、空值和默认筛选语义写清楚。框架在声明阶段拒绝不完整文档，具体 API 和完整示例见 [事件变量文档规范](scripts.md#事件变量文档规范)。定义由插件维护，页面和 Agent 共用，不由核心根据字段名猜测。
+工具就是插件暴露的方法；方法名全局唯一，调用无需插件 ID。推荐 self.function(self.method)，模型参数从函数签名与 docstring 获取。类型注解可选，不要求结构体、映射表或生成 SDK。复杂工具可用 self.tool(name,description,parameters,handler)，handler 接收 invocation、参数字典。临时工具使用 agent.tool(name,description,parameters,handler)。名称冲突明确报错，不静默覆盖。
 
+返回值原样交给调用方，无返回类型校验。失败请抛异常。返回中的业务 error/success 字段不自动解释成调用异常。插件可选提供 tool_documentation.json，按方法名记录 returns 结构说明；文件仅用于文档查询，不参与注册或执行校验。README.md 和 skills/**/*.md 一起提供给脚本作者。
 
-### 类型化事件和工具
-
-优先使用 typing 的 TypedDict、Annotated、NotRequired、Literal 定义参数、事件数据与返回结构。以 Python 类型为单一来源，通过 `sakubot.contracts.schema_from_type()` 生成 JSON Schema；现有触发源示例见各插件 event_types.py。`trigger_source` 支持 parameters_type/event_type，`typed_tool` 要求明确参数和结果类型并校验两端数据。字段说明、枚举含义和事件示例仍适用事件文档规范。
-
-脚本 SDK 和保存诊断详见 [Python 类型契约与静态保存检查](scripts.md#python-类型契约与静态保存检查)。旧工具未声明的返回结构明确标为 object，不猜测 Schema；新增工具应提供完整结果类型，既方便 Agent 阅读，也方便脚本静态检查。
-
-
-### 工具契约的维护位置
-
-现有插件的参数契约集中在自己的 `tool_arguments.py`（`ARGUMENTS`），返回契约在 `tool_types.py`（`RESULTS`），事件契约在 `event_types.py`。类声明 `tool_argument_types = ARGUMENTS`、`tool_result_types = RESULTS` 后，公共注册 API 从 Python 类型生成 Schema，供运行时校验、函数目录与脚本 SDK 共用；不要再修改已移除的内联参数 Schema。`self.tool(name, description, None, handler)` 中的 None 表示使用该类声明的参数契约，不表示接受任意参数。新插件也可直接用 `typed_tool()`。
-
-通用 REST/OneBot 原样透传、服务相关天气数据、设备固件属性等真实动态字段使用注明语义的 `DynamicObject`/`DynamicJSON`，不能为了通过静态检查编造固定字段。多 action 工具声明真实返回联合类型；旧接口的错误字符串也必须包含在联合中，调用方先区分成功与失败结果。
-
-临时工具可通过 `agent.tool(..., arguments_type=Args, result_type=Result)` 声明输入和返回类型，团队成员的报告、进度、待确认工具均已接入。函数目录及 script_tools 返回 result_schema、result_contract_kind（fixed/mixed/dynamic/missing）；只有读取元数据，不会执行工具。覆盖详情见 [插件契约检查表](plugin-contract-coverage.md)。
+trigger_source 的 parameters、event_schema、id_description 都是可选文档，不强制字段说明、示例和类型，不对触发载荷做 Schema 校验。未声明来源仍可绑定。脚本使用 main(ctx,event,tools)，参数都是普通 dict；调用 await tools["方法名"](...)。每次开发必须重新查当前插件文档，不能凭记忆猜接口。详见 [事件与脚本](scripts.md)。

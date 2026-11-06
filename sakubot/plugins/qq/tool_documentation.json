@@ -1,0 +1,23 @@
+{
+  "people_lookup": {
+    "returns": "返回值: array\n返回值[]: object\n返回值[].id: string（可省略）；稳定 QQ 用户 ID\n返回值[].nickname: string（可省略）；账号昵称，仅显示不用来授权\n返回值[].card: string（可省略）；群名片，仅显示\n返回值[].groups（分支1）: object（可省略）；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值[].groups（分支1） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值[].groups（分支2）: array（可省略）\n返回值[].groups（分支2）[]: 任意JSON\n返回值[].names: array（可省略）；历史称呼\n返回值[].names[]: string"
+  },
+  "qq_send": {
+    "returns": "返回值（分支1）: object\n返回值（分支1）.message_id（分支1）: integer（可省略）\n返回值（分支1）.message_id（分支2）: string（可省略）\n返回值（分支1）.status: string（可省略）；幂等投递状态，取决于底层动作记录\n返回值（分支1）.result（分支1）: object（可省略）\n返回值（分支1）.result（分支1） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支1）.result（分支2）: array（可省略）\n返回值（分支1）.result（分支2）[]: 任意JSON\n返回值（分支1）.result（分支3）: string（可省略）\n返回值（分支1）.result（分支4）: integer（可省略）\n返回值（分支1）.result（分支5）: number（可省略）\n返回值（分支1）.result（分支6）: boolean（可省略）\n返回值（分支1）.result（分支7）: null（可省略）\n返回值（分支2）（分支1）: object\n返回值（分支2）（分支1） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支2）（分支2）: array\n返回值（分支2）（分支2）[]: 任意JSON\n返回值（分支2）（分支3）: string\n返回值（分支2）（分支4）: integer\n返回值（分支2）（分支5）: number\n返回值（分支2）（分支6）: boolean\n返回值（分支2）（分支7）: null"
+  },
+  "qq_read": {
+    "returns": "返回值（分支1）: object\n返回值（分支1） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支2）: array\n返回值（分支2）[]: 任意JSON\n返回值（分支3）: string\n返回值（分支4）: integer\n返回值（分支5）: number\n返回值（分支6）: boolean\n返回值（分支7）: null"
+  },
+  "qq_action": {
+    "returns": "返回值（分支1）: object\n返回值（分支1） 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值（分支2）: array\n返回值（分支2）[]: 任意JSON\n返回值（分支3）: string\n返回值（分支4）: integer\n返回值（分支5）: number\n返回值（分支6）: boolean\n返回值（分支7）: null"
+  },
+  "qq_recent": {
+    "returns": "返回值: array\n返回值[]: object\n返回值[].id: integer（可省略）；本地归档分页 ID\n返回值[].uid: string（可省略）；去重标识\n返回值[].at: number（可省略）；消息 Unix 秒\n返回值[].session_id: string；Private:号码 或 Group:号码\n返回值[].message_id: string；平台消息 ID\n返回值[].sender_id: string；说话人 QQ ID\n返回值[].sender_name: string；说话人显示名\n返回值[].sender_role: string（可省略）；群角色标识\n返回值[].text: string；框架预处理后的正文\n返回值[].mentions: array（可省略）；被提及的 QQ ID\n返回值[].mentions[]: string\n返回值[].parts: array（可省略）；已处理的消息内容块，字段按消息类型决定\n返回值[].parts[]: object；动态字段映射；具体键和值由所选远端 API、实体属性或扩展决定，须查对应接口文档，不猜字段\n返回值[].parts[] 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值[].reply_to（分支1）: string（可省略）\n返回值[].reply_to（分支2）: null（可省略）\n返回值[].is_owner: boolean（可省略）；是否匹配配置的主人 QQ 号\n返回值[].identity: object（可省略）；当前 QQ 账号与主人 ID 环境\n返回值[].identity 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。"
+  },
+  "qq_notices": {
+    "returns": "返回值: object\n返回值.items: array；本页归档通知\n返回值.items[]: object\n返回值.items[].id: integer；归档通知 ID\n返回值.items[].at: number；归档时间，Unix 秒\n返回值.items[].data: object；OneBot 通知/request 的实际数据，含处理申请所需 flag 时保留\n返回值.items[].data 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值.next_before（分支1）: integer\n返回值.next_before（分支2）: null"
+  },
+  "qq_api": {
+    "returns": "返回值: object\n返回值.backend: string；NapCat 或 SnowLuma 协议端标识\n返回值.docs: string；对应协议端官方文档入口\n返回值.read_actions: array；内置只读动作\n返回值.read_actions[]: string\n返回值.examples: object；动作到参数示例的映射，仅为示例\n返回值.examples 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。"
+  }
+}

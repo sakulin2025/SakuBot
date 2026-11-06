@@ -1,5 +1,3 @@
-from .tool_arguments import ARGUMENTS
-from .tool_types import RESULTS
 import asyncio
 import base64
 import hashlib
@@ -28,8 +26,8 @@ IDENTIFIER = re.compile(r'^[a-z0-9]{26}$')
 
 
 class Extension(ChannelSources, MattermostTools, Plugin):
-    tool_result_types = RESULTS
-    tool_argument_types = ARGUMENTS
+    
+    
     name = 'mattermost'
 
     def setup(self):

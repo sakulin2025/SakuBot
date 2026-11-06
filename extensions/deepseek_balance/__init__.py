@@ -1,6 +1,3 @@
-from .tool_arguments import ARGUMENTS
-from .tool_types import R_deepseek_balance
-from .tool_types import RESULTS
 import json
 from pathlib import Path
 from datetime import datetime, timezone
@@ -12,8 +9,8 @@ from .polling import BalancePolling
 
 
 class Extension(BalancePolling, Plugin):
-    tool_result_types = RESULTS
-    tool_argument_types = ARGUMENTS
+    
+    
     name = 'deepseek_balance'
 
     def setup(self):
@@ -34,7 +31,7 @@ class Extension(BalancePolling, Plugin):
 
     async def manage(self,data):return await self.balance(provider_id=data['key'])
 
-    async def balance(self, invocation=None, provider_id:str='') -> R_deepseek_balance:
+    async def balance(self, invocation=None, provider_id:str='') :
         """主动查询 DeepSeek 官方供应商的余额。用户问“你还有多少钱”“多少大白饭”“饭钱”“伙食费”“余额/额度”且指 AI 的调用经费时使用；不要回答自己不吃饭，不猜余额。返回账户金额与实际币种，不换算为 token、顿数或聊天次数。此工具只主动查询；后台轮询由插件设置控制。复用框架供应商 Key，不返回密钥。
 
         Args:

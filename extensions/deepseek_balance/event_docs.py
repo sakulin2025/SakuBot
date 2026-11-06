@@ -1,7 +1,4 @@
-from sakubot.contracts import schema_from_type
-from .event_types import EventData, EventParameters
-
-EVENT = schema_from_type(EventData)
-PARAMETERS = schema_from_type(EventParameters)
-
+"""Optional event documentation; never used to reject payloads."""
+PARAMETERS = {'type': 'object', 'properties': {'provider_id': {'type': 'string', 'description': '框架供应商 ID；留空匹配所有 DeepSeek 官方供应商', 'title': '供应商 ID'}, 'currency': {'type': 'string', 'description': '余额币种，例如 CNY 或 USD；留空不限', 'title': '币种'}}, 'required': [], 'additionalProperties': True}
+EVENT = {'type': 'object', 'properties': {'provider_id': {'type': 'string', 'description': '框架供应商唯一 ID'}, 'provider_name': {'type': 'string', 'description': '供应商显示名称'}, 'currency': {'type': 'string', 'description': '金额的币种代码，例如 CNY；所有金额均使用此币种'}, 'previous_balance': {'type': 'string', 'description': '上次成功查询的总余额，十进制金额字符串，单位由 currency 指定'}, 'balance': {'type': 'string', 'description': '本次总余额，十进制金额字符串，单位由 currency 指定'}, 'threshold': {'type': 'string', 'description': '触发使用的预警金额，十进制字符串，单位由 currency 指定'}, 'fetched_at': {'type': 'string', 'description': '本次查询时间，ISO 8601，包含时区偏移'}}, 'required': ['provider_id', 'currency', 'previous_balance', 'balance', 'threshold', 'fetched_at'], 'additionalProperties': True, 'description': '轮询发现同一供应商、同一币种的总余额由大于预警值变为小于等于预警值。首次查询只建基线，不触发。金额为十进制字符串。', 'examples': [{'provider_id': 'deepseek', 'provider_name': 'DeepSeek', 'currency': 'CNY', 'previous_balance': '10.01', 'balance': '9.98', 'threshold': '10', 'fetched_at': '2026-11-06T09:00:00+08:00'}]}
 ID_DESCRIPTION = 'balance_low.<provider_id>.<currency>；动态部分依次为框架供应商 ID 和币种，例如 balance_low.deepseek.CNY。'

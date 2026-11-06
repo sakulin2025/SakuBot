@@ -84,7 +84,6 @@ class Scripts:
                     script = self.repo.get(row['script_id'])
                     jsonschema.validate(row['params'], script['parameters'])
                 if source:
-                    jsonschema.validate(row['source_params'], source['parameters'])
                     if source.get('validate'):
                         source['validate'](row['source_params'])
                 eligible = script['enabled'] if script else True
@@ -132,8 +131,6 @@ class Scripts:
         value.setdefault('send_result_to_source', True)
         if not isinstance(value['source_params'],dict) or len(encode(value['source_params']))>50000:
             raise ValueError('来源参数须为不超过 50000 字符的对象')
-        if source:
-            jsonschema.validate(value['source_params'], source['parameters'])
         if script:
             jsonschema.validate(value['params'], script['parameters'])
         if not isinstance(value['name'],str) or not value['name'].strip() or len(value['name'])>100:
@@ -192,9 +189,9 @@ class Scripts:
         marker = key + '@' + script['version']
         if marker in chain:
             raise ValueError('已阻止同版本脚本循环触发；请先检查执行记录和程序')
-        from .script_contracts import validate_event
+        from .events import validate_event
         event = event if event is not None else {'source':'manual','id':uuid.uuid4().hex,'at':time.time(),'data':{}}
-        validate_event(script,event)
+        validate_event(event)
         payload = {'params':params,'event':event,
                    'chain':chain + [marker], 'failure_policy':binding or {'id':'script:'+key,**{field:script.get(field,default) for field,default in [('on_failure','none'),('failure_threshold',1),('cooldown_seconds',3600),('send_result_to_source',True)]}}}
         if len(encode(payload).encode()) > 524288:
