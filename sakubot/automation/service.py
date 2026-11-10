@@ -10,6 +10,7 @@ import jsonschema
 from sakubot.store import encode
 from .repository import Repository, identifier
 from .sources import Sources
+from .listeners import Listeners
 
 from .context import current_chain
 from .execution import Executor
@@ -21,6 +22,7 @@ class Scripts:
         self.runtime = runtime
         self.repo = Repository(runtime)
         self.sources = Sources(self)
+        self.listeners = Listeners(self)
         self.executor = Executor(self)
         self.jobs = {}
         self.maintenance = set()
@@ -97,6 +99,10 @@ class Scripts:
                 named.add(row['source'])
             result.append({**row,'available':available and eligible,'eligible':eligible,'declared':bool(source),'reason':reason})
         return result
+
+    def trigger_consumers(self):
+        """All live event demand, including expiring watches without script bindings."""
+        return [*self.bindings(),*self.listeners.consumers()]
 
     def save_binding(self, data):
         if not isinstance(data, dict):

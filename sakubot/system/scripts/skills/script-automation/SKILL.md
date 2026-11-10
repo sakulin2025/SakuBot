@@ -41,3 +41,15 @@ async def main(ctx, event, tools):
 每次用 script_binding(action="sources") 重新读取事件说明；options 获取动态选项。事件为软声明，未声明来源和通配来源也可绑定。具名来源只能绑定一个动作，已有绑定应编辑。动作可为脚本或 wake 提示词。
 
 运行固定代码版本。超时或中断不能撤销外部操作；未获授权时不试运行有外部效果的脚本。脚本是可信本地代码，独立进程不是安全沙箱。
+
+## 临时监听
+
+主智能体等待短期事件时，可调用event_listen，无需创建永久脚本或绑定。每次先用script_binding(action="sources", source=...)重新查阅事件ID、字段与订阅参数，再创建监听。source支持具体ID和*；prompt为命中后的任务；once默认true，false持续监听；expires_in默认3600秒；block_scripts默认false，true仅阻止该匹配事件新启动自动化脚本，不取消旧任务，不屏蔽永久wake绑定或其他临时监听。创建工具只登记，不执行测试。
+
+示例：event_listen(action="create", source="mattermost.webhook.<实际入口ID>", prompt="收到用户选择后，读取body并继续处理；按需要向原频道回应。", once=True, expires_in=600, block_scripts=True)。source_params使用来源定义的订阅/过滤字段，默认{}；不是嵌套JSON查询语言。send_result_to_source默认继承创建时本轮的设置，可显式指定；命中后向主智能体排队wake，网页始终可见，事件数据只注入临时上下文，不改变主会话源。
+
+list/get查询状态，update更新并创建新的监听代次；已消费的一次监听需enabled=true重新启用。delete取消后续监听，不撤回已排队唤醒。状态为active/triggered/expired/disabled，重启保留监听与绝对过期时间，过期静默失效。插件停用期间不补发遗漏事件。任何监听都不能撤销已执行的脚本副作用。
+
+## 重试最近失败的模型请求
+
+`await tools["model_retry_last"]()` 无参数，建议仅在自动化脚本中调用。只有最后一次主智能体运行因模型请求失败且当前空闲时有效，返回event_id/status/previous_run_id，复用原消息，从失败的模型步骤恢复，已完成工具结果继续保留；不重新执行历史工具，不创建另一条相同消息。智能体主动调用必定失败，因为该工具调用意味着当前模型已成功返回。充值或恢复网络后可由事件脚本显式尝试；失败时不要循环调用，先查失败轨迹。不能用于重跑失败的工具或取消的任务。

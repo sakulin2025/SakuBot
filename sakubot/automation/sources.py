@@ -93,19 +93,14 @@ class Sources:
 
     async def _reconcile(self):
         desired = {}
-        for binding in self.scripts.bindings():
-            source = self.resolve(binding['source'])
-            if not binding.get('enabled') or not binding.get('available') or not source or not self.scripts.runtime.registry.availability(source['plugin_id'])['available']:
-                continue
-            if binding.get('target_kind', 'script') == 'script':
-                try:
-                    script = self.scripts.repo.get(binding['script_id'])
-                except ValueError:
-                    continue
-                if not script['enabled']:
-                    continue
-            key = source['id'] + ':' + encode(binding['source_params'])
-            desired[key] = (source, binding['source_params'])
+        for binding in self.scripts.trigger_consumers():
+            if not binding.get('enabled') or not binding.get('eligible'):continue
+            sources=[row for key,row in self.sources.items()
+                if fnmatchcase(binding['source'],key) or fnmatchcase(key,binding['source'])]
+            for source in sources:
+                if not self.scripts.runtime.registry.availability(source['plugin_id'])['available']:continue
+                key = source['id'] + ':' + encode(binding['source_params'])
+                desired[key] = (source, binding['source_params'])
         for key in list(self.active):
             wanted = desired.get(key)
             if not wanted or self.active[key]['generation'] != wanted[0]['generation']:
@@ -135,6 +130,13 @@ class Sources:
                     self.scripts.runtime.store.log('error','scripts','trigger.subscribe.failed',data={'source':source['id'],'error':str(exc)[:300]})
             item['task'] = self.scripts.spawn(start())
 
+    def matches(self,pattern,payload,params,*,subscription=None):
+        definition=self.resolve(pattern)
+        matcher=definition.get('match') if definition else None
+        if matcher:return matcher(payload,params)
+        if subscription is not None:return True
+        return all(value in ('',None,[]) or payload.get(field)==value for field,value in params.items())
+
     async def emit(self, owner, key, payload, *, uid=None, subscription=None):
         if not isinstance(key,str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{1,512}',key):
             raise ValueError('实际事件名称无效，不能带通配符')
@@ -145,22 +147,18 @@ class Sources:
         if not isinstance(payload,dict) or len(encode(payload).encode()) > 262144:
             raise ValueError('触发数据须为不超过 256 KiB 的对象')
         uid = uid or uuid.uuid4().hex
-        queued = []
+        queued,block_scripts=self.scripts.listeners.dispatch(full,payload,uid,subscription)
         for binding in self.scripts.bindings():
             if not binding.get('enabled') or not binding.get('eligible') or not fnmatchcase(full,binding['source']):
                 continue
+            if block_scripts and binding.get('target_kind','script')=='script':continue
             params = binding['source_params']
             if subscription is not None and params != subscription:
                 continue
             event = {'id':uid,'source':full,'at':time.time(),'data':payload}
             execution_uid = binding['id'] + ':' + str(uid)
             try:
-                matcher_source = self.resolve(binding['source'])
-                matcher = matcher_source.get('match') if matcher_source else None
-                if matcher and not matcher(payload, params):
-                    continue
-                if not matcher and subscription is None and any(value not in ('',None,[]) and payload.get(field) != value for field,value in params.items()):
-                    continue
+                if not self.matches(binding['source'],payload,params,subscription=subscription):continue
                 queued.append(self.scripts.enqueue_binding(binding, event, execution_uid))
             except Exception as exc:
                 error = str(exc)[:300] if isinstance(exc,(ValueError,RuntimeError)) else type(exc).__name__

@@ -6,8 +6,9 @@ class ProgressPolicy:
         self.invocation = invocation
         self.settings = settings.model_copy(deep=True)
         self.enabled = invocation.agent_id == 'main' and self.settings.enabled
-        self.count = 0
-        self.seconds = 0.0
+        previous=invocation.metadata.get('progress_reporting',{}) if invocation.metadata.get('resumed_from_run') else {}
+        self.count = previous.get('tool_count',0)
+        self.seconds = previous.get('tool_seconds',0.0)
         self.publish()
 
     def publish(self):

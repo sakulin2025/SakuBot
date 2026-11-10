@@ -137,6 +137,14 @@ class ProgressReminderSettings(BaseModel):
         min_length=1, max_length=10000)
 
 
+class RequestRetrySettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    max_retries: int = Field(3, ge=0, le=10)
+    retry_notice: str = Field("刚刚开小差了，让我尝试重新集中注意力", max_length=2000)
+    exhausted_notice: str = Field("（睡着了）", max_length=2000)
+    fatal_notice: str = Field("没精力理你了…", max_length=2000)
+
+
 class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid")
     enabled: bool = False
@@ -163,6 +171,8 @@ class Settings(BaseModel):
         return validate_template(value)
 
     progress_reminder: ProgressReminderSettings = Field(default_factory=ProgressReminderSettings)
+    request_retry: RequestRetrySettings = Field(default_factory=RequestRetrySettings)
+    compression_notice: str = Field("稍等，脑子太乱了，给我点时间让我整理一下思绪", max_length=2000)
     compression_enabled: bool = True
     compression_threshold: float = Field(0.8, ge=0.1, le=0.95)
     conversation: ConversationSettings = Field(default_factory=ConversationSettings)

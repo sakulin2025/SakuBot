@@ -15,16 +15,18 @@ from websockets.exceptions import WebSocketException
 from sakubot.plugin import Plugin, object_schema, text
 
 from .client import Client, MAX_WAV, base_url, control_params, device_id
+from .conversation import VoiceConversation, DEFAULT_TEMPORARY_CONTEXT
 
 
-class Extension(Plugin):
+class Extension(VoiceConversation, Plugin):
     
     
     name = 'audio_terminal'
 
     def setup(self):
         self.config = self.configure({'base_url': 'http://esp32-audio-terminal:8765', 'token': '',
-                                      'subscribe_events': True}, secrets=('token',))
+                                      'subscribe_events': True, 'conversation_enabled': True,
+                                      'temporary_context': DEFAULT_TEMPORARY_CONTEXT}, secrets=('token',))
         fields = json.loads((Path(__file__).parent / 'plugin.json').read_text())['settings']['fields']
         self.settings_form(fields, on_saved=self.settings_saved)
         self.client = Client(self.config)
@@ -42,15 +44,19 @@ class Extension(Plugin):
         self.epoch = 0
         self.refresh_lock = asyncio.Lock()
         self.command_locks = {}
+        self.setup_voice()
         for name, handler in [('audio_terminal_devices', self.devices), ('audio_terminal_status', self.status),
                 ('audio_terminal_control', self.control), ('audio_terminal_stop', self.stop_playback),
                 ('audio_terminal_play', self.play_file), ('audio_terminal_events', self.events)]:
             self.function(handler, name=name)
+        self.function(self.voices, name='audio_terminal_voices')
+        self.function(self.end_conversation, name='audio_terminal_end_conversation')
         self.page('manage', '音频终端', Path(__file__).parent / 'web' / 'dist', group_id='network', icon='connection')
         self.api('state', self.api_state)
         self.api('refresh', self.api_refresh, methods=('POST',))
         self.api('control', self.api_control, methods=('POST',))
         self.api('play/{device}', self.api_play, methods=('PUT',))
+        self.api('conversation/end', self.api_end_conversation, methods=('POST',))
         self.skill('control', Path(__file__).parent / 'skills' / 'control')
         for family, label in [('wake', '设备唤醒'), ('button', '设备按键'),
                               ('playback', '播放事件'), ('connection', '设备连接状态')]:
@@ -68,23 +74,31 @@ class Extension(Plugin):
     def prompt_context(self, invocation):
         return ('音频终端通过 audio_terminal_devices/status 查询，control 调节音量、唤醒模块、上传策略，'
                 'play 播放工作空间中的 16kHz 单声道 PCM16 WAV，stop 停播。设备 ID 从列表取得。'
-                '本插件尚未识别或合成语音；唤醒事件不包含用户说话内容。播放请求成功不代表播放完成，'
+                '已接入音箱主会话源：关键词会话的 ASR 文字直接进入主 Agent，回答自动合成语音并等待播放完成。'
+                '双敲仍是纯事件，不自动变成对话。voices 查询音色，end_conversation 结束设备会话。'
+                '播放请求成功不代表播放完成，'
                 '完成以 playback.completed 事件为准。超时结果未知，不自动重复命令。')
 
     async def start(self):
         self.stopping = False
+        self._voice_transport_settings = self.voice_transport_settings()
         self.background(self.discovery_loop())
         self.background(self.flush_loop())
+        self.background(self.voice_loop())
+        self.background(self.voice_watchdog())
 
     async def stop(self):
         self.stopping = True
         self.epoch += 1
+        await self.stop_voice()
         await super().stop()
         self.streams.clear()
         self.flush()
         await self.client.close()
 
     async def settings_saved(self):
+        if self.voice_transport_settings() == self._voice_transport_settings:
+            return
         await self.stop()
         self.client = Client(self.config)
         self.connected = False
@@ -166,6 +180,7 @@ class Extension(Plugin):
                     if was_offline:
                         await self.record(identity, 'device.online')
                 await self.sync_streams()
+                self.sync_voice_sources()
                 targets = [key for key, row in self.devices_cache.items()
                            if row['online'] is True and time.time() * 1000 - row['status_at'] > 10000]
                 semaphore = asyncio.Semaphore(4)
@@ -272,7 +287,7 @@ class Extension(Plugin):
         Args:
             device(string): 设备列表中的完整 device_id。
             action(string): volume/wake/upload/knock/save。
-            parameters(object): volume 用 {volume:0到100}；wake 用 {module:knock/keyword/disabled}；upload 用 {mode:vad/continuous/session/off,session_open:布尔可选}；knock 可填 min_peak、noise_ratio、min_interval_ms、max_interval_ms、cooldown_ms；save 传空对象。
+            parameters(object): volume 用 {volume:0到100}；wake 用 {module:knock/keyword/hybrid/disabled}；upload 用 {mode:vad/continuous/session/off,session_open:布尔可选}；knock 可填 min_peak、noise_ratio、min_interval_ms、max_interval_ms、cooldown_ms；save 传空对象。
         """
         identity = self.resolve(device)
         async with self.command_locks.setdefault(identity, asyncio.Lock()):
@@ -342,8 +357,28 @@ class Extension(Plugin):
         return {'items': rows[:limit], 'total_retained': len(rows), 'limit': limit}
 
     async def api_state(self, request):
-        return {**await self.devices(), 'events': self.events(request.query_params.get('device', ''), limit=200)['items'],
-                'subscribe_events': bool(self.config.get('subscribe_events'))}
+        return {**await self.devices(), 'events': [],
+                'subscribe_events': bool(self.config.get('subscribe_events')), 'conversation': self.voice_state()}
+
+    async def voices(self):
+        """查询音箱可用的语音模型、音色与默认音色；自动回答使用服务端默认音色。"""
+        return await self.client.request('GET', '/v1/tts/voices')
+
+    async def end_conversation(self):
+        """立即结束当前音箱对话并停止播放，无需任何参数。重复调用安全；不会清除主 Agent 的历史。"""
+        # Local cancellation blocks late synthesized audio before making the stop request.
+        for session_id in list(self.voice_sessions):
+            self.drop_voice_session(session_id)
+        # Server owns the lock, including starts whose notification is still in flight.
+        try:
+            return await self.client.request('POST', '/v1/interactions/end', json={})
+        except Exception:
+            # An explicit stop must also release the server lock when HTTP fails.
+            await self.stop_voice()
+            raise
+
+    async def api_end_conversation(self, request):
+        return await self.end_conversation()
 
     async def api_refresh(self, request):
         await self.refresh()

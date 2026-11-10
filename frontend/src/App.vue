@@ -10,7 +10,17 @@ const token = ref('')
 const loading = ref(true)
 const submitting = ref(false)
 const failed = ref(false)
-let interval: ReturnType<typeof setInterval>
+let interval: ReturnType<typeof setTimeout>
+let stopped = false
+async function poll() {
+  try {
+    if (store.authenticated && !document.hidden) await store.refreshStatus()
+  } catch { /* Retry on the next tick. */ }
+  finally { if (!stopped) interval = setTimeout(poll, 5000) }
+}
+function navigationFailed(event: Event) {
+  store.toast((event as CustomEvent<string>).detail || '页面加载失败', true)
+}
 let recovering = false
 async function unauthorized(event: Event) {
   const failedToken = (event as CustomEvent<{ token?: string }>).detail?.token
@@ -47,6 +57,7 @@ async function login() {
 onMounted(async () => {
   window.addEventListener('sakubot-unauthorized', unauthorized)
   window.addEventListener('storage', credentialsChanged)
+  window.addEventListener('sakubot-navigation-error', navigationFailed)
   const saved = sessionToken() || rememberedToken()
   if (saved) {
     try {
@@ -56,14 +67,14 @@ onMounted(async () => {
     }
   }
   loading.value = false
-  interval = setInterval(() => {
-    if (store.authenticated && !document.hidden) store.refreshStatus().catch(() => {})
-  }, 5000)
+  interval = setTimeout(poll, 5000)
 })
 onUnmounted(() => {
-  clearInterval(interval)
+  stopped = true
+  clearTimeout(interval)
   window.removeEventListener('sakubot-unauthorized', unauthorized)
   window.removeEventListener('storage', credentialsChanged)
+  window.removeEventListener('sakubot-navigation-error', navigationFailed)
 })
 </script>
 <template>

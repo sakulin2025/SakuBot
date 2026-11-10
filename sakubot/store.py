@@ -29,6 +29,9 @@ class Store:
         CREATE TABLE IF NOT EXISTS runs (
           id TEXT PRIMARY KEY, event_id INTEGER, started REAL, finished REAL,
           status TEXT, trace TEXT, error TEXT);
+        CREATE INDEX IF NOT EXISTS runs_recent ON runs(started DESC,event_id);
+        CREATE INDEX IF NOT EXISTS runs_event_recent ON runs(event_id,started DESC);
+        CREATE INDEX IF NOT EXISTS events_kind_status ON events(kind,status);
         CREATE TABLE IF NOT EXISTS deliveries (
           id TEXT PRIMARY KEY, target TEXT NOT NULL, text TEXT NOT NULL,
           action TEXT NOT NULL, params TEXT NOT NULL, status TEXT NOT NULL,

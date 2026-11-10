@@ -13,12 +13,17 @@ from .plugin_packages import program_path
 def declaration(runtime, identifier):
     plugin = next((p for p in runtime.registry.plugins if p.id == identifier), None)
     dynamic = getattr(plugin, '_settings_form', None)
+    cached=getattr(plugin,'_settings_manifest_cache',None)
     try:
-        path = program_path(runtime.config.root, identifier)
-        manifest = path / 'plugin.json' if path.is_dir() else path.with_suffix('.json')
-        metadata = json.loads(manifest.read_text()) if manifest.exists() else {}
-    except (ValueError, OSError):
-        metadata = {}
+        if cached is not None:
+            metadata=cached
+        else:
+            path = program_path(runtime.config.root, identifier)
+            manifest = path / 'plugin.json' if path.is_dir() else path.with_suffix('.json')
+            metadata = json.loads(manifest.read_text()) if manifest.exists() else {}
+    except (ValueError,OSError):
+        metadata={}
+    if plugin is not None:plugin._settings_manifest_cache=metadata
     static = metadata.get('settings')
     if not static and not dynamic:
         return None
@@ -35,7 +40,7 @@ def configuration(runtime, identifier, spec):
     plugin = next((p for p in runtime.registry.plugins if p.id == identifier), None)
     config = getattr(plugin, '_configuration', None)
     path = runtime.config.root / 'plugin_data' / identifier / 'config.json'
-    data = json.loads(path.read_text()) if path.exists() else {}
+    data = json.loads(path.read_text()) if config is None and path.exists() else {}
     defaults = {f['key']: f['default'] for f in spec['fields'] if 'default' in f}
     return {**defaults, **(dict(config) if config is not None else data)}, path, plugin
 

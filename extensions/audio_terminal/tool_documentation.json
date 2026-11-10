@@ -16,5 +16,11 @@
   },
   "audio_terminal_events": {
     "returns": "返回值: object\n返回值.items: array；最近事件，最新在前\n返回值.items[]: object\n返回值.items[].id: string；去重 ID\n返回值.items[].device_id: string；设备 ID\n返回值.items[].event: string；原始事件名\n返回值.items[].received_at: number；接收 Unix 毫秒\n返回值.items[].timestamp_ms（分支1）: number\n返回值.items[].timestamp_ms（分支2）: null\n返回值.items[].data: object；按 event 类型变化的事件载荷\n返回值.items[].data 的具体键由该操作和上游接口决定；未说明时查插件源码或接口文档。\n返回值.total_retained: integer；保留的匹配事件数\n返回值.limit: integer；本次条数上限"
+  },
+  "audio_terminal_voices": {
+    "returns": "返回值: object；model 为当前模型，default 为默认音色，voices 为可用音色列表，每项含 name、label、locale。"
+  },
+  "audio_terminal_end_conversation": {
+    "returns": "返回值: object；ok 为是否已处理结束请求。不清除 Sakubot 主上下文。"
   }
 }

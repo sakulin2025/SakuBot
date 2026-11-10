@@ -68,13 +68,16 @@ def notice_message(event):
     return {**entry, '_event_id': event['id']} if entry else None
 
 
-def change_source(runtime, key, invocation):
+def change_source(runtime, key, invocation, *, explicit=False):
     """Switch immediately, returning a notice for insertion at a valid boundary."""
     from .wake_prompt import CHANGE_DEFAULT, context, render
     conversation = runtime.conversation
     if key not in conversation.sources:
         raise ValueError('对话源未声明，请先调用 message_sources 获取有效 ID')
     previous = runtime.store.kv_get('conversation.current', '')
+    if explicit or key != previous:
+        from .reply_location import clear
+        clear(runtime, invocation, key)
     if key == previous:
         return False, None
     catalog = {item['id']: item for item in conversation.catalog()['items']}
@@ -127,6 +130,8 @@ def activate(runtime, event, invocation):
             data['source_change_notice'] = notice
             runtime.store.execute('UPDATE events SET meta=? WHERE id=?', (json.dumps(data, ensure_ascii=False), event['id']))
             event = {**event, 'meta': json.dumps(data, ensure_ascii=False)}
+    from .reply_location import follow
+    follow(runtime, invocation, event)
     event = attach_warning(runtime, event, invocation)
     if runtime.current_run and runtime.current_run['id'] == invocation.run_id:
         runtime.current_run['wake_source'] = identity(event)

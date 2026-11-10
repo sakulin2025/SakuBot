@@ -71,6 +71,11 @@ class Conversation:
     def select(self, identifier):
         if identifier not in self.sources:
             raise ValueError('对话源未声明')
+        current=self.runtime.current_run
+        position=current.get('_reply_location') if current else None
+        if position is not None:
+            position.clear()
+            position.update(source_id=identifier,context={})
         self.runtime.store.kv_set('conversation.current', identifier)
         self.runtime.live.publish('conversation.source', current=identifier)
 
@@ -96,6 +101,9 @@ class Conversation:
 
     def publish(self, kind, *, response_id, run_id='', exclude=(), **data):
         packet = {'type': kind, 'response_id': response_id, 'run_id': run_id, **data}
+        current=self.runtime.current_run
+        if '_reply_location' not in packet and current and current['id']==run_id and current.get('_reply_location') is not None:
+            packet['_reply_location']=current['_reply_location']
         exclusions = set(exclude) | set(packet.pop('_exclude', []))
         # Selection is checked again by each worker immediately before the external call.
         for key in dict.fromkeys(self.targets()):
@@ -167,13 +175,17 @@ class Conversation:
                 self.record(source, packet, 'unavailable')
                 source['queue'].task_done()
                 continue
+            from .reply_location import resolve
+            position=packet.get('_reply_location')
+            packet['reply_context']=resolve(position,source['id'])
             delivery_id = uuid.uuid4().hex
             durable = packet['type'] in PARTS
             if durable:
                 self.runtime.store.execute("INSERT INTO deliveries(id,target,text,action,params,status,at) VALUES (?,?,?,?,?,'sending',?)",
                     (delivery_id, source['id'], packet.get('text', ''), 'conversation.' + packet['type'], encode(packet), time.time()))
             try:
-                value = handler({**{key: value for key, value in packet.items() if not key.startswith('_')}, 'delivery_id': delivery_id})
+                value = handler({**{key: value for key, value in packet.items() if not key.startswith('_')}, 'delivery_id': delivery_id,
+                    '_reply_context_resolver': lambda: resolve(position, source['id'])})
                 if inspect.isawaitable(value):
                     await asyncio.wait_for(value, source['timeout'])
                 if durable:

@@ -28,6 +28,7 @@ class Sender:
                         raise ValueError('分段和移除规则处理后消息为空，未发送')
                     else:
                         return []
+                selected_root = root_id() if callable(root_id) else root_id
                 posts = []
                 for index, part in enumerate(parts):
                     try:
@@ -36,8 +37,8 @@ class Sender:
                         if not self.plugin.online or not self.plugin.http:
                             raise RuntimeError('Mattermost 已断线')
                         body = {'channel_id': channel, 'message': part}
-                        if root_id:
-                            body['root_id'] = root_id
+                        if selected_root:
+                            body['root_id'] = selected_root
                         if index == 0 and file_ids:
                             body['file_ids'] = list(file_ids)
                         result = await self.plugin.request_json('POST', 'api/v4/posts', body=body, truncate=False)

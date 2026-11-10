@@ -1,7 +1,82 @@
+import asyncio
 import json
 import math
+import socket
+import ssl
+import time
+from urllib.parse import urlsplit
 
 import httpx
+
+
+class TransportTrace:
+    """Collects httpcore transport timings for a single model request."""
+
+    def __init__(self):
+        self.started = time.monotonic()
+        self.connect = {}
+        self.tls = {}
+        self.send_headers = {}
+        self.response_headers = {}
+        self.body = {}
+        self.first_reasoning_ms = None
+        self.first_content_ms = None
+        self.first_tool_ms = None
+
+    def elapsed(self, at=None):
+        return round(((time.monotonic() if at is None else at) - self.started) * 1000, 1)
+
+    async def __call__(self, event, info):
+        now = time.monotonic()
+        if event == 'connection.connect_tcp.started':
+            self.connect.setdefault('start', now)
+        elif event == 'connection.connect_tcp.complete':
+            start = self.connect.pop('start', None)
+            if start is not None:
+                self.connect['ms'] = round((now - start) * 1000, 1)
+        elif event == 'connection.start_tls.started':
+            self.tls.setdefault('start', now)
+        elif event == 'connection.start_tls.complete':
+            start = self.tls.pop('start', None)
+            if start is not None:
+                self.tls['ms'] = round((now - start) * 1000, 1)
+        elif event == 'http11.send_request_headers.started':
+            self.send_headers['start'] = now
+        elif event == 'http11.send_request_headers.complete':
+            start = self.send_headers.pop('start', None)
+            if start is not None:
+                self.send_headers['ms'] = round((now - start) * 1000, 1)
+        elif event == 'http11.receive_response_headers.started':
+            self.response_headers['start'] = now
+        elif event == 'http11.receive_response_headers.complete':
+            start = self.response_headers.pop('start', None)
+            if start is not None:
+                self.response_headers['ms'] = round((now - start) * 1000, 1)
+            self.response_headers['at'] = now
+        elif event == 'http11.receive_response_body.started':
+            self.body.setdefault('first', now)
+        elif event == 'http11.receive_response_body.complete':
+            self.body['at'] = now
+        elif event == 'http11.response_closed':
+            self.body['closed'] = now
+
+    def mark(self, name):
+        if getattr(self, name + '_ms') is None:
+            setattr(self, name + '_ms', self.elapsed())
+
+    def summary(self):
+        return {
+            'new_connection': bool(self.connect),
+            'tcp_ms': self.connect.get('ms'),
+            'tls_ms': self.tls.get('ms'),
+            'send_request_ms': self.send_headers.get('ms'),
+            'server_headers_ms': self.response_headers.get('ms'),
+            'first_body_ms': None if 'first' not in self.body else self.elapsed(self.body['first']),
+            'first_reasoning_ms': self.first_reasoning_ms,
+            'first_content_ms': self.first_content_ms,
+            'first_tool_ms': self.first_tool_ms,
+            'total_ms': self.elapsed(),
+        }
 
 
 class ModelRequestError(RuntimeError):
@@ -35,6 +110,60 @@ class Model:
     async def close(self):
         await self.client.aclose()
 
+    async def probe_network(self, provider, timeout=5):
+        parts = urlsplit(provider.api_base)
+        host = parts.hostname
+        if not host:
+            raise ValueError('模型接口地址缺少主机名')
+        port = parts.port or (443 if parts.scheme == 'https' else 80)
+        started = time.monotonic()
+        result = {'host': host, 'port': port, 'scheme': parts.scheme}
+        try:
+            resolved = await asyncio.to_thread(socket.getaddrinfo, host, port, 0, socket.SOCK_STREAM)
+        except OSError as exc:
+            result.update(error='dns:' + type(exc).__name__ + ':' + str(exc)[:200],
+                          total_ms=round((time.monotonic() - started) * 1000, 1))
+            return result
+        result['dns_ms'] = round((time.monotonic() - started) * 1000, 1)
+        addresses = []
+        for item in resolved:
+            address = item[4][0]
+            if address not in addresses:
+                addresses.append(address)
+        result['addresses'] = addresses[:4]
+
+        def connect(address):
+            tcp_started = time.monotonic()
+            sock = socket.create_connection((address, port), timeout=timeout)
+            tcp_ms = round((time.monotonic() - tcp_started) * 1000, 1)
+            try:
+                if parts.scheme != 'https':
+                    return tcp_ms, None, None
+                tls_started = time.monotonic()
+                try:
+                    sock = ssl.create_default_context().wrap_socket(sock, server_hostname=host)
+                except OSError as exc:
+                    return tcp_ms, None, 'tls:' + type(exc).__name__ + ':' + str(exc)[:200]
+                return tcp_ms, round((time.monotonic() - tls_started) * 1000, 1), None
+            finally:
+                sock.close()
+
+        failures = []
+        for address in result['addresses']:
+            try:
+                tcp_ms, tls_ms, error = await asyncio.to_thread(connect, address)
+            except OSError as exc:
+                failures.append(address + ':' + type(exc).__name__)
+                continue
+            result.update(address=address, tcp_ms=tcp_ms, tls_ms=tls_ms,
+                          total_ms=round((time.monotonic() - started) * 1000, 1))
+            if error:
+                result['error'] = error
+            return result
+        result.update(error='connect:' + ';'.join(failures),
+                      total_ms=round((time.monotonic() - started) * 1000, 1))
+        return result
+
     async def embed(self, provider, model, texts):
         payload = {'model': model.model_id, 'input': texts}
         if 'dimensions' in model.extra_body:
@@ -66,7 +195,14 @@ class Model:
         except (KeyError, TypeError, ValueError, OverflowError):
             raise RuntimeError('向量模型返回格式无效') from None
 
-    async def complete(self, messages, tools=None, lightweight=False, model_id=None, output_tokens=None, on_delta=None, on_request=None, settings=None):
+    async def complete(self, messages, tools=None, lightweight=False, model_id=None, output_tokens=None, on_delta=None, on_request=None, settings=None, on_retry=None, on_failure=None, on_attempt=None, on_timing=None):
+        from .request_retry import complete
+        settings=settings or self.settings
+        async def operation():
+            return await self._complete_once(messages,tools,lightweight,model_id,output_tokens,on_delta,on_request,settings,on_timing)
+        return await complete(operation,settings,on_retry,on_failure,on_attempt)
+
+    async def _complete_once(self, messages, tools=None, lightweight=False, model_id=None, output_tokens=None, on_delta=None, on_request=None, settings=None, on_timing=None):
         provider, model = (settings or self.settings).selected_model(lightweight, model_id=model_id)
         if provider is None:
             raise RuntimeError("未选择已启用的文本模型")
@@ -89,12 +225,17 @@ class Model:
         if on_request is not None:
             on_request(payload)
         if on_delta is not None:
-            return await self.stream(provider, model, payload, on_delta)
+            return await self.stream(provider, model, payload, on_delta, on_timing)
+        trace = TransportTrace() if on_timing is not None else None
         try:
             response = await self.client.post(provider.api_base + "/chat/completions",
-                headers={"Authorization": "Bearer " + provider.api_key} if provider.api_key else {}, json=payload)
+                headers={"Authorization": "Bearer " + provider.api_key} if provider.api_key else {}, json=payload,
+                extensions={'trace': trace} if trace is not None else None)
         except httpx.HTTPError as exc:
             raise request_error(provider, model, error=exc) from None
+        finally:
+            if on_timing is not None:
+                on_timing(trace.summary())
         if response.status_code != 200:
             raise request_error(provider, model, response=response)
         try:
@@ -115,10 +256,11 @@ class Model:
         except (KeyError, IndexError, ValueError, TypeError):
             raise RuntimeError("模型接口返回格式不兼容 Chat Completions") from None
 
-    async def stream(self, provider, model, payload, on_delta):
+    async def stream(self, provider, model, payload, on_delta, on_timing=None):
         headers = {"Authorization": "Bearer " + provider.api_key} if provider.api_key else {}
         result = {'role': 'assistant', 'content': ''}
         calls, usage, completed = {}, {}, False
+        trace = TransportTrace() if on_timing is not None else None
 
         async def packet(raw):
             nonlocal usage, completed
@@ -143,11 +285,17 @@ class Model:
                     content = ''.join(part.get('text', '') for part in content if isinstance(part, dict) and isinstance(part.get('text'), str))
                 if isinstance(content, str) and content:
                     result['content'] += content
+                    if trace is not None:
+                        trace.mark('first_content')
                     await on_delta(content)
                 reasoning = delta.get('reasoning_content')
-                if isinstance(reasoning, str):
+                if isinstance(reasoning, str) and reasoning:
                     result['reasoning_content'] = result.get('reasoning_content', '') + reasoning
+                    if trace is not None:
+                        trace.mark('first_reasoning')
                 for call in delta.get('tool_calls') or []:
+                    if trace is not None:
+                        trace.mark('first_tool')
                     index = call.get('index', 0)
                     current = calls.setdefault(index, {'id': '', 'type': 'function', 'function': {'name': '', 'arguments': ''}})
                     if call.get('id'):
@@ -157,7 +305,8 @@ class Model:
                     current['function']['arguments'] += function.get('arguments') or ''
 
         try:
-            async with self.client.stream('POST', provider.api_base + '/chat/completions', headers=headers, json=payload) as response:
+            async with self.client.stream('POST', provider.api_base + '/chat/completions', headers=headers, json=payload,
+                    extensions={'trace': trace} if trace is not None else None) as response:
                 if response.status_code != 200:
                     await response.aread()
                     raise request_error(provider, model, response=response)
@@ -171,6 +320,8 @@ class Model:
                     if not isinstance(result.get('content'), (str, type(None))):
                         result['content'] = json.dumps(result['content'], ensure_ascii=False)
                     if isinstance(result.get('content'), str) and result['content']:
+                        if trace is not None:
+                            trace.mark('first_content')
                         await on_delta(result['content'])
                     if result.get('tool_calls') and not model.capabilities.tools:
                         raise RuntimeError('模型返回了未启用的工具调用')
@@ -186,7 +337,7 @@ class Model:
                 if data:
                     await packet('\n'.join(data))
             if not completed:
-                raise RuntimeError('模型流式响应中断，没有自动重试')
+                raise ModelRequestError({'provider_id':provider.id,'model':model.model_id,'error_type':'IncompleteResponse','error':'模型流式响应中断'})
             if calls:
                 if not model.capabilities.tools:
                     raise RuntimeError('模型返回了未启用的工具调用')
@@ -196,9 +347,11 @@ class Model:
             raise request_error(provider, model, error=exc) from None
         except (ValueError, KeyError, IndexError, TypeError):
             raise RuntimeError('模型流式响应格式不兼容 Chat Completions') from None
+        finally:
+            if trace is not None:
+                on_timing(trace.summary())
 
-    @staticmethod
-    def prepare_messages(messages, tools, model, reserve):
+    def prepare_messages(self, messages, tools, model, reserve):
         prepared = []
         for message in messages:
             item = {key: value for key, value in message.items() if not key.startswith("_")}
@@ -217,36 +370,8 @@ class Model:
         if not window:
             return prepared
 
-        def cost():
-            # Conservative byte-based token estimate for arbitrary provider tokenizers.
-            estimated = []
-            for msg in prepared:
-                copy = dict(msg)
-                if isinstance(copy.get('content'), list):
-                    copy['content'] = [{'type': 'image_url', 'image_url': {'url': '<image>'}} if part.get('type') == 'image_url' else part for part in copy['content']]
-                estimated.append(copy)
-            size = len(json.dumps({"messages": estimated, "tools": tools}, ensure_ascii=False).encode("utf-8"))
-            images = sum(1 for msg in prepared if isinstance(msg.get("content"), list)
-                         for part in msg["content"] if part.get("type") == "image_url")
-            return size + images * 16384 + reserve
-
-        # Preserve the current user event and its entire tool-call chain.
-        active = next((index for index, msg in enumerate(messages) if msg.get('_active_event') or msg.get('_active_task')), None)
-        if active is None:
-            active = max((index for index, msg in enumerate(messages) if msg.get("role") == "user" and not msg.get('_observation')), default=1)
-        prefix = 0
-        while prefix < len(prepared) and prepared[prefix].get("role") == "system":
-            prefix += 1
-        while cost() > window and active > prefix:
-            removed = prepared.pop(prefix)
-            active -= 1
-            # A tool-call message and all its results must stay together.
-            if removed.get('role') == 'assistant' and removed.get('tool_calls'):
-                pending = {call.get('id') for call in removed['tool_calls']}
-                while pending and active > prefix and prepared[prefix].get('role') == 'tool':
-                    pending.discard(prepared[prefix].get('tool_call_id'))
-                    prepared.pop(prefix)
-                    active -= 1
-        if cost() > window:
-            raise RuntimeError("当前任务超出模型上下文窗口")
+        from .token_budget import estimate
+        ratio = getattr(self, 'token_ratios', {}).get(model.id, 1)
+        if estimate(prepared, tools) * ratio + reserve > window:
+            raise RuntimeError("上下文超过模型窗口；原文未被裁掉，请压缩历史或缩小本次工具结果")
         return prepared

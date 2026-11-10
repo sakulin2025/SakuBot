@@ -796,3 +796,29 @@ QQ 的 `main_sessions` 为 `{type: "group" | "private", number: "数字号码"}`
 返回值原样交给调用方，无返回类型校验。失败请抛异常。返回中的业务 error/success 字段不自动解释成调用异常。插件可选提供 tool_documentation.json，按方法名记录 returns 结构说明；文件仅用于文档查询，不参与注册或执行校验。README.md 和 skills/**/*.md 一起提供给脚本作者。
 
 trigger_source 的 parameters、event_schema、id_description 都是可选文档，不强制字段说明、示例和类型，不对触发载荷做 Schema 校验。未声明来源仍可绑定。脚本使用 main(ctx,event,tools)，参数都是普通 dict；调用 await tools["方法名"](...)。每次开发必须重新查当前插件文档，不能凭记忆猜接口。详见 [事件与脚本](scripts.md)。
+
+
+### 附件发布大小
+
+`self.artifact(path, name=None, max_bytes=20*1024*1024)`默认20MiB；可信插件可以为特定功能显式指定不超过500MiB的上限。仅改变附件发布检查，不改变QQ/Mattermost等源的文件限制。大文件网络传输应分块读写，不用一次read全部内容；图库插件的client.py提供流式下载示例。
+
+
+### 本轮子回复位置
+
+主会话源插件接收消息时可在receive_main的meta中提供reply_context普通字典，表达频道内话题等位置，不新增主会话源。框架在wake开始或安全位置吸收时更新本轮位置，最后一条实际认领消息优先；显式选择主会话源清空位置，即使源ID未变化。没有reply_context的新消息视为该源默认位置。
+
+插件可实现同步reply_context_prompt(context)返回本轮临时环境说明，不能把动态位置放到稳定能力提示中。自动投递包含reply_context，插件解释其中字段。框架还提供内部_reply_context_resolver回调供插件在实际发送开始时取得最新位置；不可序列化或当作Agent工具参数。排队包共享本轮位置，未发送时可更新，已开始的完整分段按发送开始位置完成，不撤回已发送内容。此机制不改变source信任状态或send_result_to_source。
+
+reply_context用于本轮临时位置与关联资料，不作为普通事件正文重复写入模型长期历史；事件日志仍保留原始元数据。Mattermost会在接收话题回复时读取根消息快照，reply_context_prompt将其作为有来源标记的历史引用注入，不改变授权。
+
+## 事件需求与临时监听
+
+框架event_listen可临时追踪来源，统一参与订阅生命周期；事件仍通过emit_trigger/publish_trigger投递。插件若需判断是否有消费者，应读取runtime.scripts.trigger_consumers()，包含永久绑定和有效临时监听；不要仅用bindings()决定是否开启轮询或提前丢弃事件。临时监听不占用具名事件的永久绑定名额。框架在统一入口先登记监听wake，再按block_scripts决定是否启动该事件的脚本绑定；永久wake绑定不受阻止。订阅来源使用既有参数和match接口，无需为监听实现第二套触发。插件停用、监听到期或取消后，公共订阅协调器回收不再使用的订阅。
+
+插件webhook的公开路由支持GET/POST/PUT/PATCH/DELETE，各入口通过methods选择，默认POST；需自行认证。Mattermost通用Webhook提供随机入口URL认证，不把外部payload中的用户ID视为主人授权。
+
+## 模型请求重试
+
+运行设置request_retry包含max_retries（默认3，0关闭自动重试）、retry_notice（本轮首次重试提示）、exhausted_notice、fatal_notice；提示可留空关闭。网络超时/断线、408/425/429及5xx可重试，余额/额度、认证和无效请求不可自动重试；上游明确额度错误优先于HTTP429分类。取消不重试。重试仅针对同一模型请求，采用有上限的指数退避及Retry-After，不重新执行已完成工具。模型请求详情逐次保留attempt，临时网络错误记录model.retry，耗尽后保留model.failed。
+
+主智能体的提示在网页保留，但exclude_context=true不进入模型历史；外部投递遵守inv.send_result_to_source，话题沿用当前回复位置。model_retry_last是建议给脚本使用的显式恢复工具；模型主动调用拒绝。网页重试复用原event_id，按失败请求检查点恢复，不追加用户消息；只支持最近一次主智能体模型请求失败，其他失败不自动重跑。

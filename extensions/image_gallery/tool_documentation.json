@@ -3,9 +3,48 @@
     "returns": "返回值: object\n返回值.pending: integer；待审核图片数"
   },
   "fetch_anime_image": {
-    "returns": "返回值: object\n返回值.id: string；图库图片 ID\n返回值.url: string；发布的框架附件地址\n返回值.name: string；附件文件名\n返回值.mime: string；图片 MIME\n返回值.expires: number；附件过期 Unix 秒\n返回值.path: string；工作空间图片相对路径\n返回值.at: number；取图 Unix 秒"
+    "returns": "返回值: object\n返回值.id: string；图库图片 ID\n返回值.url: string；发布的框架附件地址\n返回值.name: string；附件文件名\n返回值.mime: string；图片 MIME\n返回值.expires: number；附件过期 Unix 秒\n返回值.path: string；工作空间图片相对路径\n返回值.at: number；取图 Unix 秒",
+    "parameters_note": "orientation只用于随机模式；image_id非空时按实际ID读取，不应用随机近期去重。大图回退preview；指定ID不自动确认公开许可。",
+    "limits": "独立download_limit_mib，1～500MiB；超过后尝试预览，预览仍超限则报错。旧max_bytes值迁移保留。"
   },
   "gallery_send": {
     "returns": "返回值: object\n返回值.sent: boolean；是否已提交发送\n返回值.url: string；框架附件 URL\n返回值.name: string；文件名\n返回值.mime: string；MIME\n返回值.expires: number；过期 Unix 秒"
+  },
+  "gallery_api": {
+    "returns": "object，固定ok:boolean、status:integer、content_type:string、data:JSON|null；可选image_id:string来自X-Image-ID；二进制有file:{path:string,url:string,name:string,mime:string,expires:number}，path为共享工作空间相对路径，url为框架附件地址。非2xx仍返回ok=false及原始JSON/text错误，不自动抛成成功。网络失败抛异常，写操作可能已执行，不能盲目重试。",
+    "parameters": "method默认GET；path为/api/开头相对路径；query为URL参数；body为JSON对象/数组；form为普通表单字段；upload_path为multipart的file字段；download_path指定未存在的工作空间路径。body不能和form/upload同时使用。",
+    "reference": "skills/usage/references/api.md；每次开发前重新查阅，尤其合集的PATCH images替换与POST image_ids追加不能混用。",
+    "examples": [
+      {
+        "method": "GET",
+        "path": "/api/collections"
+      },
+      {
+        "method": "PATCH",
+        "path": "/api/collections/<实际合集ID>",
+        "body": {
+          "label": "新的标题"
+        }
+      },
+      {
+        "method": "POST",
+        "path": "/api/collections/<实际合集ID>/images",
+        "body": {
+          "image_ids": [
+            "<实际图片ID>"
+          ]
+        }
+      }
+    ],
+    "limits": "upload_path与二进制下载共用transfer_limit_mib，1～500MiB，新安装默认100；流式上传/下载，不整文件载入内存。普通JSON结果512KiB，需大JSON文件时可指定download_path流式落盘。"
+  },
+  "gallery_image_link": {
+    "returns": "object{id:string,url:string}，url仅由external_url和/api/images/编码ID组成，不会带认证信息或改为内部地址。",
+    "errors": "external_url未配置或image_id空时抛异常。不会请求图库验证图片存在，也不会自动判断是否适合公开。"
+  },
+  "gallery_push_now": {
+    "parameters": "ignore_quiet:boolean，可选，默认false。true仅让本次请求对应的下一次检查跳过免打扰，不修改免打扰配置。",
+    "returns": "object{status:string,reason:string,next_at:number|null,remaining_seconds:number|null,ignore_quiet:boolean}；next_at为Unix秒。advanced已提前调度；scheduled保持已有计划；running正在检查；starting调度未初始化；disabled轮询未启用；unconfigured缺连接配置；quiet免打扰；unbound无启用动作。",
+    "semantics": "仅调整现有后台轮询，不同步返回图片。剩余时间>10秒时提前，<=10秒不调整；重复请求不启动并行领取。执行后按本次取满/未取满反馈，在配置范围内分别偏向较短/较长的随机间隔安排下一次，沿用持久批次、重发确认和事件投递逻辑。 ignore_quiet=true且下次在10秒内时，不提前时间，但该次检查会跳过免打扰；重复请求可将同一次待执行检查升级为跳过免打扰。检查开始时消耗该标志，无论成功失败都不会影响后续检查；正在执行时不会改变当前或下一次检查。"
   }
 }

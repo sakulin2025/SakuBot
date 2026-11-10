@@ -64,8 +64,8 @@ def control_params(action, values, current=None):
         raise ValueError('包含此操作不支持的字段')
     if action == 'volume' and (type(values.get('volume')) is not int or not 0 <= values['volume'] <= 100):
         raise ValueError('volume 必须是 0–100 的整数')
-    if action == 'wake' and values.get('module') not in ('knock', 'keyword', 'disabled'):
-        raise ValueError('module 请选择 knock、keyword 或 disabled')
+    if action == 'wake' and values.get('module') not in ('knock', 'keyword', 'hybrid', 'disabled'):
+        raise ValueError('module 请选择 knock、keyword、hybrid 或 disabled')
     if action == 'upload':
         if values.get('mode') not in ('vad', 'continuous', 'session', 'off'):
             raise ValueError('mode 请选择 vad、continuous、session 或 off')
@@ -108,6 +108,30 @@ class Client:
     def events_url(self, identity):
         url = urlsplit(base_url(self.config.get('base_url', '')) + self.path(identity, '/events'))
         return urlunsplit(('wss' if url.scheme == 'https' else 'ws', url.netloc, url.path, '', ''))
+
+    def agent_url(self):
+        url = urlsplit(base_url(self.config.get('base_url', '')) + '/v1/agent')
+        return urlunsplit(('wss' if url.scheme == 'https' else 'ws', url.netloc, url.path, '', ''))
+
+    async def synthesize(self, text):
+        status = await self.request('GET', '/v1/tts/status')
+        budget = status.get('request_timeout_seconds', 735)
+        if type(budget) not in (int, float) or not math.isfinite(budget) or not 10 <= budget <= 2400:
+            raise ValueError('TTS 服务超时配置无效')
+        try:
+            async with self.http.stream('POST', base_url(self.config.get('base_url', '')) + '/v1/tts/synthesize',
+                    headers=self.headers(), json={'text': text}, timeout=budget) as response:
+                if response.status_code != 200 or 'audio/wav' not in response.headers.get('content-type', ''):
+                    raise ValueError('语音合成失败，请检查 TTS 服务')
+                data = bytearray()
+                async for chunk in response.aiter_bytes():
+                    data.extend(chunk)
+                    if len(data) > MAX_WAV:
+                        raise ValueError('合成语音超过 120 秒')
+                validate_wav(data)
+                return bytes(data)
+        except httpx.HTTPError as exc:
+            raise ValueError('语音合成服务连接失败') from exc
 
     async def request(self, method, path, **kwargs):
         try:

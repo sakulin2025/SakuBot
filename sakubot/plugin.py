@@ -110,9 +110,9 @@ class Plugin:
         from .plugin_support import PluginState
         return PluginState(self)
 
-    def artifact(self, path, name=None):
+    def artifact(self, path, name=None, *, max_bytes=20 * 1024 * 1024):
         from .artifacts import publish
-        return publish(self, path, name)
+        return publish(self, path, name, max_bytes=max_bytes)
 
     def preview_images(self, invocation, paths, *, note='页面预览'):
         from .artifacts import preview_images
@@ -542,7 +542,11 @@ class Registry:
                     continue
                 definitions[name] = {"builtin": root in (SYSTEM_ROOT, BUILTIN_ROOT), "name": name, "label": str(metadata.get("label") or name),
                     "preinstalled": root == self.runtime.config.root / 'plugins' and name in preinstalled,
-                    "required": root == SYSTEM_ROOT, **self.availability(name), "icon": str(metadata.get("icon") or "plugins"),
+                    "required": root == SYSTEM_ROOT, "version": str(metadata.get("version") or ""),
+                    "program_path": str(path),
+                    "shadowed_paths": [str(self.runtime.config.root / "plugins" / name)]
+                        if root in (SYSTEM_ROOT, BUILTIN_ROOT) and (self.runtime.config.root / "plugins" / name).exists() else [],
+                    **self.availability(name), "icon": str(metadata.get("icon") or "plugins"),
                     "selected": root == SYSTEM_ROOT or name in self.runtime.config.settings.plugins, "loaded": self.loaded(name)}
         from .plugin_settings import declaration, configuration, missing
         for item in definitions.values():

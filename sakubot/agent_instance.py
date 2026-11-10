@@ -220,6 +220,7 @@ class AgentInstance:
         self._clear_context()
 
     def _clear_context(self):
+        self.runtime.compression.clear_agent(self.id)
         self.history, self.pending = [], []
         self.save_history()
         self.save_pending()

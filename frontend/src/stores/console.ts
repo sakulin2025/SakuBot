@@ -33,6 +33,17 @@ export const useConsole = defineStore('console', () => {
   const saving = ref(false)
   const notice = ref<{ text: string; error: boolean } | null>(null)
   let toastTimer: ReturnType<typeof setTimeout>
+  let epoch = 0
+  const flights = new Map<string, Promise<void>>()
+  function single(key: string, work: (generation: number) => Promise<void>) {
+    const generation = epoch
+    const name = generation + ':' + key
+    const existing = flights.get(name)
+    if (existing) return existing
+    const promise = work(generation).finally(() => { if (flights.get(name) === promise) flights.delete(name) })
+    flights.set(name, promise)
+    return promise
+  }
   const pending = computed(() => status.value?.queue.find((item) => item.status === 'pending')?.count || 0)
   const requiredSteps = computed(() =>
     Object.keys(setup.value?.completed || {}).filter((key) => !setup.value?.optional?.includes(key)),
@@ -47,44 +58,61 @@ export const useConsole = defineStore('console', () => {
     clearTimeout(toastTimer)
     toastTimer = setTimeout(() => (notice.value = null), 3500)
   }
-  async function refreshStatus() {
-    status.value = await api<Status>('status')
-    if (config.value) config.value.enabled = status.value.enabled
-    if (status.value.registry_revision !== revision.value) {
-      await refreshRegistry()
-      setup.value = await api<Setup>('setup')
-    }
-    await refreshAgents()
+  function refreshStatus() {
+    return single('status', async generation => {
+      const data = await api<Status>('status')
+      if (generation !== epoch) return
+      status.value = data
+      if (config.value) config.value.enabled = data.enabled
+      agents.value = agents.value.map(agent => ({ ...agent, ...data.agent_states?.[agent.id] }))
+      plugins.value = plugins.value.map(plugin => ({ ...plugin, ...data.plugin_states?.[plugin.name] }))
+      const updates: Promise<unknown>[] = []
+      if (data.registry_revision !== revision.value) {
+        updates.push(refreshRegistry(), api<Setup>('setup').then(value => { if (generation === epoch) setup.value = value }))
+      }
+      if (data.agents_revision !== agentRevision.value) updates.push(refreshAgents())
+      await Promise.all(updates)
+    })
   }
-  async function refreshAgents() {
-    const data = await api<AgentCatalog>('agents')
-    agents.value = data.items
-    const main = data.items.find((item) => item.id === 'main')
-    if (config.value && main) config.value.enabled = main.enabled
-    agentDefaults.value = data.defaults
-    agentRevision.value = data.revision
+  function refreshAgents() {
+    return single('agents', async generation => {
+      const data = await api<AgentCatalog>('agents')
+      if (generation !== epoch) return
+      agents.value = data.items
+      const main = data.items.find(item => item.id === 'main')
+      if (config.value && main) config.value.enabled = main.enabled
+      agentDefaults.value = data.defaults
+      agentRevision.value = data.revision
+    })
   }
-  async function refreshRegistry() {
-    const registry = await api<PluginRegistry>('plugin-registry')
-    pages.value = registry.pages
-    plugins.value = registry.plugins
-    revision.value = registry.revision
-    await synchronizePluginRoutes(registry.pages)
+  function refreshRegistry() {
+    return single('registry', async generation => {
+      const registry = await api<PluginRegistry>('plugin-registry')
+      if (generation !== epoch) return
+      const changed = JSON.stringify(pages.value) !== JSON.stringify(registry.pages)
+      pages.value = registry.pages
+      plugins.value = registry.plugins
+      revision.value = registry.revision
+      if (changed) await synchronizePluginRoutes(registry.pages)
+    })
   }
-  async function refresh() {
-    const values = await Promise.all([
-      api<Status>('status'),
-      api<Configuration>('config'),
-      api<Setup>('setup'),
-      api<Persona[]>('personas'),
-    ])
-    ;[status.value, config.value, setup.value, personas.value] = values
-    await Promise.all([refreshRegistry(), refreshAgents()])
+  function refresh() {
+    return single('refresh', async generation => {
+      const [, settings, onboarding, people] = await Promise.all([
+        refreshStatus(), api<Configuration>('config'), api<Setup>('setup'), api<Persona[]>('personas'),
+        refreshRegistry(), refreshAgents(),
+      ])
+      if (generation !== epoch) return
+      config.value = settings
+      setup.value = onboarding
+      personas.value = people
+    })
   }
   async function togglePlugin(id: string, enabled: boolean) {
     saving.value = true
     try {
       await api('plugins/' + encodeURIComponent(id), { method: 'PATCH', body: { enabled } })
+      epoch++
       await refresh()
       toast(enabled ? '已启用' : '已停用')
     } catch (error) {
@@ -96,17 +124,20 @@ export const useConsole = defineStore('console', () => {
   }
   async function login(token: string) {
     token = token.trim()
+    const generation = ++epoch
     setSessionToken(token)
     try {
       await refresh()
+      if (generation !== epoch) return
       rememberToken(token)
       authenticated.value = true
     } catch (error) {
-      logout(false)
+      if (generation === epoch) logout(false)
       throw error
     }
   }
   function logout(forget = true) {
+    epoch++
     clearToken(forget)
     authenticated.value = false
     status.value = null
@@ -128,6 +159,7 @@ export const useConsole = defineStore('console', () => {
     saving.value = true
     try {
       await api('config', { method: 'PATCH', body: { section, values } })
+      epoch++
       await refresh()
       toast('已保存')
     } catch (error) {
@@ -141,6 +173,7 @@ export const useConsole = defineStore('console', () => {
     saving.value = true
     try {
       await api('agents/main/state', { method: 'PATCH', body: { enabled } })
+      epoch++
       await refresh()
     } finally {
       saving.value = false

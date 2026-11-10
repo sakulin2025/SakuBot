@@ -1,7 +1,7 @@
 {
   "name": "audio_terminal",
   "label": "音频终端",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "icon": "connection",
   "settings": {
     "fields": [
@@ -27,6 +27,20 @@
         "label": "订阅设备事件",
         "type": "boolean",
         "default": true
+      },
+      {
+        "key": "conversation_enabled",
+        "label": "提供主会话对话能力",
+        "type": "boolean",
+        "default": true
+      },
+      {
+        "key": "temporary_context",
+        "label": "音箱主会话临时上下文",
+        "type": "text",
+        "default": "你正在通过音箱与用户对话，回答会自动合成语音播放。\n请简短、直接、口语化地回答，通常控制在1到3句话；除非用户明确要求详细说明，不要长篇解释或输出大段列表。\n用户明确要求结束本次对话，或说“再见”“不用聊了”等告别语时，必须调用 audio_terminal_end_conversation，无需填写任何参数。不能只口头答应，也不要让用户等待会话自动超时。\n仅要求停止播放不等于结束对话；用户仍希望继续交流时不要擅自结束会话。",
+        "max_length": 8000,
+        "placeholder": "对音箱主会话的回答风格、会话结束工具调用等要求；每轮和每次模型调用都会提醒。"
       }
     ],
     "connection": {

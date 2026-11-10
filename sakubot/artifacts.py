@@ -40,10 +40,12 @@ def preview_images(plugin, invocation, paths, note):
     return {'queued': True, 'count': len(relative), 'scope': 'next_model_request'}
 
 
-def publish(plugin, path, name=None):
+def publish(plugin, path, name=None, *, max_bytes=20 * 1024 * 1024):
     path = Path(path)
-    if not path.is_file() or path.stat().st_size > 20 * 1024 * 1024:
-        raise ValueError('附件不存在或超过20 MiB')
+    if type(max_bytes) is not int or not 1<=max_bytes<=500*1024*1024:
+        raise ValueError('附件上限须在1字节至500MiB之间')
+    if not path.is_file() or path.stat().st_size > max_bytes:
+        raise ValueError('附件不存在或超过允许的大小上限')
     token = uuid.uuid4().hex + uuid.uuid4().hex
     folder = plugin.runtime.config.root / 'artifacts' / token
     folder.mkdir(parents=True, mode=0o700)

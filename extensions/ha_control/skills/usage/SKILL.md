@@ -13,3 +13,9 @@ HA 事件均为泛事件：ha_control.entity_state_changed.*、entity_turned_on.
 ## 脚本调用
 
 ha_query 成功时 entities、total、truncated 始终存在。列表内实体的 entity_id/name/display_name/domain 等身份字段，以及 state/state_text 始终存在；state/state_text 可为 null，这不表示键可缺失。attributes 只在 summary=false 时返回，domains 只在 summary=true 时返回。查询身份与历史状态是不同结构，不要用历史状态的字段约束猜实时查询。失败通过框架异常报告，脚本侧为 ScriptToolError，不会返回错误字符串。每次编写或修改脚本都必须重新查阅 script_development 的当前插件文档，不凭记忆猜测。
+
+## 状态事件的操作账号
+
+状态订阅各分类事件均提供顶层user_id（string|null）、user_name（string|null，HA显示名）、username（string|null，HA本地认证登录用户名）和context（dict，HA本次上下文）。按user_id在HA返回的账号目录中匹配，不通过昵称、person实体或旧状态猜测。用户名缺失不影响原状态事件；old_state/new_state保持HA原始结构，内部context不额外改写。
+
+目录通过现有WebSocket的auth/current_user和config/auth/list读取，每次连接重新获取、每15分钟刷新。后者要求管理员；无权限时只能尽量匹配Token所属账号的显示名，其他用户的名字留null。未完成初次目录加载、账号无名称、外部认证没有本地用户名或查询失败时，相应字段也为null。名称缓存仅在内存，不保留旧连接用户目录；重连可更新名称。账号/上下文可能来自自动化或共享Token，不保证代表实际按开关的人，不作为SakuBot主人身份授权。

@@ -46,21 +46,6 @@ def begin(runtime):
     return {'run_id': run_id, 'status': 'running'}
 
 
-def calibration(runtime, model_id):
-    for row in runtime.store.rows('SELECT trace FROM runs ORDER BY started DESC LIMIT 20'):
-        trace = json.loads(row['trace'] or '{}')
-        if trace.get('model_id') != model_id:
-            continue
-        requests, usages = trace.get('api_requests', []), trace.get('usage', [])
-        if requests and usages and len(usages) >= len(requests):
-            used = usages[-1].get('prompt_tokens')
-            body = requests[-1].get('body', {})
-            size = runtime.compression.estimate(body.get('messages', []), body.get('tools'))
-            if isinstance(used, (int, float)) and used > 0 and size:
-                return min(1, max(.05, used / size))
-    return .25
-
-
 async def execute(runtime, messages, inv):
     status, error = 'done', ''
     runtime.conversation.process('run.started', run_id=inv.run_id, event_id=runtime.current_run['event_id'], agent_id='main')
@@ -69,11 +54,10 @@ async def execute(runtime, messages, inv):
             selected = inv.metadata['_model_settings'].selected_model(model_id=inv.model_id)[1]
             tools = [tool.schema() for tool in runtime.registry.available(inv)] if selected.capabilities.tools else []
             await runtime.refresh_capabilities(messages, inv)
-            ratio = calibration(runtime, inv.model_id)
             await runtime.compression.compact(messages, inv, tools, force=True)
             row = runtime.store.one('SELECT trace FROM runs WHERE id=?', (inv.run_id,))
             trace = json.loads(row['trace'])
-            trace['context_after'] = round(runtime.compression.estimate(messages, tools) * ratio)
+            trace['context_after'] = runtime.compression.tokens(messages, tools, inv.model_id)
             runtime.store.execute('UPDATE runs SET trace=? WHERE id=?', (encode(trace), inv.run_id))
     except BaseException as exc:
         status = 'interrupted' if isinstance(exc, asyncio.CancelledError) else 'failed'

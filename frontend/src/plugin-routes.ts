@@ -27,6 +27,7 @@ export async function synchronizePluginRoutes(pages: PluginPage[]) {
     await router.replace('/')
   else if (current.name === 'not-found') {
     const resolved = router.resolve(current.fullPath)
-    await router.replace(resolved.name === 'not-found' ? '/' : current.fullPath)
+    if (resolved.name !== 'not-found' && router.currentRoute.value.fullPath === current.fullPath)
+      await router.replace(current.fullPath)
   }
 }

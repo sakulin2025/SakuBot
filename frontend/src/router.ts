@@ -25,3 +25,17 @@ export const router = createRouter({
   ],
   scrollBehavior: () => ({ top: 0 }),
 })
+
+router.onError((error, to) => {
+  if (/Failed to fetch dynamically imported module|Importing a module script failed|Loading chunk|Failed to load module script/i.test(String(error))) {
+    const key = 'sakubot:chunk-reload:' + to.fullPath
+    const previous = Number(sessionStorage.getItem(key) || 0)
+    if (Date.now() - previous > 60000) {
+      sessionStorage.setItem(key, String(Date.now()))
+      location.replace(location.pathname + location.search + '#' + to.fullPath)
+      location.reload()
+      return
+    }
+  }
+  window.dispatchEvent(new CustomEvent('sakubot-navigation-error', { detail: '页面加载失败，请刷新后重试' }))
+})

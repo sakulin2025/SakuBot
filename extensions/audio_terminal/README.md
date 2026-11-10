@@ -1,13 +1,17 @@
-# 音频终端插件
+# 音频终端插件 0.2.1
 
-提供设备查询、控制、WAV 播放及事件，不包含语音识别、语音合成或自动唤醒 Agent。
+设备控制、事件和音箱主会话源。230 部署提供对话能力；Mac 插件保持禁用。
 
-连接设置使用框架插件设置表单：base_url 默认 http://esp32-audio-terminal:8765，token 填桥接服务 API_TOKEN。subscribe_events 控制事件订阅。密钥保存在 plugin_data/audio_terminal/config.json。
+插件连接桥接 `/v1/agent`，声明 conversation=true、input=text、requires_asr=true，独占对话提供者。ASR 文字直接作为 Sakubot 主会话输入，不经过脚本或额外 Agent。每台在线设备注册一个稳定的主会话源，收到输入后由框架切换当前源；首次部署也可在主会话源列表选择音箱。音箱输入与网页、其他主会话源共享现有主上下文。
 
-工具：audio_terminal_devices、audio_terminal_status、audio_terminal_control、audio_terminal_play、audio_terminal_stop、audio_terminal_events。
+文字回答使用 TTS 服务端默认音色；按句合成有界的 WAV 分段，收到实际播放完成回执后再播放下一段，主 Agent 本轮完成后恢复收音。对话保活允许 Agent 排队、推理和 TTS 超过45秒，仍受桥接的绝对会话时长限制。处理失败、连接断开、轮次过期时不会重试未知播放或把迟到回答送入下一轮。很长回答的语音部分最多30段，全文仍在主会话。未收到语音输入时，显式选择的音箱主会话源也可播报主动消息；存在待回答语音时拒绝无关联播报。
 
-脚本触发源：audio_terminal.wake.*、button.*、playback.*、connection.*，可按 device_id 过滤。事件含 id、device_id、event、received_at、timestamp_ms、data。设备 VAD、训练候选只进入事件列表。最近400条事件保存在内存，最近200条定期保存到插件 KV，重启恢复；断线事件不补传。
+双敲仍为纯事件，不向主 Agent 自动提交任务；事件继续供脚本使用。对话源信任状态沿用框架配置，不自动授予可信身份。插件停用或重载会释放对话提供者绑定，取消尚未处理的本插件语音请求。
 
-管理页位于“网络与设备 / 音频终端”，显示设备状态、控制和事件。只读设备发现每5秒刷新，状态约10秒更新；页面每2.5秒读取缓存。控制及播放不自动重试。WAV 要求 16kHz、单声道、PCM16，最长120秒。
+工具：audio_terminal_devices/status/control/play/stop/events、audio_terminal_voices、audio_terminal_end_conversation。管理页显示服务/对话连接状态、会话、最近识别文字和回答，可结束会话。音色与 TTS 默认值由 ESP32 控制台管理。
 
-从 sakubot 根目录构建页面：node frontend/build-plugins.mjs extensions。将完整目录发布到运行数据目录 plugins/audio_terminal，通过插件管理启用或重载。外部依赖复用 httpx、websockets。
+需要桥接能力：turn.processing、response.completed、response.empty_final。程序包仅包含代码和页面，不包含配置、令牌、录音或 Sakubot 数据。
+
+## 可自定义临时上下文
+
+在插件设置的“音箱主会话临时上下文”中编辑，最多8000字符，可留空。默认要求主 Agent 简短、口语化地回答，并在用户明确要求结束聊天或告别时调用 audio_terminal_end_conversation，不能仅口头承诺。运行时自动补充当前音箱设备 ID。每次语音输入保留一份本轮上下文，框架还会在每次主 Agent 模型调用前重新提醒；它不作为长期对话正文保存。只保存上下文不会重连提供者或结束当前会话，修改从下一轮语音起生效。

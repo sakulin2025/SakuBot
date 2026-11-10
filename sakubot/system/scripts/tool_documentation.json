@@ -244,5 +244,17 @@
         "example_note": "动作选择示例；必需的目标ID、路径和参数须按parameters补齐，从当前目录读取，不能照抄虚构值执行。"
       }
     }
+  },
+  "event_listen": {
+    "parameters": "action=create/list/get/update/delete；id为监听ID；create须source与prompt。source支持软ID、*通配；source_params为事件文档的订阅参数。once:boolean默认true；expires_in:integer默认3600，1~2592000秒；block_scripts:boolean默认false；send_result_to_source默认继承创建时环境；enabled默认true；name可选。",
+    "returns": "create/update/get返回普通dict，含id,name,source,source_params,prompt,once,enabled,block_scripts,send_result_to_source,created_at,expires_at,generation,triggered_at,active,status；时间为Unix秒，triggered_at未命中为null。list返回{items:[监听]}，delete返回{deleted:id}。status为active/triggered/expired/disabled。",
+    "semantics": "仅主智能体可调用；监听临时事件，命中进入持久wake队列，默认排队；不切换主会话源。一次性在成功登记wake后失效；持续至到期。block_scripts只阻止匹配事件新触发脚本，不阻止既有wake绑定或其他监听。到期不发提醒，删除不取消已登记任务。",
+    "reference": "skills/script-automation/SKILL.md"
+  },
+  "model_retry_last": {
+    "parameters": "无参数。",
+    "returns": "object{event_id:integer,status:string,previous_run_id:string}，复用原消息ID，status=pending表示已排队恢复，不代表模型已成功。",
+    "requirements": "仅最后一次主智能体运行因模型请求失败且当前空闲、框架启用时可用。建议仅在脚本中使用；模型主动调用（origin=agent）必定拒绝。不会因额度问题自动重试，该工具可在充值/修复配置后由脚本显式请求。",
+    "semantics": "从失败的模型步骤恢复上下文、已完成工具结果与临时要求，不新增用户消息，不自动重放已执行工具。工具执行失败、取消、窗口外旧运行等拒绝。新功能前的失败记录只在保留了消息及API轨迹时支持恢复。"
   }
 }

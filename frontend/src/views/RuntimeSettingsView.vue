@@ -12,6 +12,8 @@ const values = reactive({
   context_chars: 48000,
   agent_concurrency: 3,
   progress_reminder: { enabled: false, tool_threshold: 5, seconds_threshold: 30, mode: 'remind', prompt: '请使用 message_send 向当前主会话源简短说明刚刚完成了什么，以及接下来准备做什么。无需罗列工具，不要泄露当前会话源不应获知的信息。' },
+  request_retry: { max_retries: 3, retry_notice: '刚刚开小差了，让我尝试重新集中注意力', exhausted_notice: '（睡着了）', fatal_notice: '没精力理你了…' },
+  compression_notice: '稍等，脑子太乱了，给我点时间让我整理一下思绪',
   compression_enabled: true,
   threshold: 80,
 })
@@ -126,6 +128,8 @@ watch(
       context_chars: config.context_chars,
       agent_concurrency: config.agent_concurrency,
       progress_reminder: { ...values.progress_reminder, ...config.progress_reminder },
+      request_retry: { ...values.request_retry, ...config.request_retry },
+      compression_notice: config.compression_notice,
       compression_enabled: config.compression_enabled,
       threshold: config.compression_threshold * 100,
     })
@@ -144,6 +148,8 @@ async function save() {
         context_chars: values.context_chars,
         agent_concurrency: values.agent_concurrency,
         progress_reminder: { ...values.progress_reminder },
+        request_retry: { ...values.request_retry },
+        compression_notice: values.compression_notice,
         compression_enabled: values.compression_enabled,
         compression_threshold: values.threshold / 100,
         ...(routingDirty.value ? { conversation: { ...routing, targets: [...routing.targets] } } : {}),
@@ -224,6 +230,22 @@ async function changeToken() {
           </div>
         </SCard>
         <WakePromptEditor v-model="values.wake_prompt_template" @update:model-value="dirty = true" />
+        <SCard title="模型请求重试" class="settings-section">
+          <div class="form-body">
+            <SFormItem label="最大重试次数" for="request-retries">
+              <SInput id="request-retries" v-model.number="values.request_retry.max_retries" type="number" min="0" max="10" required />
+            </SFormItem>
+            <SFormItem label="可重试失败提示（仅首次）" for="retry-notice">
+              <STextarea id="retry-notice" v-model="values.request_retry.retry_notice" rows="2" maxlength="2000" />
+            </SFormItem>
+            <SFormItem label="重试次数耗尽提示" for="retry-exhausted">
+              <STextarea id="retry-exhausted" v-model="values.request_retry.exhausted_notice" rows="2" maxlength="2000" />
+            </SFormItem>
+            <SFormItem label="不可重试失败提示" for="retry-fatal">
+              <STextarea id="retry-fatal" v-model="values.request_retry.fatal_notice" rows="2" maxlength="2000" />
+            </SFormItem>
+          </div>
+        </SCard>
         <SCard title="汇报进度提醒" class="settings-section">
           <div class="form-body">
             <div class="settings-row">
@@ -256,6 +278,9 @@ async function changeToken() {
                 @change="dirty = true"
               />
             </div>
+            <SFormItem label="压缩提示消息" for="compression-notice">
+              <STextarea id="compression-notice" v-model="values.compression_notice" rows="3" maxlength="2000" />
+            </SFormItem>
             <SFormItem label="上下文压缩触发比例 (%)" for="compression-threshold">
               <SInput
                 id="compression-threshold"

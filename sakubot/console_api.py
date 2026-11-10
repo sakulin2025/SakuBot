@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 def register_console_api(app, authorize, config, store, runtime, config_lock):
     auth = [Depends(authorize)]
 
-    @app.api_route('/hooks/{plugin}/{path:path}', methods=['POST'])
+    @app.api_route('/hooks/{plugin}/{path:path}', methods=['GET','POST','PUT','PATCH','DELETE'])
     async def plugin_webhook(plugin: str, path: str, request: Request):
         return await runtime.registry.dispatch(plugin, path, request, webhook=True)
 

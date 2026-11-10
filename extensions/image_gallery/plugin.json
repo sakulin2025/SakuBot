@@ -1,37 +1,182 @@
 {
   "name": "image_gallery",
   "label": "图库",
-  "version": "1.0.0",
+  "version": "1.4.0",
   "settings": {
     "fields": [
       {
         "key": "base_url",
-        "label": "URL",
+        "label": "图库服务 URL",
         "type": "string",
-        "placeholder": "例如 https://gallery.example.com",
-        "required": true,
         "default": "",
-        "format": "http-url"
+        "required": true,
+        "format": "http-url",
+        "placeholder": "例如 http://anime-image-lib 或 https://gallery.example.com"
+      },
+      {
+        "key": "password",
+        "label": "管理密码",
+        "type": "secret",
+        "default": "",
+        "placeholder": "填写图库管理密码，留空保留已保存值"
+      },
+      {
+        "key": "external_url",
+        "label": "外部访问 URL",
+        "type": "string",
+        "default": "",
+        "format": "http-url",
+        "placeholder": "例如 https://gallery.example.com，留空不生成外链"
       },
       {
         "key": "timeout",
         "label": "超时 · 秒",
         "type": "number",
-        "placeholder": "请输入 1～120 的整数",
+        "default": 20,
         "min": 1,
         "max": 120,
-        "default": 20,
-        "required": true
+        "placeholder": "1～120"
       },
       {
-        "key": "max_bytes",
-        "label": "图片上限 · MiB",
+        "key": "download_limit_mib",
+        "label": "取图下载上限 · MiB",
         "type": "number",
-        "placeholder": "请输入 1～20 的整数",
+        "default": 100,
         "min": 1,
-        "max": 20,
-        "default": 8,
-        "required": true
+        "max": 500,
+        "placeholder": "1～500，超过后尝试预览图"
+      },
+      {
+        "key": "transfer_limit_mib",
+        "label": "API 文件传输上限 · MiB",
+        "type": "number",
+        "default": 100,
+        "min": 1,
+        "max": 500,
+        "placeholder": "1～500，同时用于上传和下载"
+      },
+      {
+        "key": "poll_enabled",
+        "label": "推送获取",
+        "type": "boolean",
+        "default": false
+      },
+      {
+        "key": "push_target",
+        "label": "推送目标标识",
+        "type": "string",
+        "default": "sakubot_gallery",
+        "required": true,
+        "placeholder": "使用独立标识，例如 sakubot_gallery"
+      },
+      {
+        "key": "interval_min_minutes",
+        "label": "最短间隔 · 分钟",
+        "type": "number",
+        "default": 60,
+        "min": 1,
+        "max": 43200
+      },
+      {
+        "key": "interval_max_minutes",
+        "label": "最长间隔 · 分钟",
+        "type": "number",
+        "default": 120,
+        "min": 1,
+        "max": 43200
+      },
+      {
+        "key": "count_min",
+        "label": "最少张数",
+        "type": "number",
+        "default": 1,
+        "min": 1,
+        "max": 100
+      },
+      {
+        "key": "count_max",
+        "label": "最多张数",
+        "type": "number",
+        "default": 3,
+        "min": 1,
+        "max": 100
+      },
+      {
+        "key": "push_mode",
+        "label": "选图模式",
+        "type": "select",
+        "default": "latest",
+        "options": [
+          {
+            "value": "latest",
+            "label": "latest"
+          },
+          {
+            "value": "oldest",
+            "label": "oldest"
+          },
+          {
+            "value": "random",
+            "label": "random"
+          },
+          {
+            "value": "latePriority",
+            "label": "latePriority"
+          },
+          {
+            "value": "oldPriority",
+            "label": "oldPriority"
+          }
+        ]
+      },
+      {
+        "key": "image_source",
+        "label": "限定图源",
+        "type": "string",
+        "default": "",
+        "placeholder": "例如 yande；留空不限"
+      },
+      {
+        "key": "delay_minutes",
+        "label": "审核后延迟 · 分钟",
+        "type": "number",
+        "default": 10,
+        "min": 0,
+        "max": 43200
+      },
+      {
+        "key": "include_restricted",
+        "label": "包含受限图片",
+        "type": "boolean",
+        "default": false
+      },
+      {
+        "key": "quiet_enabled",
+        "label": "免打扰",
+        "type": "boolean",
+        "default": true
+      },
+      {
+        "key": "quiet_start",
+        "label": "免打扰开始",
+        "type": "string",
+        "default": "23:00",
+        "placeholder": "HH:MM，例如 23:00"
+      },
+      {
+        "key": "quiet_end",
+        "label": "免打扰结束",
+        "type": "string",
+        "default": "09:00",
+        "placeholder": "HH:MM，例如 09:00"
+      },
+      {
+        "key": "timezone",
+        "label": "时区",
+        "type": "string",
+        "default": "Asia/Shanghai",
+        "required": true,
+        "placeholder": "例如 Asia/Shanghai"
       }
     ],
     "connection": {

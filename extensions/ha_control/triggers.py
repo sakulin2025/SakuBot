@@ -1,5 +1,6 @@
 """Generic HA events, sharing one disposable WebSocket across all bindings."""
 from .event_docs import PARAMETERS, EVENT, ID_DESCRIPTION
+from .users import UserDirectory
 import asyncio
 import json
 import time
@@ -48,6 +49,7 @@ class EntityWatcher:
         self.references = set()
         self.task = None
         self.lock = asyncio.Lock()
+        self.users = UserDirectory()
 
     async def subscribe(self, params, emit):
         reference = uuid.uuid4().hex
@@ -81,8 +83,18 @@ class EntityWatcher:
                 families.append('entity_available')
         if (old or {}).get('attributes') != (new or {}).get('attributes'):
             families.append('entity_attribute_changed')
-        payload = {'entity_id': entity_id, 'old_state': old, 'new_state': new, 'at': event.get('time_fired')}
-        uid = str(event.get('context', {}).get('id') or uuid.uuid4().hex) + ':' + str(event.get('time_fired')) + ':' + entity_id
+        context=event.get('context')
+        if not isinstance(context,dict):context={}
+        # Never borrow the old state's actor: it describes a previous operation.
+        if 'user_id' not in context:
+            state_context=(new or {}).get('context') or {}
+            if not context.get('id') or context.get('id')==state_context.get('id'):
+                context={**state_context,**context}
+        user_id=context.get('user_id')
+        user_id=user_id if isinstance(user_id,str) and user_id else None
+        payload = {'entity_id': entity_id, 'old_state': old, 'new_state': new, 'at': event.get('time_fired'),
+            'context':context,'user_id':user_id,**self.users.resolve(user_id)}
+        uid = str(context.get('id') or uuid.uuid4().hex) + ':' + str(event.get('time_fired')) + ':' + entity_id
         for family in families:
             await self.plugin.emit_trigger(family + '.' + entity_id, payload, uid=family + ':' + uid)
 
@@ -101,8 +113,17 @@ class EntityWatcher:
                     await ws.send(json.dumps({'id': 1, 'type': 'subscribe_events', 'event_type': 'state_changed'}))
                     if not json.loads(await asyncio.wait_for(ws.recv(), 20)).get('success'): raise RuntimeError('HA 状态订阅失败')
                     delay = 5
-                    async for raw in ws:
-                        packet = json.loads(raw)
+                    self.users=UserDirectory()
+                    await self.users.refresh(ws)
+                    while True:
+                        if time.monotonic()>=self.users.refresh_at:
+                            await self.users.refresh(ws)
+                        try:
+                            raw=await asyncio.wait_for(ws.recv(),max(.1,self.users.refresh_at-time.monotonic()))
+                        except asyncio.TimeoutError:
+                            continue
+                        packet=json.loads(raw)
+                        if self.users.handle(packet):continue
                         if packet.get('type') == 'event': await self.publish(packet.get('event', {}))
             except asyncio.CancelledError:
                 raise

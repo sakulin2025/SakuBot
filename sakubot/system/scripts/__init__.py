@@ -10,6 +10,8 @@ class Extension(Plugin):
     name = 'scripts'
 
     def setup(self):
+        self.runtime.scripts.listeners.register(self)
+        self.runtime.failed_requests.register(self)
         self.page('manage','事件与脚本',Path(__file__).parent/'web'/'dist',icon='code',order=35,group_id='system')
         self.api('catalog',self.catalog_api)
         self.api('manage',self.manage_api,methods=('POST',))
@@ -21,7 +23,7 @@ class Extension(Plugin):
             {'type': 'object', 'properties': {'id': {'type': 'string', 'description': '脚本 ID'}, 'params': {'type': 'object', 'additionalProperties': True, 'description': '该动作所需的参数对象；具体键和值依动作定义，不猜测字段'}, 'event': {'type': 'object', 'properties': {'id': {'type': 'string', 'description': '生产者去重 ID'}, 'source': {'type': 'string', 'description': '实际完整事件 ID，不含星号'}, 'at': {'type': 'number', 'description': '事件分发 Unix 秒'}, 'data': {'type': 'object', 'additionalProperties': True, 'description': '插件提供的业务字典；按当前插件文档读取'}}, 'required': ['id', 'source', 'at', 'data'], 'additionalProperties': False, 'description': '可选完整事件样本 {id,source,at,data}；省略时生成空的 manual 事件'}}, 'required': ['id'], 'additionalProperties': False},self.run_tool)
         self.tool('script_execution','查看脚本执行、日志、返回值与工具调用；或停止运行。action=list/get/stop。',
             {'type': 'object', 'properties': {'action': {'type': 'string', 'enum': ['list', 'get', 'stop'], 'description': '本工具要执行的动作；仅接受枚举列出的操作'}, 'id': {'type': 'string', 'description': '执行 ID'}, 'script_id': {'type': 'string', 'description': 'list 时按脚本 ID 筛选；留空不限'}}, 'required': ['action'], 'additionalProperties': False},self.execution_tool)
-        self.tool('script_binding','管理软触发绑定；具名 source 只能保存一个动作（停用绑定也占用），应编辑原绑定而非重复创建；泛事件 source 可多次绑定。source 可填尚未声明的 ID 或 * 通配模式，例如 mattermost.slash.*，不存在时仍可保存。sources 列出事件含义（可传 source 聚焦单个声明）、泛 ID 规则、绑定参数说明、递归字段类型与说明及完整 payload 示例；业务字段使用 event["data"] 字典访问，source/at/id 也用字典下标；options 获取动态实体/设备选项；save 校验参数，不执行。target_kind=script 绑定脚本；target_kind=wake 直接唤醒主智能体，须提供 prompt 提示词，无需 script_id。事件观测数据只注入本轮临时上下文。失败策略 none/wake/notify，支持连续失败阈值与冷却。',
+        self.tool('script_binding','管理软触发绑定；具名 source 只能保存一个动作（停用绑定也占用），应编辑原绑定而非重复创建；泛事件 source 可多次绑定。source 可填尚未声明的 ID 或 * 通配模式，例如 mattermost.slash.*，不存在时仍可保存。sources 列出事件含义（source 支持插件ID、通配查询或具体事件ID，例如 mattermost、mattermost.*、mattermost.reaction_added.频道ID）、泛 ID 规则、绑定参数说明、递归字段类型与说明及完整 payload 示例；业务字段使用 event["data"] 字典访问，source/at/id 也用字典下标；options 获取动态实体/设备选项；save 校验参数，不执行。target_kind=script 绑定脚本；target_kind=wake 直接唤醒主智能体，须提供 prompt 提示词，无需 script_id。事件观测数据只注入本轮临时上下文。失败策略 none/wake/notify，支持连续失败阈值与冷却。',
             {'type': 'object', 'properties': {'action': {'type': 'string', 'enum': ['sources', 'options', 'list', 'save', 'delete'], 'description': '本工具要执行的动作；仅接受枚举列出的操作'}, 'id': {'type': 'string', 'description': '已有绑定 ID；新建省略'}, 'source': {'type': 'string', 'description': '插件声明的完整或泛事件 ID，也允许尚未声明的软来源'}, 'target_kind': {'type': 'string', 'enum': ['script', 'wake'], 'description': '动作类型：wake 直接唤醒主智能体，script 执行脚本'}, 'prompt': {'type': 'string', 'description': '唤醒主智能体的提示词'}, 'script_id': {'type': 'string', 'description': '已保存脚本的唯一 ID，先查询脚本列表'}, 'name': {'type': 'string', 'description': '绑定显示名称'}, 'source_params': {'type': 'object', 'additionalProperties': True, 'description': '事件筛选参数，严格按所选来源的参数定义提供，不是脚本执行参数'}, 'params': {'type': 'object', 'additionalProperties': True, 'description': '该动作所需的参数对象；具体键和值依动作定义，不猜测字段'}, 'enabled': {'type': 'boolean', 'description': '是否启用本对象，true 启用，false 停用'}, 'on_failure': {'type': 'string', 'enum': ['none', 'wake', 'notify'], 'description': '失败处理：none 仅记日志，wake 唤醒主智能体，notify 直接通知'}, 'failure_threshold': {'type': 'integer', 'minimum': 1, 'maximum': 100, 'description': '触发失败策略前需要连续失败的次数'}, 'cooldown_seconds': {'type': 'integer', 'minimum': 30, 'description': '重复失败通知的冷却秒数'}, 'send_result_to_source': {'type': 'boolean', 'description': '是否把本次唤醒结果或通知投递到当前主会话源；网页始终同步'}, 'confirm': {'type': 'boolean', 'description': '仅在用户已明确确认本次删除或危险操作时为true'}}, 'required': ['action'], 'additionalProperties': False},self.binding_tool)
         self.tool('script_tools','查询脚本可以调用的插件工具及参数定义。按 plugin 或关键词筛选；只列出当前可用插件，不调用工具。',
             {'type': 'object', 'properties': {'plugin': {'type': 'string', 'description': '可选插件 ID，只列该插件的工具'}, 'query': {'type': 'string', 'description': '工具名或描述的关键词'}}, 'required': [], 'additionalProperties': False},self.tools_tool)
@@ -31,7 +33,7 @@ class Extension(Plugin):
 
     def catalog(self):
         service=self.runtime.scripts
-        return {'scripts':service.repo.list('scripts'),'bindings':service.bindings(),'sources':service.source_manifest(),'runs':service.runs()}
+        return {'scripts':service.repo.list('scripts'),'bindings':service.bindings(),'sources':service.source_manifest(),'runs':service.runs(),'listeners':[service.listeners.public(row) for row in service.listeners.records().values()]}
 
     async def catalog_api(self,request):
         return self.catalog()
@@ -99,7 +101,13 @@ class Extension(Plugin):
         if args['action']=='sources':
             items=service.source_manifest()
             if args.get('source'):
-                resolved=service.sources.resolve(args['source'])
+                from fnmatch import fnmatchcase
+                query = args['source'].strip()
+                if any(mark in query for mark in ('*', '?', '[')):
+                    return [row for row in items if fnmatchcase(row['id'], query)]
+                if any(row['plugin_id'] == query for row in items):
+                    return [row for row in items if row['plugin_id'] == query]
+                resolved=service.sources.resolve(query)
                 return [row for row in items if resolved and row['id']==resolved['id']]
             return items
         if args['action']=='options': return await service.sources.options(args['source'])

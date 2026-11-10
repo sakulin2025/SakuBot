@@ -8,10 +8,17 @@ const file = ref<File | null>(null), filter = ref(''), detail = ref<any>(null)
 let timer: ReturnType<typeof setTimeout> | undefined, closed = false
 const device = computed<any>(() => state.value.items.find((row:any) => row.device_id === selected.value))
 const online = computed(() => state.value.connected && device.value?.online === true)
-const modules = computed(() => (device.value?.hello?.capabilities?.wake_modules || []).map((value:string) => ({value,label:({knock:'双击敲桌',keyword:'唤醒词',disabled:'关闭'} as any)[value] || value})))
-const events = computed(() => state.value.events.filter((row:any) => row.event.startsWith(filter.value)))
+const modules = computed(() => (device.value?.hello?.capabilities?.wake_modules || []).map((value:string) => ({value,label:({knock:'双击敲桌',keyword:'唤醒词',hybrid:'双敲 + 唤醒词',disabled:'关闭'} as any)[value] || value})))
 const status = computed(() => device.value?.status || {})
 const time = (value:number) => value ? new Date(value).toLocaleTimeString('zh-CN', {hour12:false}) : '--'
+const stopping = ref(false)
+async function endConversation() {
+  if (stopping.value) return
+  stopping.value = true
+  try { await host.api('conversation/end', {}); host.toast('会话已结束'); await load() }
+  catch (e:any) { host.toast(e.message, true) }
+  finally { stopping.value = false }
+}
 async function load() {
   if (loading.value || closed) return
   loading.value = true
@@ -54,6 +61,11 @@ onUnmounted(() => { closed = true; clearTimeout(timer) })
     <SButton icon="refresh" :loading="busy" @click="run(() => host.api('refresh', {}), '已刷新')">刷新设备</SButton>
   </SPageHeader>
   <p v-if="error || state.error" class="error">{{ error || state.error }}</p>
+  <SCard title="主会话对话" class="voice-card">
+    <div class="controls"><STag :status="state.conversation?.bound ? 'online' : 'pending'" :label="state.conversation?.bound ? '对话能力已绑定' : '对话未连接'" /><span>活动会话 {{ state.conversation?.sessions?.length || 0 }}</span><SButton :loading="stopping" @click="endConversation">结束会话</SButton></div>
+    <p v-if="state.conversation?.error" class="error padded">{{ state.conversation.error }}</p>
+    <dl><dt>输入</dt><dd>{{ state.conversation?.last_input || '等待音箱语音输入' }}</dd><dt>回答</dt><dd>{{ state.conversation?.last_output || '等待主 Agent 回答' }}</dd></dl>
+  </SCard>
   <div class="toolbar">
     <SSelect v-model="selected" :options="state.items.map((row:any) => ({value:row.device_id,label:row.device_id + (row.online === true ? ' · 在线' : row.online === false ? ' · 离线' : ' · 未知')}))" placeholder="选择设备" />
     <STag v-if="device" :status="online ? 'online' : 'offline'" :label="online ? '设备在线' : device.online === null ? '状态未知' : '设备离线'" />
@@ -95,14 +107,7 @@ onUnmounted(() => { closed = true; clearTimeout(timer) })
       </SCard>
     </div>
   </template>
-  <SCard title="设备事件" class="event-card">
-    <template #actions><SSelect v-model="filter" :options="[{value:'',label:'全部'},{value:'wake.',label:'唤醒'},{value:'input.',label:'按键'},{value:'playback.',label:'播放'},{value:'device.',label:'连接'},{value:'audio.',label:'音频'}]" aria-label="事件筛选" /></template>
-    <STable :rows="events" row-key="id" :columns="[{key:'received_at',label:'时间'},{key:'event',label:'事件'},{key:'device_id',label:'设备'},{key:'detail',label:'数据'}]" empty-text="暂无事件">
-      <template #cell-received_at="{row}">{{ time(row.received_at) }}</template>
-      <template #cell-detail="{row}"><SButton size="small" @click="detail = row">查看</SButton></template>
-    </STable>
-  </SCard>
-  <SDialog :open="!!detail" title="事件数据" @close="detail = null"><pre>{{ JSON.stringify(detail, null, 2) }}</pre></SDialog>
+
 </template>
 
 <style scoped>

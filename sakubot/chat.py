@@ -24,7 +24,7 @@ class Chat:
         if row['id'] <= self.boundary()['cutoff']:
             return False
         metadata = json.loads(row['meta'])
-        return not metadata.get('exclude_main', False) and not (row['kind'] == 'context' and metadata.get('exclude_context', False))
+        return not metadata.get('retry_event_id') and not metadata.get('exclude_main', False) and not (row['kind'] == 'context' and metadata.get('exclude_context', False))
 
     def row(self, row):
         metadata = json.loads(row['meta'])
@@ -43,7 +43,7 @@ class Chat:
 
     def snapshot(self, before=0, limit=100):
         boundary = self.boundary()
-        rows = self.runtime.store.rows("SELECT * FROM events WHERE id>? AND id<? AND coalesce(json_extract(meta,'$.exclude_main'),0)=0 AND (kind!='context' OR coalesce(json_extract(meta,'$.exclude_context'),0)=0) ORDER BY id DESC LIMIT ?",
+        rows = self.runtime.store.rows("SELECT * FROM events WHERE id>? AND id<? AND coalesce(json_extract(meta,'$.exclude_main'),0)=0 AND coalesce(json_extract(meta,'$.retry_event_id'),0)=0 AND (kind!='context' OR coalesce(json_extract(meta,'$.exclude_context'),0)=0) ORDER BY id DESC LIMIT ?",
             (boundary['cutoff'], before or 9223372036854775807, limit))
         activity = self.runtime.store.rows("SELECT id,at,source,event,run_id,data FROM logs WHERE run_id!='' AND at>? ORDER BY id DESC LIMIT 80", (boundary['at'],))
         for item in activity:
@@ -93,31 +93,9 @@ class Chat:
             'enabled': self.runtime.config.settings.enabled, 'sequence': self.runtime.live.sequence}
 
     async def retry(self, event_id):
-        store = self.runtime.store
-        row = store.one('SELECT * FROM events WHERE id=?', (event_id,))
-        if not row or row['kind'] != 'wake' or row['status'] != 'failed' or not self.visible(row):
-            raise ValueError('只能重试当前主对话中失败的唤醒消息')
-        metadata = json.loads(row['meta'])
-        if metadata.get('retry_event_id'):
-            existing = store.one('SELECT * FROM events WHERE id=?', (metadata['retry_event_id'],))
-            return {'message': self.row(existing), 'duplicate': True}
-        if not self.runtime.config.settings.enabled:
-            raise ValueError('主智能体已暂停，请先启用')
-        self.runtime.agents.snapshot('main')
-        retry_meta = dict(metadata)
-        for key in ('retry_event_id', 'exclude_context', 'exclude_main', 'rolled_back_at', 'rollback_event_id'):
-            retry_meta.pop(key, None)
-        retry_meta['retry_of'] = event_id
-        result = await self.runtime.emit('wake', row['source'], row['text'],
-            actor=row['actor'], label=row['label'], target=row['target'],
-            meta=retry_meta, uid='chat-retry:' + str(event_id), priority=row['priority'],
-            send_result_to_source=metadata.get('send_result_to_source', True), insertion='queue')
-        # Retain the failed message for audit/UI, but do not duplicate its prompt.
-        metadata.update(retry_event_id=result['id'], exclude_context=True)
-        store.execute('UPDATE events SET meta=? WHERE id=?', (json.dumps(metadata, ensure_ascii=False), event_id))
-        self.event(store.one('SELECT * FROM events WHERE id=?', (event_id,)))
-        store.log('info', 'chat', 'wake.retried', data={'event_id': event_id, 'retry_event_id': result['id']})
-        return {'message': self.row(store.one('SELECT * FROM events WHERE id=?', (result['id'],))), 'duplicate': False}
+        result=self.runtime.failed_requests.queue(event_id)
+        row=self.runtime.store.one('SELECT * FROM events WHERE id=?',(result['event_id'],))
+        return {'message':self.row(row),'duplicate':False}
 
     async def send(self, text, client_id):
         if not isinstance(text, str) or not text.strip() or len(text) > 100000:

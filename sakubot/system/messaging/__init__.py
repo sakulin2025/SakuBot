@@ -25,7 +25,9 @@ class Extension(Plugin):
 
     async def sources(self, invocation, args) :
         conversation = self.runtime.conversation
-        return {**conversation.catalog(), 'mode': self.runtime.config.settings.conversation.mode,
+        from sakubot.reply_location import resolve
+        position = resolve(invocation.metadata.get('_reply_location'), self.runtime.store.kv_get('conversation.current', ''))
+        return {'reply_context': position, **conversation.catalog(), 'mode': self.runtime.config.settings.conversation.mode,
             'targets': conversation.targets(), 'web_synced': True}
 
     async def set_source_trust(self, invocation, args) :
@@ -39,7 +41,7 @@ class Extension(Plugin):
         if invocation.agent_id != 'main':
             raise ValueError('只能由主智能体切换主会话源')
         from sakubot.wake_routing import change_source
-        changed, notice = change_source(self.runtime, args['source_id'], invocation)
+        changed, notice = change_source(self.runtime, args['source_id'], invocation, explicit=True)
         if notice:
             invocation.metadata.setdefault('_pending_source_notices', []).append(notice)
         return {**await self.sources(invocation, {}), 'changed': changed,

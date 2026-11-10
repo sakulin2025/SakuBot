@@ -164,7 +164,6 @@ async function retryWake() {
   try {
     const result = await api<{ message: Message }>('chat/retry', { body: { event_id: retryMessage.value.id } })
     merge(result.message)
-    retryMessage.value.meta.retry_event_id = result.message.id
     retryMessage.value = null
   } catch (err) {
     retryError.value = err instanceof Error ? err.message : '重试失败'
@@ -337,6 +336,7 @@ function receive(packet: Record<string, any>) {
   else if (packet.type === 'run.failed') runDone(packet.run_id, 'failed', packet.error)
   else if (packet.type === 'model.started') {
     processEntry(packet.run_id, { key: 'model:' + packet.step, kind: 'model', at: packet.at, step: packet.step, status: 'running' })
+    steps.value = steps.value.filter(step => step.request_id !== packet.request_id)
     steps.value.push({
       request_id: packet.request_id,
       run_id: packet.run_id,
@@ -505,7 +505,7 @@ onUnmounted(() => {
                 <UiIcon name="events" :size="13" />
                 <span>{{ message.label || message.source }}</span>
                 <time>{{ formatDate(message.at) }}</time>
-                <SButton v-if="message.kind === 'wake' && message.status === 'failed' && !message.meta.retry_event_id" variant="text" :disabled="store.config?.enabled === false" @click="retryError = ''; retryMessage = message">重试</SButton>
+                <SButton v-if="message.kind === 'wake' && message.status === 'failed'" variant="text" :disabled="store.config?.enabled === false" @click="retryError = ''; retryMessage = message">重试</SButton>
                 <SButton v-if="message.kind === 'wake'" variant="text" :disabled="!!running" title="回退到此消息之前" @click="rollbackError = ''; rollbackMessage = message">回退</SButton>
               </div>
               <pre>{{ message.text }}</pre>
@@ -517,7 +517,7 @@ onUnmounted(() => {
                   {{ message.meta.source_label || (message.source === 'web-chat' ? '网页' : message.source) }}
                 </span>
                 <time>{{ formatDate(message.at) }}</time>
-                <SButton v-if="message.kind === 'wake' && message.status === 'failed' && !message.meta.retry_event_id" variant="text" :disabled="store.config?.enabled === false" @click="retryError = ''; retryMessage = message">重试</SButton>
+                <SButton v-if="message.kind === 'wake' && message.status === 'failed'" variant="text" :disabled="store.config?.enabled === false" @click="retryError = ''; retryMessage = message">重试</SButton>
                 <SButton v-if="message.kind === 'wake'" variant="text" :disabled="!!running" title="回退到此消息之前" @click="rollbackError = ''; rollbackMessage = message">回退</SButton>
                 <STag
                   v-if="
@@ -603,8 +603,7 @@ onUnmounted(() => {
         </ChatInput>
       </SCard>
     </div>
-    <UiModal :open="!!retryMessage" title="重试失败的唤醒" @close="!retryBusy && (retryMessage = null)">
-      <p>将使用原消息和唤醒配置重新排队。上次已执行的工具操作可能重复执行。</p>
+    <UiModal :open="!!retryMessage" title="重试失败的请求" @close="!retryBusy && (retryMessage = null)">
       <p v-if="retryError" class="form-error">{{ retryError }}</p>
       <template #footer>
         <SButton :disabled="retryBusy" @click="retryMessage = null">取消</SButton>

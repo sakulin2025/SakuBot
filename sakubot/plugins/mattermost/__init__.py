@@ -20,12 +20,15 @@ from .config import Settings
 from .sending import Sender
 from .tools import MattermostTools
 from .channels import ChannelSources
+from .threads import Threads
+from .reactions import Reactions
+from .webhooks import Webhooks
 
 MAX_FILE = 20 * 1024 * 1024
 IDENTIFIER = re.compile(r'^[a-z0-9]{26}$')
 
 
-class Extension(ChannelSources, MattermostTools, Plugin):
+class Extension(Reactions, Threads, ChannelSources, MattermostTools, Plugin):
     
     
     name = 'mattermost'
@@ -51,6 +54,8 @@ class Extension(ChannelSources, MattermostTools, Plugin):
         from .commands import Commands
         self.commands = Commands(self)
         self.commands.register()
+        self.webhooks=Webhooks(self)
+        self.webhooks.register()
         self.api('command-teams', self.command_teams)
         self.page('manage', 'Mattermost', Path(__file__).parent / 'web' / 'dist', icon='connection', group_id='conversation', order=16)
         self.api('config', self.page_config)
@@ -61,6 +66,7 @@ class Extension(ChannelSources, MattermostTools, Plugin):
         self.api('image-models', self.image_models)
         from .triggers import register
         register(self)
+        self.register_reactions()
         self.register_tools()
         self.sync_sources()
 
@@ -168,6 +174,7 @@ class Extension(ChannelSources, MattermostTools, Plugin):
         return {'ok': True}
 
     async def start(self):
+        self.background(self.webhooks.run())
         self.connection_job = self.background(self.run())
 
     async def stop(self):
@@ -236,6 +243,8 @@ class Extension(ChannelSources, MattermostTools, Plugin):
                         if event.get('event') == 'posted':
                             post = event.get('data', {}).get('post', '{}')
                             await self.process_post(json.loads(post) if isinstance(post, str) else post)
+                        elif event.get('event') in ('reaction_added','reaction_removed'):
+                            await self.process_reaction(event)
                     raise RuntimeError('WebSocket 已关闭')
             except asyncio.CancelledError:
                 raise
@@ -296,7 +305,8 @@ class Extension(ChannelSources, MattermostTools, Plugin):
             name, sender, prompt = await self.sender_context(post)
             await self.receive_main(self.source_id(channel), content, actor=post['user_id'], label=name, uid=post_id,
                 meta={'source_label': 'Mattermost', 'post_id': post_id, 'channel_id': channel,
-                    'sender': sender, 'temporary_context': prompt})
+                    'sender': sender, 'temporary_context': prompt,
+                    'root_id': post.get('root_id') or '', 'reply_context': await self.incoming_reply_context(post,sender)})
             self.runtime.store.log('info', self.id, 'mattermost.message.received', data={'post_id': post_id, 'files': len(post.get('file_ids') or [])})
         self.state.set(cursor_key, max(int(self.state.get(cursor_key, 0)), timestamp))
 
@@ -394,7 +404,7 @@ class Extension(ChannelSources, MattermostTools, Plugin):
         if not self.online or not self.http:
             raise RuntimeError('Mattermost 未连接')
         if packet['type'] == 'text':
-            await self.sender.send(channel_id, packet.get('text', ''))
+            await self.sender.send(channel_id, packet.get('text', ''), root_id=self.thread_resolver(packet,channel_id))
             return
         content, name = await self.bytes_for_part(packet)
         uploaded = await self.mattermost_api('POST', 'api/v4/files', data={'channel_id': channel_id},
@@ -402,10 +412,10 @@ class Extension(ChannelSources, MattermostTools, Plugin):
         items = uploaded.get('file_infos') or []
         if not items or not IDENTIFIER.fullmatch(str(items[0].get('id', ''))):
             raise RuntimeError('文件上传结果无效')
-        await self.mattermost_api('POST', 'api/v4/posts', json={'channel_id': channel_id, 'message': '', 'file_ids': [items[0]['id']]})
+        await self.sender.send(channel_id, '', file_ids=[items[0]['id']], root_id=self.thread_resolver(packet,channel_id))
 
     async def tool_event(self, packet, *, channel_id):
         if packet.get('event') == 'tool.started':
-            await self.deliver({'type': 'text', 'text': '🔨函数调用：' + str(packet.get('name', ''))}, channel_id=channel_id)
+            await self.deliver({**packet, 'type': 'text', 'text': '🔨函数调用：' + str(packet.get('name', ''))}, channel_id=channel_id)
         elif packet.get('event') in ('compression.started', 'compression.completed', 'compression.failed'):
-            await self.deliver({'type': 'text', 'text': {'compression.started': '🗜️ 正在压缩上下文', 'compression.completed': '🗜️ 上下文压缩完成', 'compression.failed': '⚠️ 上下文压缩失败'}[packet['event']]}, channel_id=channel_id)
+            await self.deliver({**packet, 'type': 'text', 'text': {'compression.started': '🗜️ 正在压缩上下文', 'compression.completed': '🗜️ 上下文压缩完成', 'compression.failed': '⚠️ 上下文压缩失败'}[packet['event']]}, channel_id=channel_id)

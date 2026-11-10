@@ -3,6 +3,7 @@ import contextlib
 import copy
 import inspect
 import json
+import os
 import time
 import uuid
 from urllib.parse import urlsplit
@@ -23,6 +24,8 @@ from .conversation import Conversation
 from .delivery import Deliveries
 from .automation.service import Scripts
 from .control import Control
+from .failed_requests import FailedRequests
+from .status_metrics import StatusMetrics
 
 
 SYSTEM = """你是 SakuBot 的主 Agent，主上下文为 main。
@@ -46,6 +49,7 @@ class Runtime:
         self.conversation = Conversation(self)
         self.deliveries = Deliveries(self)
         self.chat = Chat(self)
+        self.failed_requests = FailedRequests(self)
         self.store.on_event = self.chat.event
         self.store.on_log = lambda row: self.live.publish('activity', activity=row) if row['run_id'] else None
         self.workspace = Workspace(config.root / 'workspace', store)
@@ -67,12 +71,14 @@ class Runtime:
         self.changed = asyncio.Event()
         self.resource_locks = {}
         self.control = Control(self)
+        self.metrics=StatusMetrics(self)
 
     async def start(self, strict=False):
         self.agents.reset()
         self.agent_slots = asyncio.Semaphore(self.config.settings.agent_concurrency)
         self.registry = Registry()
         self.model = Model(self.config.settings)
+        self.metrics.seed()
         try:
             from .preinstalled import bootstrap
             bootstrap(self.config, self.store)
@@ -158,6 +164,7 @@ class Runtime:
                 ('chat:boundary', boundary),
             ):
                 self.store.db.execute('INSERT OR REPLACE INTO kv(key,value) VALUES (?,?)', (key, encode(value)))
+        self.compression.clear_agent("main")
         instance.history, instance.pending = [], []
         self.store.log('warning', 'agents', 'context.cleared', data={'agent_id': 'main', 'cutoff': cutoff})
         self.live.models.clear()
@@ -313,7 +320,7 @@ class Runtime:
         metadata = json.loads(row['meta'])
         item = {key: row[key] for key in ('id', 'at', 'source', 'actor', 'label', 'target')}
         item['text'] = row['text']
-        item['metadata'] = {key: value for key, value in metadata.items() if key not in ('segments', 'raw', 'packet', 'temporary_context', 'send_result_to_source', 'injected_context', 'history_context', 'prompt_text', 'source_risk_warning', 'source_trusted_at_receive', 'source_change_notice', 'insertion_run_id', 'absorbed_run_id', 'absorbed_at', 'insertion_mode', 'wake_submitted', 'wake_request_id', 'wake_run_id')}
+        item['metadata'] = {key: value for key, value in metadata.items() if key not in ('segments', 'raw', 'packet', 'reply_context', 'temporary_context', 'send_result_to_source', 'injected_context', 'history_context', 'prompt_text', 'source_risk_warning', 'source_trusted_at_receive', 'source_change_notice', 'insertion_run_id', 'absorbed_run_id', 'absorbed_at', 'insertion_mode', 'wake_submitted', 'wake_request_id', 'wake_run_id', 'retry_from_run', 'retry_count', 'retry_of', 'retry_event_id')}
         if isinstance(metadata.get('prompt_text'), str):
             return {'role': 'user', 'content': metadata['prompt_text'], '_event_id': row['id']}
         return {'role': 'assistant' if metadata.get('role') == 'assistant' else 'user', 'content': encode(item), '_event_id': row['id']}
@@ -519,11 +526,29 @@ class Runtime:
                 data={'agent_id': inv.agent_id, 'insertion_id': row['id']})
         return len(rows)
 
+    async def probe_network(self, inv):
+        try:
+            provider, model = inv.metadata['_model_settings'].selected_model(model_id=inv.model_id)
+            if provider is None:
+                return
+            result = await self.model.probe_network(provider)
+            data = {'provider_id': provider.id, 'model_id': model.model_id if model else '', **result}
+            self.store.log('info', 'model', 'network.probe', run_id=inv.run_id, data=data)
+            print('network.probe ' + json.dumps({'run_id': inv.run_id, **data}, ensure_ascii=False), flush=True)
+        except Exception as exc:
+            data = {'error': type(exc).__name__, 'detail': str(exc)[:200]}
+            self.store.log('warning', 'model', 'network.probe.failed', run_id=inv.run_id, data=data)
+            print('network.probe.failed ' + json.dumps({'run_id': inv.run_id, **data}, ensure_ascii=False), flush=True)
+
     async def agent_loop(self, messages, inv, *, lightweight=False, max_steps=None):
         self.prepare_agent(inv)
         from .progress_policy import ProgressPolicy
         progress = ProgressPolicy(inv, self.config.settings.progress_reminder)
-        usage = []
+        usage = inv.metadata.pop('_resume_usage',[])
+        probe_timing = os.environ.get('SAKUBOT_NET_PROBE', '').strip().lower() in ('1', 'true', 'yes', 'on')
+        if probe_timing and inv.agent_id == 'main' and not inv.metadata.get('_network_probe_started'):
+            inv.metadata['_network_probe_started'] = True
+            inv.metadata['_network_probe_task'] = asyncio.create_task(self.probe_network(inv))
         for step in range(max_steps or self.config.settings.max_steps):
             if inv.instance:
                 inv.instance.ensure_active()
@@ -550,6 +575,11 @@ class Runtime:
                     rendered = render_environment(DEFAULT, variables)
                 if rendered:
                     environment.append(injection(rendered, source='framework.wake_prompt', category='environment'))
+            if inv.agent_id == 'main':
+                from .reply_location import describe
+                position = describe(self, inv)
+                if position:
+                    environment.append(injection(position, source='framework.reply_location', category='environment'))
             before_active = ordered([row for row in inv.temporary_context if not row.get('_observation')] + environment + wake_temporary)
             observations = [row for row in inv.temporary_context if row.get('_observation')]
             one_shot = ordered(inv.temporary_next)
@@ -579,21 +609,61 @@ class Runtime:
             async def delta(text):
                 self.conversation.process('model.delta', request_id=request_id, run_id=inv.run_id, agent_id=inv.agent_id, text=text)
             def capture_request(payload):
+                self.metrics.request(inv,payload)
                 if inv.agent_id == 'main':
                     for event_id in [inv.metadata.get('_main_event_id'), *inv.metadata.get('absorbed_events', [])]:
                         if event_id:
                             changed = self.store.execute("UPDATE events SET meta=json_set(meta,'$.wake_submitted',json('true'),'$.wake_request_id',?) WHERE id=? AND status='running' AND coalesce(json_extract(meta,'$.wake_submitted'),0)=0", (request_id, event_id)).rowcount
                             if changed:
                                 self.chat.event(self.store.one('SELECT * FROM events WHERE id=?', (event_id,)))
-                inv.metadata.setdefault('api_requests', []).append({'step': step + 1, 'at': time.time(), 'body': copy.deepcopy(payload)})
+                inv.metadata.setdefault('api_requests', []).append({'step': step + 1, 'at': time.time(), 'attempt': inv.metadata.get('_request_attempt',0), 'body': copy.deepcopy(payload)})
                 self.save_trace(inv, messages, usage)
+            inv.metadata['retry_checkpoint']={'failed':False,'temporary_context':copy.deepcopy(inv.temporary_context),
+                'one_shot':copy.deepcopy(one_shot),'send_result_to_source':inv.send_result_to_source,
+                'metadata':{key:copy.deepcopy(inv.metadata[key]) for key in
+                    ('_wake_temporary','wake_events','absorbed_events','_main_injected','_wake_clock','progress_reporting') if key in inv.metadata}}
+            async def notice(kind):
+                if inv.agent_id!='main':return
+                key='_model_notice_'+kind
+                if inv.metadata.get(key):return
+                inv.metadata[key]=True
+                policy=self.config.settings.request_retry
+                text=getattr(policy,kind+'_notice').strip()
+                if text:
+                    try:
+                        response_id='model-notice:'+inv.run_id+':'+kind
+                        self.store.event('notify','model',text,target='main',uid=response_id,
+                            meta={'role':'assistant','exclude_context':True,'run_id':inv.run_id,'model_notice':kind,
+                                  'send_result_to_source':inv.send_result_to_source})
+                        if inv.send_result_to_source:
+                            self.conversation.publish('text',response_id=response_id,run_id=inv.run_id,text=text,final=True)
+                    except Exception as problem:
+                        self.store.log('warning','model','retry.notice.failed',run_id=inv.run_id,data={'error':type(problem).__name__})
+            async def retry_attempt(attempt):
+                inv.metadata['_request_attempt']=attempt
+                if attempt and inv.agent_id=='main':
+                    self.conversation.process('model.started',request_id=request_id,run_id=inv.run_id,agent_id=inv.agent_id,step=step+1,attempt=attempt)
+            async def retry_request(exc,attempt,wait,reason):
+                self.store.log('warning','model','model.retry',run_id=inv.run_id,
+                    data={'step':step+1,'attempt':attempt,'delay':wait,'reason':reason,'details':getattr(exc,'details',{})})
+                inv.metadata.setdefault('model_errors',[]).append({'step':step+1,'attempt':attempt,'retrying':True,'details':getattr(exc,'details',{}),'error':str(exc)[:2000]})
+                await notice('retry')
+            async def failed_request(exc,retryable,attempt,reason):
+                await notice('exhausted' if retryable else 'fatal')
+            def capture_timing(summary):
+                data = {'step': step + 1, 'attempt': inv.metadata.get('_request_attempt', 0), **summary}
+                self.store.log('info', 'model', 'model.transport', run_id=inv.run_id, data=data)
+                print('model.transport ' + json.dumps({'run_id': inv.run_id, 'agent_id': inv.agent_id, **data}, ensure_ascii=False), flush=True)
             try:
                 message, used = await self.model.complete(request_messages, tools, model_id=inv.model_id,
-                    on_delta=delta if inv.agent_id == 'main' else None, on_request=capture_request, settings=inv.metadata["_model_settings"])
+                    on_delta=delta if inv.agent_id == 'main' else None, on_request=capture_request, settings=inv.metadata["_model_settings"],
+                    on_retry=retry_request,on_failure=failed_request,on_attempt=retry_attempt,
+                    on_timing=capture_timing if probe_timing else None)
                 inv.metadata['_model_responses'] = inv.metadata.get('_model_responses', 0) + 1
                 if inv.agent_id == 'main':
                     self.conversation.process('model.completed', request_id=request_id, run_id=inv.run_id, agent_id=inv.agent_id)
             except BaseException as exc:
+                inv.metadata['retry_checkpoint']['failed']=not isinstance(exc,asyncio.CancelledError)
                 if inv.agent_id == 'main':
                     self.conversation.process('model.failed', request_id=request_id, run_id=inv.run_id, agent_id=inv.agent_id)
 
@@ -603,6 +673,8 @@ class Runtime:
                 raise
             self.store.log("info", "model", "model.completed", run_id=inv.run_id,
                 data={"step": step + 1, "duration_ms": round((time.monotonic() - started) * 1000), "usage": used})
+            self.compression.calibrate(inv.model_id, request_messages, tools, used)
+            self.metrics.completed(inv,used)
             usage.append(used)
             messages.append(message)
             calls = message.get("tool_calls") or []
@@ -652,6 +724,7 @@ class Runtime:
 
     def save_trace(self, inv, messages, usage):
         self.store.execute("UPDATE runs SET trace=? WHERE id=?", (encode({"messages": messages, "usage": usage,
+            "retry_checkpoint": inv.metadata.get("retry_checkpoint"), "resumed_from_run": inv.metadata.get("resumed_from_run"),
             "temporary_contexts": inv.metadata.get("temporary_contexts", []),
             "function_snapshots": inv.metadata.get("function_snapshots", []), "compressions": inv.metadata.get("compressions", []),
             "progress_reporting": inv.metadata.get("progress_reporting", {}),
@@ -698,7 +771,9 @@ class Runtime:
                 self.prepare_agent(inv)
                 await inv.instance.dispatch("started", {"run_id": run_id, "invocation": inv})
                 messages = self.prompt(event, inv)
-                await self.collect_wake_context(inv)
+                resumed=self.failed_requests.restore(event,inv)
+                if resumed is not None:messages=resumed
+                else:await self.collect_wake_context(inv)
                 result, usage = await asyncio.wait_for(self.agent_loop(messages, inv), 600)
                 if result.strip():
                     await self.deliver_reply(inv, result)
@@ -706,7 +781,7 @@ class Runtime:
                 if active is not None:
                     original_end = next((i + 1 for i, row in enumerate(messages) if row.get('_wake_body') and row.get('_wake_event_id') == event['id']), active + 1)
                     def persistent(rows):
-                        return [{key: value for key, value in row.items() if not key.startswith('_')}
+                        return [{key: value for key, value in row.items() if not key.startswith('_') or key == '_summary'}
                                 for row in rows if row.get('role') in ('user', 'assistant', 'tool') and not row.get('_temporary')]
                     turn = {'before': inv.metadata.get('_main_injected', []),
                         'active': persistent(messages[active:original_end]),
@@ -762,49 +837,20 @@ class Runtime:
                 await self.changed.wait()
 
     def main_context_usage(self):
-        _, model = self.config.settings.selected_model()
-        if not model or not model.effective_window():
-            return None
-        cutoff = self.chat.boundary()['cutoff']
-        row = self.store.one("SELECT trace FROM runs WHERE event_id>? ORDER BY started DESC LIMIT 1", (cutoff,))
-        if not row:
-            return None
-        try:
-            trace = json.loads(row['trace'])
-            if trace.get('model_id') != model.id:
-                return None
-            if trace.get('manual_compression') and trace.get('context_after') is not None:
-                return {'percent': round(trace['context_after'] * 100 / model.effective_window(), 1), 'estimated': True}
-            requests = trace.get('api_requests') or []
-            usages = trace.get('usage') or []
-            used = usages[-1].get('prompt_tokens') if usages and (not requests or len(usages) >= len(requests)) else None
-            estimated = not isinstance(used, (int, float)) or isinstance(used, bool) or used < 0
-            if estimated:
-                if not requests:
-                    return None
-                body = requests[-1]['body']
-                messages = copy.deepcopy(body.get('messages', []))
-                images = 0
-                for message in messages:
-                    if isinstance(message.get('content'), list):
-                        for index, part in enumerate(message['content']):
-                            if isinstance(part, dict) and part.get('type') == 'image_url':
-                                images += 1
-                                message['content'][index] = {'type': 'image_url', 'image_url': {'url': '<image>'}}
-                used = self.compression.estimate(messages, body.get('tools')) + images * 16384
-            return {'percent': round(used * 100 / model.effective_window(), 1), 'estimated': estimated}
-        except (ValueError, TypeError, KeyError, IndexError, AttributeError):
-            return None
+        return self.metrics.context_usage()
 
     def status(self):
+        availability={plugin.id:self.registry.availability(plugin.id) for plugin in self.registry.plugins}
         return {"enabled": self.config.settings.enabled, "configured": self.config.settings.ready(),
                 "registry_revision": self.registry.revision, "agents_revision": self.agents.revision,
                 "main_session": "main",
                 "main_context_usage": self.main_context_usage(),
-                "running": self.current_run, "error": self.error,
+                "running": {key:value for key,value in self.current_run.items() if not key.startswith('_')} if self.current_run else None, "error": self.error,
+                "agent_states": {key:{"busy":value.busy,"resetting":value.resetting} for key,value in self.agents.instances.items()},
+                "plugin_states":availability,
                 "queue": self.store.rows("SELECT status,count(*) AS count FROM events WHERE kind='wake' GROUP BY status"),
                 "plugins": [{"name": plugin.id} for plugin in self.registry.plugins],
-                "tools": [{"name": tool.name, "description": tool.description, "plugin_id": tool.plugin_id} for tool in self.registry.tools.values() if self.registry.availability(tool.plugin_id)["available"]]}
+                "tools": [{"name": tool.name, "description": tool.description, "plugin_id": tool.plugin_id} for tool in self.registry.tools.values() if availability.get(tool.plugin_id,{}).get("available")]}
 
     def function_catalog(self, agent_id="main"):
         profile = self.agents.profile(agent_id)

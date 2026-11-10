@@ -11,10 +11,19 @@ class Extension(Plugin):
     name = 'utilities'
 
     def setup(self):
+        self.tool('context_archive', '查找当前智能体已压缩历史的独立归档和原文。摘要遗漏或有疑问时先查原文，不靠摘要猜测。list/search返回摘要目录；read按归档id分页返回原始消息，保留事件ID、来源和工具结果。只读，不唤醒、不修改记忆。',
+            object_schema({'action': {'type':'string','enum':['list','search','read']}, 'id':text('read的归档ID'),
+                'query':text('匹配摘要和原文的关键词，不是向量检索'), 'offset':{'type':'integer','minimum':0},
+                'limit':{'type':'integer','minimum':1,'maximum':50}}, ()), self.archived_context)
         self.tool('image_describe', '使用支持图片的模型解读图片，可自定义 prompt 进行文字提取、食物辨识、界面分析等。image 接受 HTTP/HTTPS 图片 URL、工作空间相对路径、/api/artifacts/附件标识或 base64 图片 data URL。需要登录的图片先下载到工作空间。可用 model_id 指定框架模型条目的 ID；未指定时优先当前智能体的图片模型，否则选择首个已启用图片模型。返回描述、原始图片地址、模型和用量。会产生额外模型请求；不保证推断准确。', {'type': 'object', 'properties': {'image': {'type': 'string', 'description': '图片 HTTP/HTTPS URL、工作空间相对路径、框架附件 URL 或图片 data URL'}, 'prompt': {'type': 'string', 'description': '自定义图片分析要求；不传时准确描述主体、文字和重要细节'}, 'model_id': {'type': 'string', 'description': '可选框架模型条目 ID；不是供应商模型名称'}, 'max_tokens': {'type': 'integer', 'description': '最大输出 Token，默认2048', 'minimum': 128, 'maximum': 16000}}, 'required': ['image'], 'additionalProperties': False}, self.describe_image)
         self.tool('time_info', '获取指定时区的当前准确日期、时间、星期和 Unix 时间戳，也可转换已有时间。timezone 使用 IANA 名称如 Asia/Shanghai、UTC、America/New_York；value 留空表示现在，支持 ISO8601 或 Unix 秒。未带时区的输入按所选 timezone 理解。不是定时提醒，提醒使用定时任务插件。', {'type': 'object', 'properties': {'timezone': {'type': 'string', 'description': '目标 IANA 时区，默认 Asia/Shanghai'}, 'value': {'type': 'string', 'description': '可选 ISO8601 或 Unix 秒；留空表示当前时间'}}, 'required': [], 'additionalProperties': False}, self.time_info)
         self.tool('time_difference', '计算两个时间点相差多少秒、小时和天，结果为 end 减 start；一天按24小时。接受 ISO8601 或 Unix 秒，无时区的输入按 timezone（默认 Asia/Shanghai）解释。夏令时跨越按实际经过时间计算。', {'type': 'object', 'properties': {'start': {'type': 'string', 'description': '开始时间，ISO8601 或 Unix 秒'}, 'end': {'type': 'string', 'description': '结束时间，ISO8601 或 Unix 秒'}, 'timezone': {'type': 'string', 'description': '无时区输入使用的 IANA 时区，默认 Asia/Shanghai'}}, 'required': ['start', 'end'], 'additionalProperties': False}, self.time_difference)
         self.tool('calculate', '计算数值表达式，支持 + - * / // % **、括号、pi/e、abs/round/min/max/sqrt/sin/cos/tan/log/log10/exp/floor/ceil。乘方用 **，不支持变量赋值或代码执行。结果是数值计算，浮点数可能有舍入误差；不能充当货币账本。', {'type': 'object', 'properties': {'expression': {'type': 'string', 'description': '数值表达式，例如 (120+35)*0.85；不接受赋值或代码执行'}}, 'required': ['expression'], 'additionalProperties': False}, self.calculate)
+
+    async def archived_context(self, invocation, args):
+        return self.runtime.compression.archive.query(invocation.agent_id,
+            action=args.get('action','list'), identifier=args.get('id',''), query=args.get('query',''),
+            offset=args.get('offset',0), limit=args.get('limit',10))
 
     async def describe_image(self, invocation, args) :
         from sakubot.image_description import describe

@@ -8,6 +8,8 @@ export interface Configuration {
   max_steps: number
   wake_prompt_template: string
   progress_reminder: { enabled: boolean; tool_threshold: number; seconds_threshold: number; mode: 'remind' | 'require'; prompt: string }
+  request_retry: { max_retries: number; retry_notice: string; exhausted_notice: string; fatal_notice: string }
+  compression_notice: string
   compression_enabled: boolean
   compression_threshold: number
   conversation: { mode: 'intelligent'; targets: string[]; tool_events: boolean; wake_insertion: 'queue' | 'next_boundary' | 'same_source_boundary'; same_source_priority: boolean; untrusted_source_template: string; source_change_enabled: boolean; source_change_mode: 'context' | 'temporary'; source_change_template: string }
@@ -62,6 +64,8 @@ export interface ToolInfo {
   description: string
 }
 export interface Status {
+  agent_states?: Record<string, { busy: boolean; resetting: boolean }>
+  plugin_states?: Record<string, Pick<PluginInfo, 'available' | 'state' | 'reason'>>
   agents_revision: string
   registry_revision: string
   version: string
