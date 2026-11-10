@@ -1,7 +1,7 @@
 {
   "name": "audio_terminal",
   "label": "音频终端",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "icon": "connection",
   "settings": {
     "fields": [
@@ -33,6 +33,60 @@
         "label": "提供主会话对话能力",
         "type": "boolean",
         "default": true
+      },
+      {
+        "key": "speech_backend",
+        "label": "语音处理方式",
+        "type": "select",
+        "default": "bridge",
+        "options": [
+          {
+            "value": "bridge",
+            "label": "音频服务 ASR/TTS（兼容模式）"
+          },
+          {
+            "value": "models",
+            "label": "Sakubot 模型 ASR/TTS（分句流式播放）"
+          }
+        ]
+      },
+      {
+        "key": "asr_model_id",
+        "label": "ASR 模型",
+        "type": "select",
+        "default": ""
+      },
+      {
+        "key": "tts_model_id",
+        "label": "TTS 模型",
+        "type": "select",
+        "default": ""
+      },
+      {
+        "key": "auto_interrupt",
+        "label": "新语音自动打断当前回答（保留会话）",
+        "type": "boolean",
+        "default": true
+      },
+      {
+        "key": "tts_voice",
+        "label": "模型 TTS 音色（留空使用模型默认）",
+        "type": "string",
+        "default": "",
+        "max_length": 200
+      },
+      {
+        "key": "tts_instruction",
+        "label": "模型 TTS 风格要求",
+        "type": "text",
+        "default": "",
+        "max_length": 2000
+      },
+      {
+        "key": "activity_cues",
+        "label": "思考与工具提示音（播报开始后停用）",
+        "type": "boolean",
+        "default": false
       },
       {
         "key": "temporary_context",

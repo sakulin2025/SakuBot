@@ -1,5 +1,6 @@
 """Isolated speech bridge/main-conversation integration; no model or physical device."""
 import asyncio
+import base64
 from collections import deque
 import importlib.util
 import json
@@ -68,6 +69,29 @@ class Integration(unittest.IsolatedAsyncioTestCase):
                 self.events = []
                 self.played = []
                 self.command = AsyncMock(return_value={'ok': True})
+                self.play_lock = asyncio.Lock()
+                self.playback = None
+                self.active_playback_stream = None
+                self.received = []
+                self.pcm_started = asyncio.Event()
+                self.complete_gate = asyncio.Event()
+                self.complete_gate.set()
+            async def cancel_playback(self):
+                task, self.playback = self.playback, None
+                if task:
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
+            async def play_pcm(self, chunks):
+                stream = self.active_playback_stream = len(self.played) + 100
+                self.played.append('stream')
+                async def consume():
+                    async for chunk in chunks:
+                        self.received.append(chunk)
+                        self.pcm_started.set()
+                    await self.complete_gate.wait()
+                    manager.event(self, {'event':'playback.completed','data':{'playback_id':stream}})
+                self.playback = asyncio.create_task(consume())
+                return {'ok':True,'playback_id':stream}
             def event(self, event, **data):
                 self.events.append((event, data))
             async def play_wav(self, pcm):
@@ -95,6 +119,7 @@ class Integration(unittest.IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self):
         self.tts_gate.set()
+        await self.device.cancel_playback()
         self.p.stopping = True
         await self.p.stop_voice()
         self.loop.cancel()
@@ -288,6 +313,125 @@ class Integration(unittest.IsolatedAsyncioTestCase):
         visible = public(self.runtime, self.p.id)
         self.assertEqual(visible['values']['token'], '')
         self.assertEqual(visible['values']['temporary_context'], stored['temporary_context'])
+
+
+class ModelIntegration(unittest.IsolatedAsyncioTestCase):
+    asyncTearDown = Integration.asyncTearDown
+    run_context = Integration.run_context
+
+    async def asyncSetUp(self):
+        await Integration.asyncSetUp(self)
+        await self.p.stop_voice()
+        self.loop.cancel()
+        await asyncio.gather(self.loop, return_exceptions=True)
+        await until(lambda: self.manager.provider is None)
+        self.p.config.update(speech_backend='models', asr_model_id='asr', tts_model_id='tts', auto_interrupt=True)
+        self.speech_gate = asyncio.Event()
+        self.speech_gate.set()
+        self.asr_gate = asyncio.Event()
+        self.asr_gate.set()
+        self.asr_calls, self.tts_calls = [], []
+        self.asr_fail = self.tts_fail = False
+        owner = self
+        from types import SimpleNamespace
+        from sakubot.speech import AudioChunk
+        class Speech:
+            async def transcribe(self, model, audio):
+                owner.asr_calls.append(audio)
+                await owner.asr_gate.wait()
+                if owner.asr_fail: raise ValueError('ASR failed')
+                yield '你好。'
+            async def synthesize(self, model, text, **kwargs):
+                owner.tts_calls.append(text)
+                if owner.tts_fail: raise ValueError('TTS failed')
+                yield AudioChunk(b'\1\0' * 4800, 24000)
+                await owner.speech_gate.wait()
+                yield AudioChunk(b'\2\0' * 4800, 24000)
+        self.runtime.speech = Speech()
+        self.loop = asyncio.create_task(self.p.voice_loop())
+        await until(lambda: self.p.voice_bound)
+        self.assertTrue(self.manager.provider['input_stream'])
+
+    async def input(self):
+        from server.wire import Frame, PCM
+        await self.manager.begin(self.device, 'conversation', 'keyword')
+        session = self.manager.sessions[self.device.id]
+        await until(lambda: session.id in self.p.voice_sessions)
+        session.guard = 0
+        self.manager.vad_states[self.device] = True
+        for seq in range(10):
+            pcm = b'\1\0' * 320
+            self.manager.audio(self.device, Frame(PCM, 0, seq, seq * 20, pcm), pcm)
+        await until(lambda: isinstance(self.p.voice_sessions[session.id]['turn'], module.model_audio.ModelTurn))
+        turn = self.p.voice_sessions[session.id]['turn']
+        self.assertEqual(self.asr_calls, [])
+        self.manager.vad_states[self.device] = False
+        session.tail = time.monotonic() - 1
+        await until(lambda: bool(turn.event_id))
+        return session, turn
+
+    async def test_first_sentence_plays_before_final_and_is_not_repeated(self):
+        session, turn = await self.input()
+        run, context = self.run_context(turn)
+        self.speech_gate.clear()
+        self.runtime.conversation.process('model.delta', run_id=run, agent_id='main', request_id='r1', text='第一句。第二句')
+        await asyncio.wait_for(self.device.pcm_started.wait(), 2)
+        self.assertEqual(self.tts_calls, ['第一句。'])
+        self.assertTrue(session.waiting)
+        self.speech_gate.set()
+        self.runtime.conversation.process('model.completed', run_id=run, agent_id='main', request_id='r1')
+        await self.runtime.conversation.respond('第一句。第二句', run_id=run, response_id='r1')
+        self.runtime.conversation.process('run.completed', run_id=run, agent_id='main')
+        await until(lambda: not session.waiting)
+        self.assertEqual(self.tts_calls, ['第一句。','第二句'])
+        self.assertEqual(len(self.device.played), 1)
+        self.assertEqual(len(self.asr_calls), 1)
+        self.assertIsNone(self.p.voice_sessions[session.id]['turn'])
+
+    async def test_interrupt_cancels_tts_and_rejects_late_output(self):
+        session, turn = await self.input()
+        run, context = self.run_context(turn)
+        self.speech_gate.clear()
+        self.runtime.conversation.process('model.delta', run_id=run, agent_id='main', request_id='r1', text='旧回答。')
+        await asyncio.wait_for(self.device.pcm_started.wait(), 2)
+        await self.manager.interrupt(session)
+        await until(lambda: turn.closed.is_set())
+        await until(lambda: turn.speech_task.done())
+        count = len(self.device.received)
+        self.speech_gate.set()
+        await asyncio.sleep(.05)
+        self.assertEqual(len(self.device.received), count)
+        self.assertIs(self.manager.sessions[self.device.id], session)
+        self.assertFalse(session.waiting)
+        with self.assertRaises(ValueError):
+            await self.p.voice_text(self.device.id, {'reply_context':context,'run_id':run,'text':'迟到'})
+        self.assertIsNone(self.p.voice_sessions[session.id]['turn'])
+
+    async def test_tts_failure_ends_session(self):
+        session, turn = await self.input()
+        run, _ = self.run_context(turn)
+        self.tts_fail = True
+        self.runtime.conversation.process('model.delta', run_id=run, agent_id='main', request_id='r1', text='失败。')
+        await until(lambda: self.device.id not in self.manager.sessions)
+        self.assertTrue(turn.closed.is_set())
+
+    async def test_agent_failure_ends_session_but_tool_error_does_not(self):
+        session, turn = await self.input()
+        run, _ = self.run_context(turn)
+        await self.p.voice_lifecycle(self.device.id, {'event':'agent.tool_completed','run_id':run,
+            'reply_context':self.runtime.current_run['_reply_location']['context'],'error':'工具参数错误'})
+        self.assertIn(self.device.id, self.manager.sessions)
+        self.runtime.conversation.process('run.failed', run_id=run, agent_id='main')
+        await until(lambda: self.device.id not in self.manager.sessions)
+
+    async def test_empty_response_finishes_and_parameterless_end_releases_lock(self):
+        session, turn = await self.input()
+        run, _ = self.run_context(turn)
+        self.runtime.conversation.process('run.completed', run_id=run, agent_id='main')
+        await until(lambda: not session.waiting)
+        self.assertEqual(self.device.played, [])
+        self.assertEqual(await self.p.end_conversation(), {'ok':True})
+        self.assertNotIn(self.device.id, self.manager.sessions)
 
 
 if __name__ == '__main__':

@@ -12,6 +12,14 @@ const modules = computed(() => (device.value?.hello?.capabilities?.wake_modules 
 const status = computed(() => device.value?.status || {})
 const time = (value:number) => value ? new Date(value).toLocaleTimeString('zh-CN', {hour12:false}) : '--'
 const stopping = ref(false)
+const interrupting = ref(false)
+async function interruptConversation() {
+  if (interrupting.value) return
+  interrupting.value = true
+  try { await host.api('conversation/interrupt', {}); host.toast('已打断播报，继续聆听'); await load() }
+  catch (e:any) { host.toast(e.message, true) }
+  finally { interrupting.value = false }
+}
 async function endConversation() {
   if (stopping.value) return
   stopping.value = true
@@ -62,7 +70,8 @@ onUnmounted(() => { closed = true; clearTimeout(timer) })
   </SPageHeader>
   <p v-if="error || state.error" class="error">{{ error || state.error }}</p>
   <SCard title="主会话对话" class="voice-card">
-    <div class="controls"><STag :status="state.conversation?.bound ? 'online' : 'pending'" :label="state.conversation?.bound ? '对话能力已绑定' : '对话未连接'" /><span>活动会话 {{ state.conversation?.sessions?.length || 0 }}</span><SButton :loading="stopping" @click="endConversation">结束会话</SButton></div>
+    <div class="controls"><STag :status="state.conversation?.bound ? 'online' : 'pending'" :label="state.conversation?.bound ? '对话能力已绑定' : '对话未连接'" /><span>活动会话 {{ state.conversation?.sessions?.length || 0 }}</span><SButton :loading="interrupting" @click="interruptConversation">打断并继续听</SButton><SButton :loading="stopping" @click="endConversation">结束会话</SButton></div>
+    <p class="padded">{{ state.conversation?.speech_backend === 'models' ? '模型 ASR / 分句流式 TTS' : '音频服务 ASR / TTS' }} · {{ state.conversation?.auto_interrupt ? '新语音自动打断已开启' : '自动打断已关闭' }} <span v-for="item in state.conversation?.sessions || []" :key="item.session_id"> · {{ ({recording:'正在收音',recognizing:'正在识别',thinking:'正在思考',speaking:'正在播报',listening:'正在聆听'} as any)[item.phase] || item.phase }}</span></p>
     <p v-if="state.conversation?.error" class="error padded">{{ state.conversation.error }}</p>
     <dl><dt>输入</dt><dd>{{ state.conversation?.last_input || '等待音箱语音输入' }}</dd><dt>回答</dt><dd>{{ state.conversation?.last_output || '等待主 Agent 回答' }}</dd></dl>
   </SCard>

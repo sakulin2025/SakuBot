@@ -115,6 +115,7 @@ class VoiceConversation:
             identifier = self.voice_identifier(identity)
             self.conversation_source(identifier, '音箱 · ' + identity,
                 handlers={'text': partial(self.voice_text, identity),
+                          'stream': partial(self.voice_stream, identity),
                           'lifecycle': partial(self.voice_lifecycle, identity)},
                 availability=partial(self.voice_available, identity), timeout=None)
             self.voice_sources[identity] = identifier
@@ -136,6 +137,8 @@ class VoiceConversation:
             await asyncio.wait_for(self.voice_ws.send(json.dumps(value, ensure_ascii=False)), 5)
 
     async def voice_activity(self, turn, state):
+        if not self.config.get('activity_cues', False) or getattr(turn, 'audio_open', False):
+            return
         # Activity cues are best-effort; a reconnect must not fail the voice turn.
         try:
             await self.voice_send({'type': 'turn.state', 'session_id': turn.session_id,
@@ -176,15 +179,14 @@ class VoiceConversation:
                         proxy=None, open_timeout=8, close_timeout=2, max_size=6 * 1024 * 1024,
                         max_queue=32, ping_interval=15, ping_timeout=15) as ws:
                     self.voice_ws = ws
-                    await self.voice_send({'type': 'declare', 'source_id': 'sakubot-audio-terminal',
-                        'conversation': True, 'input': 'text', 'requires_asr': True, 'device_mode': 'single'})
+                    await self.voice_send(self.voice_declaration())
                     reply = json.loads(await asyncio.wait_for(ws.recv(), 10))
                     if not isinstance(reply, dict):
                         raise ValueError('对话服务声明响应格式错误')
                     if reply.get('type') != 'declared':
                         raise ValueError('已有其他对话提供者绑定，等待释放' if
                             reply.get('error') == 'provider_already_bound' else '对话能力声明被拒绝')
-                    if not REQUIRED <= set(reply.get('capabilities', [])):
+                    if not self.voice_required_capabilities() <= set(reply.get('capabilities', [])):
                         raise ValueError('请先更新音频服务的对话保活和播放回执接口')
                     self.voice_connection = uuid4().hex
                     self.voice_bound, self.voice_error, delay = True, '', 1
@@ -198,6 +200,16 @@ class VoiceConversation:
             if not self.stopping:
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, 15)
+
+    def voice_declaration(self):
+        return {'type': 'declare', 'source_id': 'sakubot-audio-terminal',
+                'conversation': True, 'input': 'text', 'requires_asr': True, 'device_mode': 'single'}
+
+    def voice_required_capabilities(self):
+        return REQUIRED
+
+    async def voice_stream(self, identity, packet):
+        pass
 
     async def voice_packet(self, value):
         if not isinstance(value, dict):
@@ -436,7 +448,7 @@ class VoiceConversation:
                 continue
             for session in list(self.voice_sessions.values()):
                 turn = session['turn']
-                if turn is None or turn.closed.is_set():
+                if turn is None or turn.closed.is_set() or getattr(turn, 'phase', '') == 'recording':
                     continue
                 try:
                     await self.voice_send({'type': 'turn.processing', 'session_id': turn.session_id,

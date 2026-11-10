@@ -16,9 +16,10 @@ from sakubot.plugin import Plugin, object_schema, text
 
 from .client import Client, MAX_WAV, base_url, control_params, device_id
 from .conversation import VoiceConversation, DEFAULT_TEMPORARY_CONTEXT
+from .model_audio import AudioModels
 
 
-class Extension(VoiceConversation, Plugin):
+class Extension(AudioModels, VoiceConversation, Plugin):
     
     
     name = 'audio_terminal'
@@ -26,9 +27,12 @@ class Extension(VoiceConversation, Plugin):
     def setup(self):
         self.config = self.configure({'base_url': 'http://esp32-audio-terminal:8765', 'token': '',
                                       'subscribe_events': True, 'conversation_enabled': True,
+                                      'speech_backend': 'bridge', 'asr_model_id': '', 'tts_model_id': '',
+                                      'auto_interrupt': True, 'tts_voice': '', 'tts_instruction': '',
+                                      'activity_cues': False,
                                       'temporary_context': DEFAULT_TEMPORARY_CONTEXT}, secrets=('token',))
-        fields = json.loads((Path(__file__).parent / 'plugin.json').read_text())['settings']['fields']
-        self.settings_form(fields, on_saved=self.settings_saved)
+        self.settings_form(self.speech_settings_fields, validate=self.validate_speech_settings,
+                           on_saved=self.settings_saved)
         self.client = Client(self.config)
         saved = self.state.get('events', [])
         if not isinstance(saved, list):
@@ -57,6 +61,7 @@ class Extension(VoiceConversation, Plugin):
         self.api('control', self.api_control, methods=('POST',))
         self.api('play/{device}', self.api_play, methods=('PUT',))
         self.api('conversation/end', self.api_end_conversation, methods=('POST',))
+        self.api('conversation/interrupt', self.api_interrupt_conversation, methods=('POST',))
         self.skill('control', Path(__file__).parent / 'skills' / 'control')
         for family, label in [('wake', '设备唤醒'), ('button', '设备按键'),
                               ('playback', '播放事件'), ('connection', '设备连接状态')]:

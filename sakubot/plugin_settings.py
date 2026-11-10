@@ -29,10 +29,11 @@ def declaration(runtime, identifier):
         return None
     result = dict(static or {})
     if dynamic:
+        fields = dynamic['fields']() if callable(dynamic['fields']) else dynamic['fields']
         result = {**result, **{k: v for k, v in dynamic.items() if k != 'fields'}}
         # Manifest fields supply placeholders/defaults even when the runtime declaration is concise.
         saved = {f['key']: f for f in result.get('fields', [])}
-        result['fields'] = [{**f, **saved.get(f['key'], {})} for f in dynamic['fields']]
+        result['fields'] = [{**f, **saved.get(f['key'], {})} for f in fields]
     return result
 
 
