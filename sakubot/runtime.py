@@ -687,6 +687,10 @@ class Runtime:
                 return message.get("content") or "", usage
             rejection = progress.rejection(calls)
             require_first_send = bool(progress.enabled and progress.settings.mode == "require" and progress.due())
+            if inv.agent_id == 'main':
+                self.conversation.process('agent.tool_started', request_id=request_id, run_id=inv.run_id,
+                    agent_id=inv.agent_id, step=step + 1,
+                    tools=[call['function']['name'] for call in calls])
             for call_index, call in enumerate(calls):
                 tool_started = time.monotonic()
                 result = None
@@ -711,6 +715,9 @@ class Runtime:
                         inv.temporary_next.append({'role': 'system', 'content': reminder, '_temporary': True})
                 messages.append({"role": "tool", "tool_call_id": call["id"], "content": content})
                 self.save_trace(inv, messages, usage)
+            if inv.agent_id == 'main':
+                self.conversation.process('agent.tool_completed', request_id=request_id, run_id=inv.run_id,
+                    agent_id=inv.agent_id, step=step + 1)
             from .wake_routing import flush_source_notices
             flush_source_notices(inv, messages)
             # Never insert user/context messages between an assistant tool-call batch

@@ -135,6 +135,14 @@ class VoiceConversation:
                 raise ValueError('音箱对话连接已断开')
             await asyncio.wait_for(self.voice_ws.send(json.dumps(value, ensure_ascii=False)), 5)
 
+    async def voice_state(self, turn, state):
+        # Activity cues are best-effort; a reconnect must not fail the voice turn.
+        try:
+            await self.voice_send({'type': 'turn.state', 'session_id': turn.session_id,
+                                   'turn_id': turn.turn_id, 'state': state})
+        except (ValueError, OSError, WebSocketException, asyncio.TimeoutError):
+            pass
+
     def drop_voice_session(self, identity):
         session = self.voice_sessions.pop(identity, None)
         if not session or session['turn'] is None:
@@ -244,6 +252,7 @@ class VoiceConversation:
                 meta={'reply_context': context, 'source_label': '音箱',
                     'temporary_context': context['voice_context']})
             turn.event_id = row['id']
+            await self.voice_state(turn, 'thinking')
             self.voice_last_input = text.strip()[:500]
             self.voice_error = ''
         # Double-knock event notifications deliberately do not create main conversation inputs.
@@ -378,7 +387,16 @@ class VoiceConversation:
             turn.busy = False
 
     async def voice_lifecycle(self, identity, packet):
-        if packet.get('event') not in ('run.completed', 'run.failed'):
+        event = packet.get('event')
+        if event in ('agent.tool_started', 'agent.tool_completed'):
+            try:
+                turn = self.voice_turn(identity, packet)
+            except ValueError:
+                return
+            if turn is not None:
+                await self.voice_state(turn, 'tool' if event == 'agent.tool_started' else 'thinking')
+            return
+        if event not in ('run.completed', 'run.failed'):
             return
         turn = self.voice_turn(identity, packet)
         if turn is None:
