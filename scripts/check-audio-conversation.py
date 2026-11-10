@@ -462,6 +462,18 @@ class ModelIntegration(unittest.IsolatedAsyncioTestCase):
             id='fresh-asr', provider_id='test', model_id='mimo-v2.5-asr',name='新增ASR',capabilities={'asr':True}))
         self.assertEqual(options()[-1]['value'], 'fresh-asr')
 
+    async def test_model_settings_validate_actual_provider_model_pair(self):
+        from sakubot.config import ModelConfig, ProviderConfig
+        settings = self.runtime.config.settings
+        settings.providers.append(ProviderConfig(id='speech-provider', name='MiMo', api_base='https://api.example.com/v1'))
+        for kind in ('asr','tts'):
+            settings.models.append(ModelConfig(id=kind, name=kind,provider_id='speech-provider',
+                model_id='mimo-v2.5-'+kind, capabilities={kind:True,'text':False}))
+        self.assertTrue(self.p.validate_speech_settings(self.p.config))
+        settings.models[-1].enabled = False
+        with self.assertRaises(ValueError):
+            self.p.validate_speech_settings(self.p.config)
+
     async def test_agent_failure_ends_session_but_tool_error_does_not(self):
         session, turn = await self.input()
         run, _ = self.run_context(turn)

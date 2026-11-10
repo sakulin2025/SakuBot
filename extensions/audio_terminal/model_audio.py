@@ -33,7 +33,7 @@ class AudioModels:
     def validate_speech_settings(self, value):
         if value.get('speech_backend') == 'models':
             for kind in ('asr', 'tts'):
-                model = self.runtime.config.settings.selected_speech_model(value.get(kind + '_model_id'), kind)
+                _, model = self.runtime.config.settings.selected_speech_model(value.get(kind + '_model_id'), kind)
                 if model.capabilities.streaming_input or model.capabilities.realtime:
                     raise ValueError('当前音箱插件使用分段音频输入，请选择非实时 ASR/TTS 模型')
         return True
