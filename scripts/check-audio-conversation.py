@@ -415,6 +415,53 @@ class ModelIntegration(unittest.IsolatedAsyncioTestCase):
         await until(lambda: self.device.id not in self.manager.sessions)
         self.assertTrue(turn.closed.is_set())
 
+    async def test_asr_failure_ends_session_without_agent_input(self):
+        self.asr_fail = True
+        with self.assertRaises(TimeoutError):
+            await self.input()
+        self.assertNotIn(self.device.id, self.manager.sessions)
+        self.assertFalse(self.p.voice_sessions)
+        self.assertEqual(self.runtime.store.one("SELECT COUNT(*) AS n FROM events WHERE kind='wake'")['n'], 0)
+
+    async def test_interrupt_cancels_recognition_and_allows_next_turn(self):
+        from server.wire import Frame, PCM
+        self.asr_gate.clear()
+        starting = asyncio.create_task(self.input())
+        await until(lambda: bool(self.asr_calls))
+        session = self.manager.sessions[self.device.id]
+        old = self.p.voice_sessions[session.id]['turn']
+        await self.manager.interrupt(session)
+        await until(lambda: old.closed.is_set())
+        await until(lambda: old.asr_task.done())
+        starting.cancel()
+        await asyncio.gather(starting, return_exceptions=True)
+        self.asr_gate.set()
+        session.guard = 0
+        self.manager.vad_states[self.device] = True
+        for seq in range(100,110):
+            pcm = b'\1\0' * 320
+            self.manager.audio(self.device, Frame(PCM,0,seq,seq*20,pcm), pcm)
+        await until(lambda: self.p.voice_sessions[session.id]['turn'] is not None)
+        new = self.p.voice_sessions[session.id]['turn']
+        session.tail = time.monotonic()-1
+        self.manager.vad_states[self.device] = False
+        await until(lambda: bool(new.event_id))
+        self.assertNotEqual(new.turn_id, old.turn_id)
+        self.assertEqual(len(self.asr_calls), 2)
+
+    async def test_dynamic_model_options_refresh_without_plugin_restart(self):
+        from types import SimpleNamespace
+        from sakubot.plugin_settings import declaration
+        self.p.settings_form(self.p.speech_settings_fields)
+        self.runtime.registry.plugins.append(self.p)
+        self.p._settings_manifest_cache = {'settings': {'fields': []}}
+        def options():
+            return next(row['options'] for row in declaration(self.runtime,self.p.id)['fields'] if row['key']=='asr_model_id')
+        self.assertEqual(len(options()), 1)
+        self.runtime.config.settings.models.append(__import__('sakubot.config',fromlist=['ModelConfig']).ModelConfig(
+            id='fresh-asr', provider_id='test', model_id='mimo-v2.5-asr',name='新增ASR',capabilities={'asr':True}))
+        self.assertEqual(options()[-1]['value'], 'fresh-asr')
+
     async def test_agent_failure_ends_session_but_tool_error_does_not(self):
         session, turn = await self.input()
         run, _ = self.run_context(turn)

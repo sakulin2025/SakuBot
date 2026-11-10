@@ -110,8 +110,22 @@ class AudioModels:
             if row:
                 run_id = json.loads(row['meta']).get('wake_run_id', '')
         current = self.runtime.current_run
+        if not run_id and current and current.get('event_id') == turn.event_id:
+            run_id = current['id']
         if run_id and current and current['id'] == run_id:
             await self.runtime.stop_main_run(run_id)
+
+    async def voices(self):
+        """查询当前音箱语音处理方式、TTS 模型与默认音色。"""
+        if not self.model_audio_enabled():
+            return await super().voices()
+        _, model = self.runtime.config.settings.selected_speech_model(self.config.get('tts_model_id'), 'tts')
+        default = 'mimo_default' if model.speech_api == 'mimo' and model.model_id == 'mimo-v2.5-tts' else ''
+        voice = self.config.get('tts_voice') or default
+        return {'backend': 'models', 'model': model.model_id, 'model_name': model.name,
+                'default_voice': voice, 'voices': [voice] if voice else [],
+                'streaming_output': model.capabilities.streaming_output,
+                'note': '音色由模型与插件设置决定；此列表仅列出当前配置，完整音色以供应商文档为准。'}
 
     def drop_voice_session(self, session_id):
         self.clear_model_turn(session_id)
@@ -308,6 +322,10 @@ class AudioModels:
             return
         if packet.get('event') == 'model.failed':
             await self.fail_model_turn(turn, '主 Agent 模型响应失败，会话已结束')
+            return
+        if packet.get('event') == 'model.started' and packet.get('attempt', 0) and any(
+                item['offset'] for item in turn.requests.values()):
+            await self.fail_model_turn(turn, '主 Agent 重试可能重复播报，会话已结束')
             return
         turn.run_id = packet.get('run_id') or turn.run_id
         request_id = packet.get('request_id') or packet.get('response_id')
