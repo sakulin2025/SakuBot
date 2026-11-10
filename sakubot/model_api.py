@@ -5,7 +5,7 @@ import time
 from fastapi import Depends, HTTPException, Request
 from pydantic import ValidationError
 
-from .catalog import Catalog
+from .catalog import Catalog, speech_profile
 from .config import ModelConfig, ProviderConfig
 
 
@@ -114,6 +114,9 @@ def register_model_api(app, authorize, config, store, runtime, config_lock, appl
         old = next((item for item in config.settings.models if item.id == data.get("id")), None)
         if data.get("id") and not old:
             raise HTTPException(404, "模型不存在")
+        if old:
+            for field in ('speech_api', 'speech_sample_rate'):
+                data.setdefault(field, getattr(old, field))
         match = next((item for item in cached(provider)["items"] if item["model_id"] == data.get("model_id")), None)
         data["metadata"] = match["metadata"] if match else (old.metadata.model_dump() if old and old.model_id == data.get("model_id") and old.provider_id == provider.id else {})
         try:
@@ -153,6 +156,8 @@ def register_model_api(app, authorize, config, store, runtime, config_lock, appl
                 raise ValueError("请重新拉取供应商模型列表")
             record = ModelConfig(provider_id=provider.id, model_id=identifier, name=row["name"],
                                  capabilities=row["capabilities"], metadata=row["metadata"])
+            if speech_profile(identifier):
+                record.speech_api = 'mimo'
             if record.capabilities.embedding and record.enabled:
                 record.embedding_dimensions = len((await runtime.model.embed(provider, record, ['SakuBot embedding health check']))[0])
             draft["models"].append(record.model_dump())

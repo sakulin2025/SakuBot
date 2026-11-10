@@ -9,6 +9,7 @@ import uuid
 from urllib.parse import urlsplit
 
 from .model import Model
+from .speech import Speech
 from .plugin import Invocation, Registry, temporary_messages
 from .injections import injection, ordered
 from .store import encode
@@ -62,6 +63,7 @@ class Runtime:
         self.agent_jobs = {}
         self.agent_slots = asyncio.Semaphore(config.settings.agent_concurrency)
         self.model = None
+        self.speech = None
         self.jobs = []
         self.main_job = None
         self.main_stopping = False
@@ -78,6 +80,7 @@ class Runtime:
         self.agent_slots = asyncio.Semaphore(self.config.settings.agent_concurrency)
         self.registry = Registry()
         self.model = Model(self.config.settings)
+        self.speech = Speech(lambda: self.config.settings, client=self.model.client)
         self.metrics.seed()
         try:
             from .preinstalled import bootstrap

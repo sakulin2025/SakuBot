@@ -32,6 +32,11 @@ export interface Capabilities {
   audio: boolean
   tools: boolean
   embedding: boolean
+  asr: boolean
+  tts: boolean
+  streaming_input: boolean
+  streaming_output: boolean
+  realtime: boolean
 }
 export interface ModelMetadata {
   context_window: number
@@ -46,6 +51,8 @@ export interface ModelEntry {
   model_id: string
   enabled: boolean
   capabilities: Capabilities
+  speech_api: 'openai' | 'mimo'
+  speech_sample_rate: number
   extra_body: Record<string, unknown>
   context_window: number
   effective_context_window: number

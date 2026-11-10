@@ -135,7 +135,7 @@ class VoiceConversation:
                 raise ValueError('音箱对话连接已断开')
             await asyncio.wait_for(self.voice_ws.send(json.dumps(value, ensure_ascii=False)), 5)
 
-    async def voice_state(self, turn, state):
+    async def voice_activity(self, turn, state):
         # Activity cues are best-effort; a reconnect must not fail the voice turn.
         try:
             await self.voice_send({'type': 'turn.state', 'session_id': turn.session_id,
@@ -252,7 +252,7 @@ class VoiceConversation:
                 meta={'reply_context': context, 'source_label': '音箱',
                     'temporary_context': context['voice_context']})
             turn.event_id = row['id']
-            await self.voice_state(turn, 'thinking')
+            await self.voice_activity(turn, 'thinking')
             self.voice_last_input = text.strip()[:500]
             self.voice_error = ''
         # Double-knock event notifications deliberately do not create main conversation inputs.
@@ -394,7 +394,7 @@ class VoiceConversation:
             except ValueError:
                 return
             if turn is not None:
-                await self.voice_state(turn, 'tool' if event == 'agent.tool_started' else 'thinking')
+                await self.voice_activity(turn, 'tool' if event == 'agent.tool_started' else 'thinking')
             return
         if event not in ('run.completed', 'run.failed'):
             return

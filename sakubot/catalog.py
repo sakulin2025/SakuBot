@@ -8,6 +8,17 @@ import httpx
 from .config import Capabilities, ModelMetadata
 
 
+# Verified public MiMo contracts. SSE output is not realtime microphone input.
+def speech_profile(identifier):
+    if identifier == 'mimo-v2.5-asr':
+        return {'text': False, 'tools': False, 'asr': True, 'streaming_output': True}
+    if identifier == 'mimo-v2.5-tts':
+        return {'text': False, 'tools': False, 'tts': True, 'streaming_output': True}
+    if identifier in ('mimo-v2.5-tts-voiceclone', 'mimo-v2.5-tts-voicedesign'):
+        return {'text': False, 'tools': False, 'tts': True, 'streaming_output': False}
+    return {}
+
+
 async def read_json(client, url, headers=None, params=None, maximum=20 * 1024 * 1024):
     try:
         async with client.stream("GET", url, headers=headers, params=params) as response:
@@ -46,7 +57,7 @@ def metadata_from(record, source):
         if isinstance(record.get(key), bool):
             capabilities[field] = record[key]
     if isinstance(record.get("capabilities"), dict):
-        for field in ("text", "image", "audio", "tools", "embedding"):
+        for field in Capabilities.model_fields:
             if isinstance(record["capabilities"].get(field), bool):
                 capabilities[field] = record["capabilities"][field]
     return ModelMetadata(context_window=window, capabilities=capabilities,
@@ -98,7 +109,7 @@ class Catalog:
         # A proxy's model ID can be ambiguous. Never guess the largest context window.
         windows = {item.context_window for item in choices if item.context_window}
         capabilities = {}
-        for field in ("text", "image", "audio", "tools"):
+        for field in Capabilities.model_fields:
             values = {item.capabilities[field] for item in choices if field in item.capabilities}
             if len(values) == 1:
                 capabilities[field] = values.pop()
@@ -138,6 +149,11 @@ class Catalog:
             if not metadata.context_window:
                 metadata.context_window = fallback.context_window
             metadata.capabilities = {**fallback.capabilities, **metadata.capabilities}
+            profile = speech_profile(row['id'])
+            if profile:
+                metadata.capabilities = {**metadata.capabilities, **profile,
+                                         'streaming_input': False, 'realtime': False}
+                metadata.source = 'xiaomi-mimo:official-speech-contract'
             if not metadata.source:
                 metadata.source = fallback.source
             result.append({"model_id": row["id"], "name": str(row.get("name") or row["id"])[:100],

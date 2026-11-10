@@ -39,6 +39,11 @@ class Capabilities(BaseModel):
     audio: bool = False
     tools: bool = True
     embedding: bool = False
+    asr: bool = False
+    tts: bool = False
+    streaming_input: bool = False
+    streaming_output: bool = False
+    realtime: bool = False
 
 
 class ModelMetadata(BaseModel):
@@ -61,6 +66,8 @@ class ModelConfig(BaseModel):
     context_window: int = Field(0, ge=0, le=100000000)
     embedding_dimensions: int = Field(0, ge=0, le=65536)
     metadata: ModelMetadata = Field(default_factory=ModelMetadata)
+    speech_api: Literal['openai', 'mimo'] = 'openai'
+    speech_sample_rate: int = Field(24000, ge=8000, le=48000)
 
     @field_validator("extra_body")
     @classmethod
@@ -229,6 +236,16 @@ class Settings(BaseModel):
         model = next((item for item in self.models if item.id == model_id and item.enabled and item.capabilities.embedding), None)
         provider = next((item for item in self.providers if model and item.id == model.provider_id and item.enabled), None)
         return (provider, model) if provider and model else (None, None)
+
+    def selected_speech_model(self, model_id, capability):
+        if capability not in ('asr', 'tts'):
+            raise ValueError('语音能力必须为ASR或TTS')
+        model = next((item for item in self.models if item.id == model_id and item.enabled
+                      and getattr(item.capabilities, capability)), None)
+        provider = next((item for item in self.providers if model and item.id == model.provider_id and item.enabled), None)
+        if not model or not provider:
+            raise ValueError('未选择已启用的' + capability.upper() + '模型')
+        return provider, model
 
     def model_ready(self):
         return self.selected_model()[0] is not None

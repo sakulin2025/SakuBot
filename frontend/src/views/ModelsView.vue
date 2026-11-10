@@ -27,6 +27,8 @@ const draft = reactive({
   name: '',
   enabled: true,
   context_window: 0,
+  speech_api: 'openai' as 'openai' | 'mimo',
+  speech_sample_rate: 24000,
   capabilities: { text: true, image: false, audio: false, tools: true, embedding: false } as Capabilities,
 })
 type Parameter = { key: string; type: 'string' | 'number' | 'boolean' | 'json'; value: string }
@@ -37,6 +39,11 @@ const capabilities: { key: keyof Capabilities; label: string }[] = [
   { key: 'audio', label: '音频' },
   { key: 'tools', label: '工具使用' },
   { key: 'embedding', label: 'Embedding' },
+  { key: 'asr', label: '语音识别 ASR' },
+  { key: 'tts', label: '语音合成 TTS' },
+  { key: 'streaming_input', label: '持续流式输入' },
+  { key: 'streaming_output', label: '流式输出' },
+  { key: 'realtime', label: '实时双向会话' },
 ]
 const providers = computed(() => store.config?.providers || [])
 const models = computed(() => store.config?.models || [])
@@ -67,6 +74,8 @@ function edit(model?: ModelEntry) {
     name: model?.name || '',
     enabled: model?.enabled ?? true,
     context_window: model?.context_window || 0,
+    speech_api: model?.speech_api || 'openai',
+    speech_sample_rate: model?.speech_sample_rate || 24000,
     capabilities: { ...(model?.capabilities || { text: true, image: false, audio: false, tools: true, embedding: false }) },
   })
   parameters.value = Object.entries(model?.extra_body || {}).map(([key, value]) => ({
@@ -82,6 +91,14 @@ function edit(model?: ModelEntry) {
     value: typeof value === 'string' ? value : JSON.stringify(value),
   }))
   editing.value = true
+}
+function speechPreset(kind: 'asr' | 'tts') {
+  draft.model_id = 'mimo-v2.5-' + kind
+  draft.speech_api = 'mimo'
+  draft.speech_sample_rate = 24000
+  draft.capabilities = { text: false, image: false, audio: false, tools: false,
+    embedding: false, asr: kind === 'asr', tts: kind === 'tts',
+    streaming_input: false, streaming_output: true, realtime: false }
 }
 function addManualModel() {
   const provider = discoveryProvider.value
@@ -149,6 +166,8 @@ async function toggle(model: ModelEntry) {
         capabilities: model.capabilities,
         extra_body: model.extra_body,
         context_window: model.context_window,
+        speech_api: model.speech_api,
+        speech_sample_rate: model.speech_sample_rate,
       },
     })
     await store.refresh()
@@ -379,6 +398,10 @@ onMounted(async () => {
       <div class="field">
         <label for="model-id">模型 ID</label>
         <SInput id="model-id" v-model="draft.model_id" class="mono" required maxlength="300" />
+        <div class="form-row">
+          <SButton type="button" @click="speechPreset('asr')">MiMo ASR 预设</SButton>
+          <SButton type="button" @click="speechPreset('tts')">MiMo TTS 预设</SButton>
+        </div>
       </div>
       <label class="checkbox-field">
         <SCheckbox v-model="draft.enabled" />
@@ -400,6 +423,20 @@ onMounted(async () => {
         </div>
       </div>
       <div v-if="original?.capabilities.embedding && original.embedding_dimensions" class="field-state">向量维度：{{ original.embedding_dimensions }}</div>
+      <div v-if="draft.capabilities.asr || draft.capabilities.tts" class="form-row">
+        <div class="field">
+          <label for="speech-api">语音接口</label>
+          <SSelect id="speech-api" v-model="draft.speech_api">
+            <option value="mimo">MiMo 语音</option>
+            <option value="openai">OpenAI 兼容语音</option>
+          </SSelect>
+        </div>
+        <div v-if="draft.capabilities.tts" class="field">
+          <label for="speech-rate">流式 PCM 采样率 / Hz</label>
+          <SInput id="speech-rate" v-model.number="draft.speech_sample_rate" type="number" min="8000" max="48000" required />
+        </div>
+      </div>
+      <p v-if="draft.capabilities.asr || draft.capabilities.tts" class="field-state">流式输出不等于实时输入。MiMo ASR 公开接口接收完整音频，标准 TTS 流式 PCM 为 24kHz；仅按已确认的服务商协议标记能力。</p>
       <div class="field">
         <label for="context-window">
           模型上下文窗口 · Token
