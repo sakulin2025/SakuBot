@@ -91,11 +91,11 @@ class AudioModels:
     def clear_model_turn(self, session_id, *, cancel_agent=False):
         session = self.voice_sessions.get(session_id)
         turn = session['turn'] if session else None
-        if not isinstance(turn, ModelTurn):
+        if not isinstance(turn, Turn):
             return
         session['turn'] = None
         turn.closed.set()
-        for job in (turn.asr_task, turn.speech_task):
+        for job in (getattr(turn, 'asr_task', None), getattr(turn, 'speech_task', None)):
             if job and job is not asyncio.current_task() and not job.done():
                 job.cancel()
         if turn.event_id:
@@ -422,8 +422,12 @@ class AudioModels:
         for session_id, session in list(self.voice_sessions.items()):
             identities.add(session['device'])
             self.clear_model_turn(session_id, cancel_agent=True)
-        status = await self.client.request('GET', '/v1/interactions')
-        identities.update(row['device_id'] for row in status.get('sessions', []))
-        for identity in identities:
-            await self.client.request('POST', self.client.path(identity, '/session/interrupt'), json={})
+        try:
+            status = await self.client.request('GET', '/v1/interactions')
+            identities.update(row['device_id'] for row in status.get('sessions', []))
+            for identity in identities:
+                await self.client.request('POST', self.client.path(identity, '/session/interrupt'), json={})
+        except Exception:
+            await self.stop_voice()
+            raise
         return {'ok': True}

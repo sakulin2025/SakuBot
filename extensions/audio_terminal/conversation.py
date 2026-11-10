@@ -393,7 +393,9 @@ class VoiceConversation:
             self.voice_last_output = text[:500]
         except Exception as exc:
             self.voice_error = str(exc)[:180] if isinstance(exc, ValueError) else '语音回答失败，会话已结束'
-            await self.end_voice_session(turn.session_id)
+            session = self.voice_sessions.get(turn.session_id)
+            if not turn.closed.is_set() and session and session['turn'] is turn:
+                await self.end_voice_session(turn.session_id)
             raise
         finally:
             turn.busy = False
@@ -430,7 +432,9 @@ class VoiceConversation:
                 session['turn'] = None
             turn.closed.set()
         except Exception:
-            await self.end_voice_session(turn.session_id)
+            session = self.voice_sessions.get(turn.session_id)
+            if not turn.closed.is_set() and session and session['turn'] is turn:
+                await self.end_voice_session(turn.session_id)
             raise
 
     async def end_voice_session(self, session_id):

@@ -193,6 +193,21 @@ class Integration(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.p.voice_bound)
         self.assertTrue(turn.closed.is_set())
 
+    async def test_interrupt_http_failure_releases_provider_instead_of_sticking(self):
+        session, turn = await self.input()
+        self.p.client.request = AsyncMock(side_effect=ValueError('HTTP unavailable'))
+        with self.assertRaises(ValueError):
+            await self.p.api_interrupt_conversation(None)
+        await until(lambda: self.device.id not in self.manager.sessions)
+        self.assertTrue(turn.closed.is_set())
+
+    async def test_legacy_text_mode_interrupt_keeps_session(self):
+        session, turn = await self.input()
+        await self.manager.interrupt(session)
+        await until(lambda: turn.closed.is_set())
+        self.assertIs(self.manager.sessions[self.device.id], session)
+        self.assertIsNone(self.p.voice_sessions[session.id]['turn'])
+
     async def test_tool_error_is_not_run_failure(self):
         session, turn = await self.input()
         await self.p.voice_lifecycle(self.device.id, {'event':'tool.failed'})
