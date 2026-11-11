@@ -1,7 +1,7 @@
 {
   "name": "audio_terminal",
   "label": "音频终端",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "icon": "connection",
   "settings": {
     "fields": [

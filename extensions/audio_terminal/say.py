@@ -64,6 +64,7 @@ class SayTools:
         if lock.locked():
             raise ValueError('音箱正在主动播报，请稍后再试')
         async with lock:
+            plugin_epoch = getattr(self, 'epoch', 0)
             epochs = getattr(self, 'say_epochs', None)
             if epochs is None:
                 self.say_epochs = epochs = {}
@@ -88,7 +89,7 @@ class SayTools:
                     audio = wav_bytes(b''.join(chunks))
                 else:
                     audio = await self.client.synthesize(part)
-                if epochs.get(identity, 0) != epoch or self.stopping:
+                if epochs.get(identity, 0) != epoch or self.stopping or getattr(self, 'epoch', 0) != plugin_epoch:
                     return {'ok': True, 'status': 'cancelled', 'device_id': identity}
                 await self.proactive_playback(identity, audio)
             self.voice_last_output = text[:500]

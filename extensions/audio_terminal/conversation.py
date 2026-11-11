@@ -1,5 +1,6 @@
 """Bridge-owned speech turns connected to Sakubot's existing main conversation."""
 import asyncio
+import contextlib
 import base64
 from dataclasses import dataclass, field
 from functools import partial
@@ -305,15 +306,21 @@ class VoiceConversation:
                 raise ValueError('音箱开始了新的语音轮次，已取消无关联播报')
             result = await self.play_data(identity, audio)
             deadline = asyncio.get_running_loop().time() + validate_wav(audio) + 5
-            while True:
-                raw = await asyncio.wait_for(ws.recv(), max(.01, deadline - asyncio.get_running_loop().time()))
-                value = json.loads(raw)
-                if (value.get('data') or {}).get('playback_id') != result['playback_id']:
-                    continue
-                if value.get('event') == 'playback.completed':
-                    return
-                if value.get('event') in ('playback.stopped', 'bridge.playback_failed'):
-                    raise ValueError('音箱播报被中断，未重试')
+            try:
+                while True:
+                    raw = await asyncio.wait_for(ws.recv(), max(.01, deadline - asyncio.get_running_loop().time()))
+                    value = json.loads(raw)
+                    if (value.get('data') or {}).get('playback_id') != result['playback_id']:
+                        continue
+                    if value.get('event') == 'playback.completed':
+                        return
+                    if value.get('event') in ('playback.stopped', 'bridge.playback_failed'):
+                        raise ValueError('音箱播报被中断，未重试')
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                # Stop only this accepted stream: a newer user reply must survive.
+                with contextlib.suppress(Exception):
+                    await self.client.command(identity, 'playback.stop', {'playback_id': result['playback_id']})
+                raise
 
     async def voice_work(self, turn, coroutine):
         job = asyncio.create_task(coroutine)

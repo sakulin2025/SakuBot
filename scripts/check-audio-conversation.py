@@ -233,6 +233,15 @@ class Integration(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await job)['status'], 'cancelled')
         self.p.proactive_playback.assert_not_awaited()
 
+    async def test_cancel_proactive_playback_stops_only_its_stream(self):
+        self.p.play_data = AsyncMock(return_value={'playback_id':123})
+        self.p.client.command = AsyncMock(return_value={'ok':True})
+        job=asyncio.create_task(self.p.proactive_playback(self.device.id,self.audio))
+        await until(lambda:self.p.play_data.await_count==1)
+        job.cancel()
+        await asyncio.gather(job,return_exceptions=True)
+        self.p.client.command.assert_awaited_once_with(self.device.id,'playback.stop',{'playback_id':123})
+
     async def test_tool_error_is_not_run_failure(self):
         session, turn = await self.input()
         await self.p.voice_lifecycle(self.device.id, {'event':'tool.failed'})
