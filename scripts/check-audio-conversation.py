@@ -234,6 +234,7 @@ class Integration(unittest.IsolatedAsyncioTestCase):
         self.p.proactive_playback.assert_not_awaited()
 
     async def test_cancel_proactive_playback_stops_only_its_stream(self):
+        self.device.subscribers = {'events': set(), 'audio': set()}
         self.p.play_data = AsyncMock(return_value={'playback_id':123})
         self.p.client.command = AsyncMock(return_value={'ok':True})
         job=asyncio.create_task(self.p.proactive_playback(self.device.id,self.audio))
@@ -436,6 +437,25 @@ class ModelIntegration(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.device.played), 1)
         self.assertEqual(len(self.asr_calls), 1)
         self.assertIsNone(self.p.voice_sessions[session.id]['turn'])
+
+    async def test_explicit_say_uses_selected_tts_without_asr(self):
+        self.p.proactive_playback = AsyncMock()
+        result=await self.p.say('主动提醒。')
+        self.assertEqual(result['status'],'completed')
+        self.assertEqual(self.tts_calls,['主动提醒。'])
+        self.assertEqual(self.asr_calls,[])
+        self.p.proactive_playback.assert_awaited_once()
+
+    async def test_say_inside_owned_voice_turn_joins_existing_audio_stream(self):
+        from types import SimpleNamespace
+        session,turn=await self.input()
+        run,_=self.run_context(turn);turn.run_id=run
+        result=await self.p.say('工具主动说话。',invocation=SimpleNamespace(run_id=run))
+        self.assertEqual(result['status'],'queued')
+        await asyncio.wait_for(self.device.pcm_started.wait(),2)
+        self.runtime.conversation.process('run.completed',run_id=run,agent_id='main')
+        await until(lambda:not session.waiting)
+        self.assertEqual(self.tts_calls,['工具主动说话。'])
 
     async def test_interrupt_cancels_tts_and_rejects_late_output(self):
         session, turn = await self.input()
