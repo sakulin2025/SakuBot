@@ -17,9 +17,10 @@ from sakubot.plugin import Plugin, object_schema, text
 from .client import Client, MAX_WAV, base_url, control_params, device_id
 from .conversation import VoiceConversation, DEFAULT_TEMPORARY_CONTEXT
 from .model_audio import AudioModels
+from .say import SayTools
 
 
-class Extension(AudioModels, VoiceConversation, Plugin):
+class Extension(SayTools, AudioModels, VoiceConversation, Plugin):
     
     
     name = 'audio_terminal'
@@ -54,6 +55,7 @@ class Extension(AudioModels, VoiceConversation, Plugin):
                 ('audio_terminal_play', self.play_file), ('audio_terminal_events', self.events)]:
             self.function(handler, name=name)
         self.function(self.voices, name='audio_terminal_voices')
+        self.function(self.say, name='audio_terminal_say')
         self.function(self.end_conversation, name='audio_terminal_end_conversation')
         self.page('manage', '音频终端', Path(__file__).parent / 'web' / 'dist', group_id='network', icon='connection')
         self.api('state', self.api_state)

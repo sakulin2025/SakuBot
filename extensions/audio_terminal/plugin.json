@@ -1,7 +1,7 @@
 {
   "name": "audio_terminal",
   "label": "音频终端",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "icon": "connection",
   "settings": {
     "fields": [
@@ -13,6 +13,12 @@
         "format": "http-url",
         "default": "http://esp32-audio-terminal:8765",
         "placeholder": "http://esp32-audio-terminal:8765"
+      },
+      {
+        "key": "default_device",
+        "label": "主动说话默认设备ID（唯一在线设备可留空）",
+        "type": "string",
+        "default": ""
       },
       {
         "key": "token",

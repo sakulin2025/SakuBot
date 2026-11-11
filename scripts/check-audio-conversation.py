@@ -208,6 +208,31 @@ class Integration(unittest.IsolatedAsyncioTestCase):
         self.assertIs(self.manager.sessions[self.device.id], session)
         self.assertIsNone(self.p.voice_sessions[session.id]['turn'])
 
+    async def test_explicit_say_does_not_require_wake_or_selected_source(self):
+        self.p.proactive_playback = AsyncMock()
+        result = await self.p.say('主动提醒。')
+        self.assertEqual(result['status'], 'completed')
+        self.p.proactive_playback.assert_awaited_once()
+        self.assertFalse(self.manager.sessions)
+        self.assertEqual(self.runtime.store.one("SELECT COUNT(*) AS n FROM events WHERE kind='wake'")['n'], 0)
+
+    async def test_say_rejects_ambiguous_devices_and_foreign_turn(self):
+        self.p.devices_cache['other'] = {'online':True}
+        with self.assertRaises(ValueError): await self.p.say('不能播错地方')
+        self.p.devices_cache.pop('other')
+        await self.input()
+        with self.assertRaises(ValueError): await self.p.say('不能抢占用户')
+
+    async def test_stop_during_say_synthesis_never_plays_late_audio(self):
+        self.p.proactive_playback = AsyncMock()
+        self.tts_gate.clear()
+        job = asyncio.create_task(self.p.say('迟到的播报'))
+        await self.tts_started.wait()
+        self.p.say_epochs[self.device.id] = 1
+        self.tts_gate.set()
+        self.assertEqual((await job)['status'], 'cancelled')
+        self.p.proactive_playback.assert_not_awaited()
+
     async def test_tool_error_is_not_run_failure(self):
         session, turn = await self.input()
         await self.p.voice_lifecycle(self.device.id, {'event':'tool.failed'})
