@@ -60,3 +60,11 @@ Sakubot 使用本机隔离工作树开发提交并推送，再在230拉取并构
 真实 MiMo API 合成与转写可在隔离设备模拟器中验证；不能据此宣称现场噪声、AEC或自动打断已通过人的听感验收。
 
 官方接口资料：[ASR](https://mimo.mi.com/docs/zh-CN/api/audio/Speech-Recognition-post)、[TTS](https://mimo.mi.com/docs/zh-CN/api/audio/tts-post)。
+
+## 主动说话工具（插件0.5.0）
+
+Agent可调用 `audio_terminal_say(text, device="")`，无需先唤醒或将主会话切到音箱。目标选择顺序：明确device、活动音箱、插件默认设备、唯一在线设备；多设备不明确则返回错误。文字最多1200字符，沿用已配置的TTS模型/音色与分句处理。
+
+独立播报返回completed时表示播放已完成。当前Agent自己的音箱轮次内调用则加入该轮语音队列并返回queued，随后随该轮完成播放；不会抢占其他回答或正在收音的用户。调用后不要再次输出相同内容造成重复播报。
+
+`audio_terminal_stop(device)` 也取消合成中、尚未播放的主动说话，防止停止后迟到播放。该工具不主动建立连续聊天会话，不修改主会话输出源；不提供音乐混音。
